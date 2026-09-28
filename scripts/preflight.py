@@ -98,6 +98,48 @@ def check_database():
 
     ok(f"Postgres configured: {settings.DATABASES['default']['HOST']}")
 
+    # The driver is a compiled extension, so it can be installed and still fail
+    # to load when the wheel does not match the interpreter's ABI. That is not
+    # hypothetical: the Vercel build died with "ImportError: no pq wrapper
+    # available" because psycopg-binary's `pq` extension would not import.
+    # Django loads the backend while populating the app registry, so every
+    # request 500s -- not just the first query. Check it explicitly.
+    try:
+        import psycopg
+        from psycopg.conninfo import conninfo_to_dict  # noqa: F401
+    except Exception as exc:
+        fail(
+            f"The Postgres driver cannot be imported: {exc}\n"
+            "    psycopg-binary ships a prebuilt libpq but it must match the\n"
+            "    interpreter's ABI. If this appears only on the host, pin the\n"
+            "    Python version in that host's project settings to match\n"
+            "    .python-version, or build libpq via the system package."
+        )
+        return
+
+    # Parameters are forwarded verbatim so nothing is silently dropped, which
+    # means an unrecognised keyword is only rejected at connect time. Catch it
+    # here, where the variable can still be named.
+    dsn = os.environ.get("DATABASE_URL", "")
+    if dsn:
+        try:
+            from psycopg.conninfo import conninfo_to_dict
+            from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+            parsed = urlparse(dsn)
+            query = parse_qs(parsed.query)
+            query.pop("conn_max_age", None)  # Django-level, not a libpq option
+            conninfo_to_dict(
+                urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+            )
+        except Exception as exc:
+            fail(
+                f"libpq rejected DATABASE_URL: {exc}\n"
+                "    An unrecognised parameter is forwarded to libpq rather than\n"
+                "    dropped, so a typo fails here instead of quietly disabling a\n"
+                "    security setting such as channel_binding."
+            )
+
     # Pooled vs direct matters on serverless.
     dsn = os.environ.get("DATABASE_URL", "")
     if "-pooler" not in dsn and "pgbouncer" not in dsn:
@@ -281,16 +323,61 @@ def check_admin():
         warn(f"Could not verify staff users: {type(exc).__name__}: {exc}")
 
 
+def _probe_postgres_driver():
+    """Return an error string if the Postgres driver cannot be imported.
+
+    Django loads the database backend while populating the app registry, so an
+    unimportable driver makes `django.setup()` itself raise and every later
+    check becomes unreachable. That is how the Vercel build died: psycopg-binary
+    was installed, but its compiled `pq` extension did not match the
+    interpreter's ABI ("ImportError: no pq wrapper available").
+
+    Probed before django.setup() so the failure is reported as a diagnosis
+    rather than a traceback that ends inside importlib.
+    """
+    if "DATABASE_URL" not in os.environ:
+        return None
+    # Read the raw value so this works before Django/decouple are involved.
+    dsn = os.environ.get("DATABASE_URL", "")
+    if dsn.split("://", 1)[0].split(":", 1)[0] not in ("postgres", "postgresql"):
+        return None
+    try:
+        import psycopg  # noqa: F401
+        from psycopg.conninfo import conninfo_to_dict  # noqa: F401
+    except Exception as exc:
+        return str(exc)
+    return None
+
+
 def main():
     import django
 
+    driver_error = _probe_postgres_driver()
+
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "home_improvement.settings")
-    # Production-shaped: DEBUG comes from the environment/.env, not forced.
-    django.setup()
+    if driver_error is None:
+        # Production-shaped: DEBUG comes from the environment/.env, not forced.
+        django.setup()
 
     print("=" * 68)
     print("  DEPLOY PREFLIGHT")
     print("=" * 68)
+
+    if driver_error is not None:
+        # Skip straight to the report: nothing else can run without the app
+        # registry, and Django's own message does not say why.
+        fail(f"The Postgres driver cannot be imported: {driver_error}")
+        print()
+        print("  psycopg-binary ships a prebuilt libpq, but it must match the")
+        print("  interpreter's ABI. On a build host this usually means the")
+        print("  interpreter that installed requirements is not the one running")
+        print("  the build: pin the Python version in the host's project")
+        print("  settings to match .python-version, or install libpq via the")
+        print("  system package (apt-get install libpq-dev).")
+        print()
+        print("=" * 68)
+        print(f"  {len(FAILURES)} blocking issue(s). Do not deploy.")
+        return 1
 
     for check in (
         check_secret_key,

@@ -565,11 +565,81 @@ class DatabaseUrlParsingTests(SimpleTestCase):
         self.assertEqual(db["OPTIONS"]["application_name"], "rlecd")
         self.assertEqual(db["OPTIONS"]["target_session_attrs"], "read-write")
 
-    def test_typo_in_parameter_raises_instead_of_being_dropped(self):
-        from psycopg import ProgrammingError
+    def test_unknown_parameter_is_forwarded_not_dropped(self):
+        """Nothing is filtered, so a typo cannot silently disable a setting.
 
-        with self.assertRaises(ProgrammingError):
-            self.parse("postgresql://u:pw@host/db?totally_bogus=1")
+        Parsing no longer raises on an unknown keyword: settings.py must import
+        without psycopg so the Vercel build can run `collectstatic`, which
+        never connects. The parameter is still passed through verbatim, and
+        libpq rejects an unrecognised one at connect time -- so a typo is a
+        loud connection error, never a quietly absent security setting.
+        """
+        db = self.parse("postgresql://u:pw@host/db?totally_bogus=1")
+        self.assertEqual(db["OPTIONS"]["totally_bogus"], "1")
+
+    def test_blank_parameter_is_kept_not_dropped(self):
+        # keep_blank_values: `?sslmode=` must be visible, not silently absent.
+        db = self.parse("postgresql://u:pw@host/db?sslmode=")
+        self.assertIn("sslmode", db["OPTIONS"])
+        self.assertEqual(db["OPTIONS"]["sslmode"], "")
+
+    def test_repeated_parameter_takes_the_last_value(self):
+        db = self.parse("postgresql://u:pw@host/db?sslmode=disable&sslmode=require")
+        self.assertEqual(db["OPTIONS"]["sslmode"], "require")
+
+    def test_invalid_port_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.parse("postgresql://u:pw@host:notaport/db")
+
+    def test_matches_libpq_conninfo_to_dict(self):
+        """Parity with psycopg's own parser.
+
+        The pure-Python parser replaced psycopg.conninfo so the build does not
+        need a libpq wheel. This pins its output to libpq's, so the two cannot
+        drift. Skipped only where psycopg itself is unavailable -- which is the
+        condition that made the build fail in the first place.
+        """
+        try:
+            from psycopg.conninfo import conninfo_to_dict
+        except Exception as exc:  # pragma: no cover - environment dependent
+            self.skipTest(f"libpq unavailable: {exc}")
+
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+        urls = [
+            "postgresql://u:pw@host/db",
+            "postgresql://u:pw@host:5432/db",
+            "postgresql://u:p%40ss%3Aword@host:5432/db",
+            "postgresql://u:pw@host/db?sslmode=require&channel_binding=require",
+            "postgresql://u:pw@host/db?application_name=rlecd&connect_timeout=5",
+            "postgresql://neondb_owner:secret@ep-abc-123-pooler.us-east-2.aws.neon.tech"
+            "/neondb?sslmode=require&channel_binding=require",
+            "postgresql://u:pw@host:5432/db?conn_max_age=120",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                # Reference: hand libpq the URL minus the Django-only knob.
+                parsed = urlparse(url)
+                query = parse_qs(parsed.query)
+                query.pop("conn_max_age", None)
+                reference = conninfo_to_dict(
+                    urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+                )
+                reference.pop("connect_timeout", None)
+
+                mine = self.parse(url)
+                for field, key in (
+                    ("NAME", "dbname"), ("USER", "user"),
+                    ("PASSWORD", "password"), ("HOST", "host"),
+                ):
+                    self.assertEqual(mine[field], reference.get(key, ""), field)
+                self.assertEqual(mine["PORT"], str(reference.get("port", "") or ""), "PORT")
+                # OPTIONS is everything except the identifier keys, plus the
+                # connect_timeout default this settings module adds.
+                for key, value in reference.items():
+                    if key in ("dbname", "user", "password", "host", "port"):
+                        continue
+                    self.assertEqual(mine["OPTIONS"].get(key), value, key)
 
     def test_unknown_scheme_is_rejected(self):
         with self.assertRaises(ValueError):

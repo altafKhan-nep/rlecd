@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
-from urllib.parse import urlparse, parse_qs, unquote, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qs, unquote
 from decouple import config
 
 # Repository layout:
@@ -291,16 +291,19 @@ DATABASE_URL = config('DATABASE_URL', default='')
 def _postgres_from_url(url):
     """Build a postgres DATABASES entry from a connection URI.
 
-    The query string is handed to libpq's own parser (psycopg.conninfo)
-    rather than being decoded here. An earlier hand-rolled allowlist silently
-    dropped any parameter it did not recognise -- including
-    `channel_binding=require`, which is exactly the kind of security setting
-    that must not disappear without a word. Delegating means every parameter
-    libpq understands is honoured, and a typo'd one raises at import time
-    instead of quietly falling back to an insecure default.
-    """
-    from psycopg.conninfo import conninfo_to_dict
+    The query string is split with urllib only, deliberately without importing
+    psycopg. Settings are imported by `collectstatic` during the Vercel build,
+    which never opens a database connection, yet importing a C extension purely
+    to split a query string made the whole build depend on a libpq wheel that
+    the build image could not load ("ImportError: no pq wrapper available").
 
+    Every parameter is forwarded to libpq unchanged. An earlier hand-rolled
+    allowlist silently dropped anything it did not recognise --
+    `channel_binding=require`, which is exactly the kind of security setting
+    that must not disappear without a word. Unknown options are still caught,
+    just not at import time: libpq rejects them when connecting, and
+    scripts/preflight.py reports them by name before a deploy.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ('postgres', 'postgresql', 'psql', 'pgsql'):
         raise ValueError(
@@ -308,18 +311,34 @@ def _postgres_from_url(url):
             "postgres:// or postgresql://"
         )
 
-    query = parse_qs(parsed.query)
+    query = parse_qs(parsed.query, keep_blank_values=True)
     # conn_max_age is a Django-level pooling knob, not a libpq option, so it
-    # must be removed before libpq validates the URI. It is the one parameter
-    # this project accepts beyond the libpq set.
+    # must be removed before the rest are handed to libpq. It is the one
+    # parameter this project accepts beyond the libpq set.
     conn_max_age = int(query.get('conn_max_age', ['60'])[0])
     libpq_query = {k: v for k, v in query.items() if k != 'conn_max_age'}
-    libpq_url = urlunparse(parsed._replace(query=urlencode(libpq_query, doseq=True)))
 
-    # libpq validates the URI, expands the percent-encoded password and
-    # returns every connection keyword it recognises, including sslmode,
-    # channel_binding, connect_timeout and any provider-specific extras.
-    params = conninfo_to_dict(libpq_url)
+    # Mirrors psycopg.conninfo.conninfo_to_dict, including percent-decoding of
+    # the userinfo component, and keeps blank values so `?sslmode=` stays
+    # visible instead of silently becoming absent.
+    params = {}
+    if parsed.username is not None:
+        params['user'] = unquote(parsed.username)
+    if parsed.password is not None:
+        params['password'] = unquote(parsed.password)
+    params['host'] = parsed.hostname or ''
+    try:
+        params['port'] = str(parsed.port) if parsed.port else ''
+    except ValueError:
+        raise ValueError(
+            f"DATABASE_URL has an invalid port in {parsed.netloc!r}"
+        ) from None
+    dbname = unquote(parsed.path.lstrip('/'))
+    if dbname:
+        params['dbname'] = dbname
+    for key, values in libpq_query.items():
+        # libpq honours the last occurrence of a repeated keyword.
+        params[key] = values[-1]
 
     options = {
         key: value
