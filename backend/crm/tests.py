@@ -458,7 +458,7 @@ class AdminLoginPageTests(TestCase):
 
 
 class DeploymentSettingsTests(TestCase):
-    """Guards the serverless deployment configuration.
+    """Guards the container deployment configuration.
 
     These settings only matter once deployed, so a regression here would not
     surface in local testing. Each one caused a real, hard-to-diagnose failure.
@@ -523,7 +523,7 @@ class DeploymentSettingsTests(TestCase):
             )
 
     def test_email_timeout_is_bounded(self):
-        # An unbounded SMTP connect would hold a serverless invocation open
+        # An unbounded SMTP connect would hold a request threadon open
         # until the platform kills it.
         self.assertIsNotNone(getattr(settings, "EMAIL_TIMEOUT", None))
         self.assertLessEqual(settings.EMAIL_TIMEOUT, 30)
@@ -570,7 +570,7 @@ class DatabaseUrlParsingTests(SimpleTestCase):
         """Nothing is filtered, so a typo cannot silently disable a setting.
 
         Parsing no longer raises on an unknown keyword: settings.py must import
-        without psycopg so the Vercel build can run `collectstatic`, which
+        without psycopg so the build can run `collectstatic`, which
         never connects. The parameter is still passed through verbatim, and
         libpq rejects an unrecognised one at connect time -- so a typo is a
         loud connection error, never a quietly absent security setting.
@@ -740,7 +740,7 @@ class EnvVarToleranceTests(SimpleTestCase):
     A deployment dashboard keeps a key whose value field was left empty as an
     empty string rather than dropping it. `config(..., cast=int)` on such a
     value raised `ValueError: invalid literal for int() with base 10: ''` while
-    the settings module was still being imported, which failed the Vercel build
+    the settings module was still being imported, which failed the build
     with a traceback naming neither the variable nor the fix.
 
     These run settings import in a subprocess against an injected repository so
@@ -912,17 +912,16 @@ print(json.dumps({{k: getattr(settings, k) for k in keys}}))
                 self.load({**self.MINIMAL, **env}, expect_error=needle)
 
 
-class VercelHostTests(SimpleTestCase):
-    """Vercel generates hostnames, so ALLOWED_HOSTS must not be an exact list."""
+class RenderHostTests(SimpleTestCase):
+    """Render generates hostnames, so ALLOWED_HOSTS must not be an exact list."""
 
     def _load(self, **overrides):
         mod = importlib.import_module("home_improvement.settings")
         env = {
-            "VERCEL": "1",
-            "VERCEL_ENV": "production",
+            "RENDER": "1",
             "DEBUG": "False",
             "ALLOWED_HOSTS": "",
-            "SITE_URL": "https://rlecd.com",
+            "SITE_URL": "",
         }
         env.update(overrides)
         with mock.patch.dict(os.environ, env, clear=False):
@@ -930,25 +929,27 @@ class VercelHostTests(SimpleTestCase):
             self.addCleanup(importlib.reload, mod)
             return mod
 
-    def test_blank_allowed_hosts_still_serves_generated_vercel_hostname(self):
-        """A blank value must not 400 every Vercel request."""
+    def test_blank_allowed_hosts_still_serves_generated_render_hostname(self):
+        """A blank value must not 400 every Render request."""
         mod = self._load()
-        self.assertIn(".vercel.app", mod.ALLOWED_HOSTS)
-        self.assertNotIn(".vercel.app", mod.CSRF_TRUSTED_ORIGINS)
+        self.assertIn(".onrender.com", mod.ALLOWED_HOSTS)
+        self.assertNotIn(".onrender.com", mod.CSRF_TRUSTED_ORIGINS)
 
     def test_custom_domain_is_preserved_alongside_platform_host(self):
-        mod = self._load(ALLOWED_HOSTS="rlecd.com,www.rlecd.com")
+        mod = self._load(ALLOWED_HOSTS="example.com,www.example.com")
         self.assertEqual(
-            [h for h in mod.ALLOWED_HOSTS if h != ".vercel.app"],
-            ["rlecd.com", "www.rlecd.com"],
+            [h for h in mod.ALLOWED_HOSTS if h != ".onrender.com"],
+            ["example.com", "www.example.com"],
         )
 
-    def test_platform_host_not_added_off_vercel(self):
+    def test_platform_host_not_added_off_render(self):
+        """Local dev and any non-Render host must not inherit the platform
+        suffix, so a typo'd host still fails loudly in development."""
         mod = importlib.import_module("home_improvement.settings")
         with mock.patch.dict(os.environ, {"ALLOWED_HOSTS": "example.com"}, clear=True):
             mod = importlib.reload(mod)
             self.addCleanup(importlib.reload, mod)
-            self.assertNotIn(".vercel.app", mod.ALLOWED_HOSTS)
+            self.assertNotIn(".onrender.com", mod.ALLOWED_HOSTS)
 
 
 class NoConfiguredDomainTests(TestCase):
@@ -961,7 +962,7 @@ class NoConfiguredDomainTests(TestCase):
     def _load(self, **overrides):
         mod = importlib.import_module("home_improvement.settings")
         env = {
-            "VERCEL": "1", "VERCEL_ENV": "production", "DEBUG": "False",
+            "RENDER": "1", "DEBUG": "False",
             "ALLOWED_HOSTS": "", "SITE_URL": "", "CSRF_TRUSTED_ORIGINS": "",
         }
         env.update(overrides)
@@ -978,9 +979,8 @@ class NoConfiguredDomainTests(TestCase):
         self.assertNotIn("rlecd.com", str(mod.ALLOWED_HOSTS))
         self.assertNotIn("quantumcoresoftware.com", str(mod.ALLOWED_HOSTS))
 
-    def test_generated_hostnames_allowed_on_both_platforms(self):
-        self.assertIn(".vercel.app", self._load().ALLOWED_HOSTS)
-        self.assertIn(".onrender.com", self._load(VERCEL="", VERCEL_ENV="", RENDER="1").ALLOWED_HOSTS)
+    def test_generated_render_hostname_allowed(self):
+        self.assertIn(".onrender.com", self._load().ALLOWED_HOSTS)
 
     def test_canonical_and_og_follow_the_request_host(self):
         """Tags must point at the address visitors used, not a hardcoded domain."""

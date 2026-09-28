@@ -85,10 +85,10 @@ def check_database():
     engine = settings.DATABASES["default"]["ENGINE"]
 
     if engine.endswith("sqlite3"):
-        deploy = bool(os.environ.get("VERCEL_ENV")) or not settings.DEBUG
+        deploy = bool(os.environ.get("RENDER")) or not settings.DEBUG
         if deploy:
             fail(
-                "Using sqlite. Serverless filesystems are ephemeral, so leads "
+                "Using sqlite. A container filesystem is ephemeral, so leads "
                 "and content edits will disappear when the instance recycles. "
                 "Set DATABASE_URL to a managed Postgres connection string."
             )
@@ -100,7 +100,7 @@ def check_database():
 
     # The driver is a compiled extension, so it can be installed and still fail
     # to load when the wheel does not match the interpreter's ABI. That is not
-    # hypothetical: the Vercel build died with "ImportError: no pq wrapper
+    # hypothetical: an earlier build died with "ImportError: no pq wrapper
     # available" because psycopg-binary's `pq` extension would not import.
     # Django loads the backend while populating the app registry, so every
     # request 500s -- not just the first query. Check it explicitly.
@@ -140,7 +140,8 @@ def check_database():
                 "    security setting such as channel_binding."
             )
 
-    # Pooled vs direct matters on serverless.
+    # Pooled vs direct matters on any host that opens more than a few
+    # concurrent connections, which Render does.
     dsn = os.environ.get("DATABASE_URL", "")
     if "-pooler" not in dsn and "pgbouncer" not in dsn:
         warn(
@@ -236,12 +237,17 @@ def check_csrf():
             fail(f"CSRF_TRUSTED_ORIGINS entry {origin!r} is missing a scheme.")
     ok(f"CSRF_TRUSTED_ORIGINS: {', '.join(settings.CSRF_TRUSTED_ORIGINS)}")
 
-    vercel_host = os.environ.get("VERCEL_URL", "")
-    if vercel_host and not any(vercel_host in o for o in settings.CSRF_TRUSTED_ORIGINS):
-        warn(
-            f"CSRF_TRUSTED_ORIGINS does not include the current deployment "
-            f"origin ({vercel_host}). If it is not already covered by a "
-            "wildcard parent domain, form POSTs will 403 in production."
+    # Render exposes the service's external hostname as RENDER_EXTERNAL_URL.
+    # CSRF_TRUSTED_ORIGINS is only needed for a cross-origin deployment; the
+    # generated *.onrender.com hostname is same-origin, so this is informational.
+    render_host = os.environ.get("RENDER_EXTERNAL_URL", "").removeprefix("https://")
+    if render_host and not any(
+        render_host in o for o in settings.CSRF_TRUSTED_ORIGINS
+    ):
+        ok(
+            f"Serving on {render_host}, which is same-origin, so it does not "
+            "need an entry in CSRF_TRUSTED_ORIGINS. Add one only if you attach "
+            "a custom domain and post to this host from that domain."
         )
 
 
@@ -264,7 +270,7 @@ def check_email():
     if not settings.ADMIN_EMAIL or not all(settings.ADMIN_EMAIL):
         fail("ADMIN_EMAIL is empty; lead notifications have no recipient.")
 
-    # Unbounded SMTP would hold a serverless invocation open until it is killed.
+    # Unbounded SMTP would hold a request thread open until it is killed.
     if not getattr(settings, "EMAIL_TIMEOUT", None):
         warn("EMAIL_TIMEOUT is unset; a hung SMTP connection could block until timeout.")
 
@@ -297,7 +303,7 @@ def check_static():
     if mb > 100:
         fail(f"Static bundle is {mb:.1f} MB, which will likely exceed the function size limit.")
     elif mb > 40:
-        warn(f"Static bundle is {mb:.1f} MB. Large for a serverless bundle; consider optimising images.")
+        warn(f"Static bundle is {mb:.1f} MB. Large for a single container; consider optimising images.")
 
     # The single worst offender, named explicitly because it is not obvious.
     big = [
@@ -328,7 +334,7 @@ def _probe_postgres_driver():
 
     Django loads the database backend while populating the app registry, so an
     unimportable driver makes `django.setup()` itself raise and every later
-    check becomes unreachable. That is how the Vercel build died: psycopg-binary
+    check becomes unreachable. That is how an earlier build died: psycopg-binary
     was installed, but its compiled `pq` extension did not match the
     interpreter's ABI ("ImportError: no pq wrapper available").
 

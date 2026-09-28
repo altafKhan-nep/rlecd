@@ -104,10 +104,9 @@ DEBUG = _bool_env('DEBUG', False)
 
 # Hostnames this site answers to.
 #
-# No domain is required to deploy. The platform assigns a hostname that
-# nobody can predict ahead of time (Vercel mints one per deployment and per
-# preview; Render assigns one per service), so a first deploy works on the
-# platform subdomain alone and a real domain can be attached later.
+# No domain is required to deploy. Render assigns a hostname nobody can
+# predict ahead of time, so a first deploy works on the *.onrender.com
+# subdomain alone and a real domain can be attached later.
 _ALLOWED_HOSTS_DEFAULT = 'localhost,127.0.0.1,[::1]'
 ALLOWED_HOSTS = _blank_to_default(
     'ALLOWED_HOSTS',
@@ -122,12 +121,9 @@ if not ALLOWED_HOSTS:
     )
 
 # Django reads a leading dot as "this domain and all subdomains", which covers
-# every hostname these platforms generate. Kept platform-scoped rather than
-# a blanket wildcard because ALLOWED_HOSTS is also the host-header trust
+# every hostname Render generates. Kept platform-scoped rather than a
+# blanket wildcard because ALLOWED_HOSTS is also the host-header trust
 # boundary; a custom domain still has to be listed explicitly.
-if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
-    if '.vercel.app' not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append('.vercel.app')
 if os.environ.get('RENDER'):
     if '.onrender.com' not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append('.onrender.com')
@@ -229,7 +225,7 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # HSTS (HTTP Strict Transport Security)
 # HSTS is host-scoped and preload is submitted per registrable domain, so
 # these are configurable rather than hardcoded: a deployment served from a
-# shared platform hostname (e.g. *.vercel.app) must not inherit a one-year
+# shared platform hostname (e.g. *.onrender.com) must not inherit a one-year
 # include-subdomains policy or be submitted to the preload list, because that
 # would affect every other site sharing that platform's parent domain.
 SECURE_HSTS_SECONDS = _int_env('SECURE_HSTS_SECONDS', 31536000, minimum=0)
@@ -314,7 +310,7 @@ WSGI_APPLICATION = 'home_improvement.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 # Local development stays on sqlite so `manage.py` works with no setup.
-# Deployment sets DATABASE_URL, because serverless filesystems are ephemeral:
+# Deployment sets DATABASE_URL, because a container filesystems are ephemeral:
 # a db.sqlite3 written inside a function invocation is thrown away when that
 # instance is recycled, so it can never hold real content or leads.
 DATABASE_URL = config('DATABASE_URL', default='')
@@ -324,7 +320,7 @@ def _postgres_from_url(url):
     """Build a postgres DATABASES entry from a connection URI.
 
     The query string is split with urllib only, deliberately without importing
-    psycopg. Settings are imported by `collectstatic` during the Vercel build,
+    psycopg. Settings are imported by `collectstatic` during the build,
     which never opens a database connection, yet importing a C extension purely
     to split a query string made the whole build depend on a libpq wheel that
     the build image could not load ("ImportError: no pq wrapper available").
@@ -451,7 +447,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR,'media')
 MEDIA_URL = '/media/'
 
 # Static files are served by WhiteNoise from inside the app bundle, because a
-# serverless deployment has no persistent filesystem and no separate web
+# container deployment has no persistent filesystem and no separate web
 # server to hand static assets off to. Without it, every CSS/image request 404s.
 #
 # The non-manifest storage backend is deliberate. A manifest backend rewrites
@@ -506,7 +502,7 @@ EMAIL_USE_SSL = _bool_env('EMAIL_USE_SSL', False)
 EMAIL_HOST_USER = _blank_to_default('EMAIL_HOST_USER', '', lambda v: v)
 EMAIL_HOST_PASSWORD = _blank_to_default('EMAIL_HOST_PASSWORD', '', lambda v: v)
 
-# Bound how long a send may block. A serverless request has a hard wall-clock
+# Bound how long a send may block. A containerised request has a hard wall-clock
 # limit, and a hung SMTP connection would otherwise hold the invocation open
 # until it is killed. Failures are already caught in crm.services, so an
 # early timeout degrades to "no notification" instead of a dead request.
@@ -521,16 +517,14 @@ ADMIN_EMAIL = [
     if addr.strip()
 ]
 
-# Refuse to serve with DEBUG on in a real Vercel environment. Debug mode
-# renders detailed tracebacks containing settings and environment values, and
-# it changes how static files are served, so a single mis-set variable in
-# deployment would expose the configuration. VERCEL_ENV is 'development' for
-# `vercel dev` and 'preview'/'production' for deployed builds.
-VERCEL_ENV = os.environ.get('VERCEL_ENV', '')
-
-if DEBUG and VERCEL_ENV in ('preview', 'production'):
+# Refuse to serve with DEBUG on a real Render service. Debug mode renders
+# detailed tracebacks containing settings and environment values, and it
+# changes how static files are served, so a single mis-set variable in
+# deployment would expose the configuration. Render sets RENDER=1 on every
+# deployed service and leaves it unset in local development.
+if DEBUG and os.environ.get('RENDER'):
     raise RuntimeError(
-        f'DEBUG is True but VERCEL_ENV={VERCEL_ENV!r}. Debug mode must never '
-        'be enabled on a deployed build; it renders settings and environment '
-        'values in error pages. Unset DEBUG and redeploy.'
+        'DEBUG is True but RENDER is set. Debug mode must never be enabled '
+        'on a deployed service; it renders settings and environment values in '
+        'error pages. Unset DEBUG and redeploy.'
     )

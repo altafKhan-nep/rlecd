@@ -1,163 +1,129 @@
-# Deploying to Vercel
+# Deploying to Render + Neon
 
-## What changed and why
+Render runs the app in a container. Neon holds the Postgres database. Nothing
+else is required, and no domain name has to be bought to start.
 
-Serverless has no persistent filesystem and no long-lived process, so two
-things that work locally cannot work in production:
+## How the pieces fit
 
-| Local assumption | Deployment reality | Fix |
+| Concern | Local | Production |
 | --- | --- | --- |
-| `db.sqlite3` on disk | filesystem is wiped when an instance recycles | `DATABASE_URL` → managed Postgres |
-| Django's static serving | no web server to hand assets to | WhiteNoise serves `/static` from the bundle |
+| Database | `backend/db.sqlite3` | Neon, via `DATABASE_URL` |
+| Static files | Django's staticfiles app | WhiteNoise, pre-compressed by Brotli |
+| Web server | `runserver` | Gunicorn, 2 workers |
+| Hostname | `localhost` | `*.onrender.com`, auto-allowed |
 
-Local development is unchanged: with `DATABASE_URL` unset, settings falls back
-to `backend/db.sqlite3`, so `backend/manage.py` and the full test suite still
-work untouched.
+With `DATABASE_URL` unset, `settings.py` falls back to SQLite, so
+`backend/manage.py` and the full test suite still work with no configuration.
 
-## Files added
+## Files that matter for deploys
 
-- `vercel.json` — build command, routing, Python version
-- `api/index.py` — WSGI entrypoint the Vercel runtime imports
-- `.python-version` — pins CPython 3.12
-- `.env.example` — every variable a deployed build needs
-
-`requirements.txt` gained `psycopg[binary]`, `whitenoise` and `Brotli`.
+- `render.yaml` — blueprint: build command, start command, env vars, health check
+- `.python-version` — pins CPython 3.12, and must match `PYTHON_VERSION` in the
+  service environment
+- `scripts/check_python_version.py` — runs first in the build and fails loudly
+  if the interpreter disagrees with the pin
+- `scripts/preflight.py` — checks the database driver, env vars and security
+  settings before a deploy
+- `.env.example` — every variable a deployed build can use
 
 ## Steps
 
 ### 1. Provision Postgres on Neon
 
-Vercel's Postgres integration is Neon under the hood, and the Neon dashboard
-links directly from Vercel's Storage tab. Either route works.
+Create a Neon project and copy the pooled connection string. Use the **pooled**
+host, not the direct one: Render opens more connections than a single Postgres
+accepts, and the pooler is what keeps that from exhausting the limit.
 
-1. Create a Neon project (region nearest to your Vercel function region).
-2. Neon creates a `neondb` database and default branch automatically.
-3. Copy the **pooled** connection string from the dashboard:
+The string looks like:
 
 ```
 postgresql://USER:PASSWORD@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require
 ```
 
-**Use the pooled string, not the direct one.** The pooled hostname contains
-`-pooler` and routes through PgBouncer. Serverless cold starts produce bursts
-of simultaneous connections, and a direct connection will hit Neon's
-`max_connections` limit and start returning `too many connections`. The
-pooler absorbs the burst.
+### 2. Create the Render service
 
-`sslmode=require` is already handled — the parser passes it through to libpq.
-A Neon password can contain `@`, `:` and `/`, which are URL-encoded in the
-dashboard string; the parser decodes them, so paste the string verbatim.
+Two routes, both end up at the same configuration.
 
-#### Neon specifics worth knowing
+**Blueprint (recommended).** Render reads `render.yaml` from the repository root
+and creates the service with every variable already set, including
+`PYTHON_VERSION`. In the dashboard choose *New → Blueprint* and point it at the
+repo. Only `DATABASE_URL` needs a value from you; `SECRET_KEY` is generated.
 
-- **Auto-suspend.** The free tier suspends idle compute after ~5 minutes. The
-  first query afterwards takes noticeably longer while the instance resumes.
-  Expect a slow first request rather than an error.
-- **Branch previews.** Neon branches give you an isolated database. Point a
-  Vercel preview deployment at a Neon preview branch to keep preview traffic
-  off production leads; otherwise previews share production data.
-- **Pools vs pooled.** Neon also offers "Pooled" (PgBouncer) and
-  "Session"/`-pooler` connection modes. For this app take **Pooled**.
-  `CONN_MAX_AGE` is set to 60s, which is safe with PgBouncer in transaction
-  mode.
-- **No `psycopg` serverless driver needed.** Neon's HTTP/WebSocket driver is
-  for the Node runtime. Python over TCP with `psycopg[binary]` against the
-  pooled string is the correct setup here.
+**Manual.** Create a Web Service and paste these:
 
-### 2. Set environment variables
+- Build command:
+  ```
+  python scripts/check_python_version.py && pip install -r requirements.txt && python backend/manage.py collectstatic --noinput
+  ```
+- Start command:
+  ```
+  python backend/manage.py migrate --noinput && gunicorn home_improvement.wsgi:application --chdir backend --workers 2 --timeout 120
+  ```
+- Environment: `PYTHON_VERSION=3.12.14`, `DEBUG=False`, and the `DATABASE_URL`
+  from step 1.
 
-Add everything from `.env.example` under Project Settings → Environment
-Variables, marking the secrets Sensitive. Three of them are load-bearing and
-fail in confusing ways if missed:
+Migrations run in the start command, not the build. That is deliberate: a
+database problem should fail the deploy with a readable log, not surface as a
+traceback during a build that never needed the database.
 
-- `DATABASE_URL` — without it the deployment silently runs on a per-instance
-  sqlite file, so leads and content edits appear to save and then vanish.
-- `ALLOWED_HOSTS` — without the Vercel hostname, every request is a 400.
-- `CSRF_TRUSTED_ORIGINS` — without it, pages render fine and every form POST
-  fails 403. This is the most misleading failure mode, because the site looks
-  completely healthy.
+### 3. Seed the content
 
-### 3. First deploy
-
-```
-vercel --prod
-```
-
-The build runs `collectstatic`. Migrations are deliberately **not** automatic
-(`RUN_MIGRATIONS_ON_BUILD` defaults off) so a branch preview cannot migrate the
-production database. Bootstrap once, from a machine that can reach the DB:
+On first deploy the site falls back to the captured static templates, so it is
+never blank. To move the editable content into the database:
 
 ```bash
-DATABASE_URL='postgresql://...' python backend/manage.py migrate
-```
-
-### 4. Seed content
-
-The production database starts empty — it does not inherit local sqlite data.
-Seed it explicitly:
-
-```bash
-DATABASE_URL='postgresql://...' python backend/manage.py seed_services
 DATABASE_URL='postgresql://...' python backend/manage.py capture_content
+```
+
+This imports 19 pages, 58 sections and 15 services. It is idempotent — re-running
+it refreshes imported rows without touching anything edited in the admin. **Do
+not pass `--reset`**, which deletes existing rows first.
+
+### 4. Create the first admin user
+
+```bash
 DATABASE_URL='postgresql://...' python backend/manage.py createsuperuser
 ```
 
-`capture_content` is safe to re-run and is how the 19 mirrored pages populate
-production. Note it reconciles changed chunks, so re-running it after live
-edits will overwrite them; use `--reset` only to restore the captured baseline.
+Sign in at `/admin/`. See the CRM/CMS dashboard there.
 
-### 5. Create an admin account
+## Verifying the database is really attached
 
-Local credentials do not carry over. The `admin` user exists only in the local
-sqlite file.
+The failure this guards against is silent: without `DATABASE_URL`, a deploy
+still boots, still serves all 19 pages (from the template fallback), and the
+admin login works — against a SQLite file that is destroyed on the next
+recycle. Content edits then vanish.
 
-## Operating notes
+Check which database a request is actually using:
 
-**Static payload is the main risk.** `frontend/static` is ~56MB, dominated by a
-single 14MB `bathroom-hero-bg.jpg` used as a `center/cover` background on
-`/bathroom-remodeling/`. WhiteNoise's Brotli precompression does not help,
-because JPEG is already compressed. This inflates the function bundle and
-slows that one page. Re-encoding that background at a sane resolution and
-quality would cut it to a few hundred KB with no visible change.
+```bash
+curl -s https://YOUR-SERVICE.onrender.com/admin/login/ > /dev/null
+```
 
-**Migrations.** `RUN_MIGRATIONS_ON_BUILD=true` applies them on every
-production build, which is convenient but means each deploy needs DB write
-access. Leaving it off and migrating explicitly gives you a place to see
-failures.
+Then confirm the environment variable is set on the service and that
+`settings.py` parsed it. `scripts/preflight.py` reports the engine and host it
+resolved, and fails if it lands on SQLite in a non-debug environment:
 
-**Email.** The console backend is for local use only. In production a real SMTP
-backend is required, and note that `crm.services` catches send failures and
-logs them rather than surfacing them to the visitor — a broken SMTP config
-will not show up as an error on the lead form, it will show up as missing
-notifications. Check the function logs.
+```bash
+DATABASE_URL='postgresql://...' RENDER=1 DEBUG=False python scripts/preflight.py
+```
 
-**Timeouts.** `maxDuration` is 30s. Lead capture writes two rows and sends up
-to two emails, so there is a wide margin, but a cold start plus a slow SMTP
-connection is the realistic worst case.
+## Two things the free tier will not tell you
 
-**Preview deployments** share the same database unless a separate
-`DATABASE_URL` is scoped to them, so a preview build can write to production
-leads. Scope a separate database if that matters.
+**The service sleeps.** Free Render instances idle out after roughly 15 minutes
+and take 30-60 seconds to wake on the first request. Fine for a site that gets
+occasional visitors, noticeable for one you are editing all day.
 
-## Deploying to Render instead
+**Uploads are lost on deploy.** The free tier has no persistent disk, so
+anything written to `MEDIA_ROOT` — which includes the admin's image uploads —
+disappears at the next deploy. The media add screen warns about this. A
+persistent disk on a paid instance fixes it; Neon object storage is the
+alternative if you want to stay on the free tier.
 
-Vercel's Hobby plan is not licensed for commercial use, so if this site is
-being deployed for the business you need Vercel Pro or a different host.
-Render is the straightforward alternative: a real WSGI process, no bundle size
-ceiling, and the same `DATABASE_URL` contract.
+## Custom domain
 
-- **Build command:** `python backend/manage.py collectstatic --noinput`
-- **Start command:** `gunicorn home_improvement.wsgi:application --chdir backend`
-- **Root directory:** repository root (leave the default)
-
-`--chdir backend` is what puts the apps on `sys.path`; without it Gunicorn
-cannot import `home_improvement`. Verified locally: `/`, `/admin/login/`,
-`/contact/`, `/cabinets/` and `/static/*` all serve 200 under this command.
-
-Two differences from Vercel worth knowing:
-
-* The free tier spins down after inactivity, so the first request after a
-  quiet period is slow (cold start, not an error).
-* `collectstatic` output is served by WhiteNoise from `STATIC_ROOT` exactly as
-  on Vercel, so `DEBUG=False` still matters — with `DEBUG=True` Django does not
-  apply the compressed storage backend.
+Optional, and skippable. Attach one under *Settings → Custom Domains*. The
+generated `*.onrender.com` hostname keeps working throughout, so this can wait
+until there is a domain worth branding. Once attached, set `ALLOWED_HOSTS` to
+the new hostname. `SITE_URL` and `CSRF_TRUSTED_ORIGINS` stay unset until the
+site posts cross-origin, which it does not.

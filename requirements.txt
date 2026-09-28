@@ -7,15 +7,14 @@ typing_extensions==4.15.0
 
 # Deployment-only. Both are safe to import locally:
 #   - psycopg  : Postgres driver, used whenever DATABASE_URL is set.
-#                The [binary] extra ships prebuilt wheels, so Vercel needs no
-#                libpq build toolchain.
-#   - whitenoise: serves /static from the app bundle, since a serverless
-#                function has no separate web server for static assets.
+#                The [binary] extra ships prebuilt wheels, so no libpq build
+#                toolchain is needed on the host.
+#   - whitenoise: serves /static from the app process, so a single Gunicorn
+#                container can hand out static assets itself.
 psycopg[binary]==3.3.6
 whitenoise==6.12.0
 
-# WSGI server for hosts that run a real process (Render, Railway, a VPS).
-# Not used by Vercel, which imports api/index.py directly.
+# WSGI server for the host that actually runs this: Render.
 gunicorn==26.2.0
 
 # Enables Brotli pre-compression of static assets. WhiteNoise detects it

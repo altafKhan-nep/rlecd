@@ -1,19 +1,19 @@
 """Fail fast when the running interpreter does not match .python-version.
 
-Vercel resolves and installs dependencies with its own interpreter, then runs
-the build command with the one the project pins. When those disagree, pip
-installs a wheel for one ABI and Python tries to load it under another. The
-symptom is a wall of unrelated-looking errors from whichever compiled
-dependency happens to be imported first:
+Render installs dependencies with the interpreter named by the service's
+PYTHON_VERSION environment variable, then runs the build command with the
+project's pinned version. When those disagree, pip installs a wheel for one
+ABI and Python loads it under another. The symptom is a wall of
+unrelated-looking errors from whichever compiled dependency is imported first:
 
     ImportError: no pq wrapper available.
     - couldn't import psycopg 'c' implementation: No module named 'psycopg_c'
     - couldn't import psycopg 'binary' implementation: cannot import name
       'pq' from 'psycopg_binary'
 
-That names a Postgres driver, not a Python version mismatch, and cost several
-build cycles to trace back to its cause. This check runs first in the build
-command and names the actual problem.
+That names a Postgres driver, not a Python version mismatch, which is exactly
+why the mismatch is so expensive to diagnose. This check runs first in the
+build command and names the actual problem instead.
 
 Only the major.minor pair is compared. A differing patch release is fine --
 the ABI tag that matters is the minor version -- and pinning a patch here
@@ -53,10 +53,11 @@ def main():
     print("  running this build, so compiled wheels do not match. Compiled")
     print("  dependencies here: psycopg-binary (Postgres driver) and Brotli.")
     print("", file=sys.stderr)
-    print("  On Vercel: Project -> Settings -> Python -> Version, set it to",
+    print("  On Render: open the service, go to Environment, and set", file=sys.stderr)
+    print(f"  PYTHON_VERSION={want} to match .python-version, then redeploy.",
           file=sys.stderr)
-    print(f"  {want} to match .python-version, then redeploy. The install step", file=sys.stderr)
-    print("  uses the project's configured version, not this file.", file=sys.stderr)
+    print("  render.yaml already sets this, so a service created from the", file=sys.stderr)
+    print("  blueprint needs no change -- a hand-created service does.", file=sys.stderr)
     print("", file=sys.stderr)
     return 1
 

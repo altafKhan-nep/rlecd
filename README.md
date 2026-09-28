@@ -16,7 +16,7 @@ This application serves as the digital storefront for **Integrity Home Improveme
 *   **Backend:** Python 3.12 / Django
 *   **Frontend:** Server-rendered Django templates / Bootstrap 5 / JavaScript (Vanilla + GSAP for animations)
 *   **Database:** SQLite (Development) / PostgreSQL via Neon (Production)
-*   **Deployment:** Vercel (serverless WSGI + WhiteNoise) / Render (Gunicorn)
+*   **Deployment:** Render (Gunicorn + WhiteNoise)
 
 ## 📂 Repository Structure
 

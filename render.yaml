@@ -1,14 +1,10 @@
 # Render blueprint for the RLECD site.
 #
-# Why not Vercel: psycopg-binary ships a prebuilt libpq as a compiled C
-# extension. Vercel's Python builder does not carry .so files into the
-# package directory it executes from, so `import psycopg` fails there with
-# "no pq wrapper available" even though the correct cp312 manylinux x86_64
-# wheel is installed. Django loads the database backend while populating the
-# app registry, so the first command that touches the database -- migrate, or
-# any request -- dies. No repository-side change can work around a builder
-# that drops the extension. Render runs a normal Linux image with standard
-# pip, where the same wheel imports fine.
+# Render is the only deploy target. It runs a normal Linux image with standard
+# pip and a real WSGI process, so the compiled psycopg-binary wheel installs and
+# imports cleanly. Render also sets RENDER=1, which is what settings.py and
+# scripts/preflight.py key off to allow the generated *.onrender.com hostname and
+# to refuse DEBUG on a live service.
 services:
   - type: web
     name: rlecd
@@ -28,12 +24,6 @@ services:
         value: "3.12.14"
       - key: DEBUG
         value: "False"
-      # Left false on purpose: Render's build step runs collectstatic only, so
-      # it does not need the database. Migrations happen in startCommand, where
-      # a failing psycopg install surfaces as a deploy failure with a readable
-      # log instead of a traceback during the build.
-      - key: RUN_MIGRATIONS_ON_BUILD
-        value: "false"
       - key: SECRET_KEY
         generateValue: true
       # The only value a deployer has to supply. No domain is required: the
