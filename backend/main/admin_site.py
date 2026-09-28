@@ -10,6 +10,7 @@ from django.contrib.admin import AdminSite
 from django.db.models import Count, Q
 from django.shortcuts import render
 from django.utils import timezone
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 
@@ -114,6 +115,50 @@ def _self_queries(request):
     open_tasks = Task.objects.filter(done=False)
     overdue = open_tasks.filter(due_at__lt=now)
 
+    # Inline SVG rather than an icon font: no extra request, and the stroke
+    # inherits currentColor so one rule colours every icon.
+    ICON = {
+        "leads": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>'
+            '<circle cx="9" cy="7" r="4"/>'
+            '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>'
+        ),
+        "hot": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M12 2s5 5.5 5 10a5 5 0 0 1-10 0c0-1.6.6-3 1.2-4"/>'
+            '<path d="M12 22a7 7 0 0 0 7-7c0-1.3-.2-2.4-.6-3.4"/>'
+            '<path d="M8.5 14.5A3.5 3.5 0 0 0 12 18a3.5 3.5 0 0 0 3.5-3.5"/>'
+            '</svg>'
+        ),
+        "today": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<rect x="3" y="4" width="18" height="18" rx="2"/>'
+            '<path d="M16 2v4M8 2v4M3 10h18"/></svg>'
+        ),
+        "task": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M9 11l3 3L22 4"/>'
+            '<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>'
+            '</svg>'
+        ),
+        "won": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<circle cx="12" cy="8" r="6"/>'
+            '<path d="M15.5 13.5L17 22l-5-3-5 3 1.5-8.5"/></svg>'
+        ),
+    }
+
+    # The SVG literals above contain no interpolation, so marking them safe
+    # cannot smuggle user data into the page. Without this Django escapes
+    # them and each card renders literal "&lt;svg" text.
+    ICON = {name: mark_safe(markup) for name, markup in ICON.items()}
+
     stats = [
         {
             "label": "Open leads",
@@ -122,6 +167,7 @@ def _self_queries(request):
             "url": "admin:crm_lead_changelist",
             "query": "",
             "tone": "",
+            "icon": ICON["leads"],
         },
         {
             "label": "Hot leads",
@@ -130,6 +176,7 @@ def _self_queries(request):
             "url": "admin:crm_lead_changelist",
             "query": "?score__gte=70",
             "tone": "accent",
+            "icon": ICON["hot"],
         },
         {
             "label": "New today",
@@ -138,6 +185,7 @@ def _self_queries(request):
             "url": "admin:crm_lead_changelist",
             "query": "",
             "tone": "",
+            "icon": ICON["today"],
         },
         {
             "label": "Overdue tasks",
@@ -146,6 +194,7 @@ def _self_queries(request):
             "url": "admin:crm_task_changelist",
             "query": "",
             "tone": "accent" if overdue.count() else "muted",
+            "icon": ICON["task"],
         },
         {
             "label": "Won this week",
@@ -156,6 +205,7 @@ def _self_queries(request):
             "url": "admin:crm_lead_changelist",
             "query": "",
             "tone": "",
+            "icon": ICON["won"],
         },
     ]
 

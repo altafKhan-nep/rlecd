@@ -87,6 +87,89 @@ class StudioAdminTests(TestCase):
         self.assertEqual(labels["Overdue tasks"], 0)
         self.assertContains(response, "Dana Ortiz")
 
+    def test_every_stat_card_has_an_icon_and_query_key(self):
+        """The template renders s.icon and s.query unconditionally, so a stat
+        missing either key raises NoReverseMatch/VariableDoesNotExist on the
+        dashboard rather than failing quietly."""
+        response = self.client.get(reverse("admin:index"))
+        stats = response.context["stats"]
+        self.assertEqual(len(stats), 5)
+        for stat in stats:
+            with self.subTest(label=stat["label"]):
+                self.assertIn("icon", stat)
+                self.assertIn("<svg", stat["icon"])
+                self.assertIn("query", stat)
+                self.assertTrue(stat["url"].startswith("admin:"))
+
+    def test_stat_cards_render_icon_and_inner_wrapper(self):
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.context["stats"][0]["label"], "Open leads")
+        self.assertContains(response, 'class="stat-icon"')
+        self.assertContains(response, 'class="stat-inner"')
+
+    def test_score_chips_carry_a_colour_tier(self):
+        """The stylesheet only colours .s-hi/.s-mid/.s-lo, so a chip without a
+        tier class falls back to the untiered rule and every score looks the
+        same. Cover the three boundaries explicitly."""
+        from crm.models import Lead
+
+        Lead.objects.all().delete()
+        for i, score in enumerate((95, 70, 69, 40, 39, 0)):
+            Lead.objects.create(name=f"L{i}", email=f"l{i}@example.com",
+                                score=score)
+        html = self.client.get(reverse("admin:index")).content.decode()
+        self.assertIn("score-chip s-hi", html)
+        self.assertIn("score-chip s-mid", html)
+        self.assertIn("score-chip s-lo", html)
+        # No untiered chip anywhere.
+        self.assertNotIn('class="score-chip"', html)
+
+    def test_score_tier_filter_boundaries(self):
+        from main.templatetags.studio_tags import score_tier
+
+        self.assertEqual(score_tier(100), "s-hi")
+        self.assertEqual(score_tier(70), "s-hi")
+        self.assertEqual(score_tier(69), "s-mid")
+        self.assertEqual(score_tier(40), "s-mid")
+        self.assertEqual(score_tier(39), "s-lo")
+        self.assertEqual(score_tier(0), "s-lo")
+        self.assertEqual(score_tier(None), "s-lo")
+        self.assertEqual(score_tier("nonsense"), "s-lo")
+
+    def test_dashboard_does_not_render_a_stray_default_heading(self):
+        """Django's content_title block emits its own <h1> above the content
+        area. The dashboard has its own greeting, so the inherited heading must
+        be suppressed or the page opens with two competing titles."""
+        response = self.client.get(reverse("admin:index"))
+        self.assertContains(response, 'class="dash-title"')
+        self.assertNotContains(response, "<h1>Pipeline</h1>")
+        self.assertEqual(response.content.decode().count("<h1"), 1)
+
+    def test_stat_icons_are_not_escaped(self):
+        """Regression: the icon SVG is built in Python, so without mark_safe
+        Django escapes it and the dashboard shows literal "&lt;svg" text in
+        every card. One icon is already raw markup in base_site.html, so the
+        count must exceed that baseline."""
+        response = self.client.get(reverse("admin:index"))
+        html = response.content.decode()
+        icon_count = html.count('class="stat-icon"')
+        self.assertEqual(icon_count, 5)
+        self.assertNotIn("&lt;svg", html)
+        self.assertGreaterEqual(html.count("<svg"), icon_count)
+
+    def test_pipeline_stages_have_distinct_colours(self):
+        """Each status is its own pill class, so a six-stage funnel is
+        distinguishable instead of six shades of grey."""
+        from crm.models import Lead
+
+        for status in ("new", "contacted", "qualified", "won", "lost"):
+            Lead.objects.create(name=status, email=f"{status}@example.com",
+                                status=status)
+        response = self.client.get(reverse("admin:index"))
+        for cls in ("pill-new", "pill-contacted", "pill-qualified",
+                    "pill-won", "pill-lost"):
+            self.assertContains(response, cls)
+
     def test_dashboard_brand_line_is_populated(self):
         """Regression: the dashboard rendered its own context dict and skipped
         each_context, so site_header came through empty and the header read as

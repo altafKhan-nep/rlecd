@@ -745,3 +745,323 @@ input:focus, select:focus, textarea:focus {
    sitting in the same funnel as work still in progress. */
 .pipe-row.is-closed { opacity: .62; }
 .pipe-row.is-closed .bar-fill { background: #9fb0a5; }
+
+/* ========================================================================
+   VIBRANT LAYER
+   ---------------------------------------------------------------------
+   The first pass leaned on one accent and a lot of grey, which read as
+   "tidy but flat". This adds a real hue system: each data series and each
+   pipeline stage owns a colour, cards carry a soft tinted glow instead of a
+   grey drop shadow, and the header gets a gradient rather than a flat fill.
+   The brand palette is still the source of every neutral; the new hues are
+   supporting cast, not a replacement.
+   ======================================================================== */
+:root {
+    --v-teal:   #0E8F87;
+    --v-sky:    #2F7BB5;
+    --v-amber:  #C9821B;
+    --v-gold:   #E0A458;
+    --v-violet: #7C5CBF;
+    --v-rose:   #D2547C;
+    --v-mint:   #2E9E6B;
+    --v-clay:   #E27D60;
+
+    /* Per-series fills used by the dashboard stat cards. */
+    --v-series-1: linear-gradient(135deg, #1B3022 0%, #2E5540 100%);
+    --v-series-2: linear-gradient(135deg, #A8352B 0%, #C9483B 100%);
+    --v-series-3: linear-gradient(135deg, #08564F 0%, #0B6E68 100%);
+    --v-series-4: linear-gradient(135deg, #6A3C8C 0%, #8A4FB0 100%);
+    --v-series-5: linear-gradient(135deg, #8A4F0A 0%, #A8620F 100%);
+}
+
+body { background: #F2F4F1; }
+
+/* ------------------------------------------------------------------ header */
+#header {
+    background:
+        radial-gradient(900px 380px at 88% -30%, rgba(226,125,96,.30) 0%, transparent 62%),
+        radial-gradient(700px 320px at 8% 130%, rgba(14,143,135,.28) 0%, transparent 60%),
+        linear-gradient(120deg, #1B3022 0%, #24483A 55%, #2C5A46 100%);
+    box-shadow: 0 10px 30px rgba(27,48,34,.22);
+}
+
+.brand-mark {
+    background: linear-gradient(135deg, var(--v-clay) 0%, #F0997D 100%);
+    box-shadow: 0 6px 18px rgba(226,125,96,.50), inset 0 1px 0 rgba(255,255,255,.35);
+}
+
+.brand-nav {
+    background: #16281D;
+    border-top: 1px solid rgba(255,255,255,.10);
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+}
+
+.brand-tab { color: rgba(255,255,255,.66); }
+.brand-tab:hover { color: #fff; background: rgba(255,255,255,.06); }
+.brand-tab.is-active { color: #fff; border-bottom-color: var(--v-clay); }
+
+.brand-tab .tab-count {
+    background: #C9483B;
+    box-shadow: 0 2px 8px rgba(226,125,96,.55);
+}
+
+/* ------------------------------------------------------------- stat cards */
+/* Each card takes its own gradient. The card is the colour, not a thin strip
+   on a white box -- that is what made the first version read as flat. */
+.stat-card {
+    border: 0;
+    padding: 0;
+    color: #fff;
+    box-shadow: 0 2px 4px rgba(27,48,34,.10), 0 14px 34px rgba(27,48,34,.16);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(27,48,34,.16), 0 22px 48px rgba(27,48,34,.24);
+    color: #fff;
+}
+
+.stat-card::after { display: none; }
+
+.stat-card > * { position: relative; z-index: 2; }
+
+.stat-inner {
+    position: relative;
+    padding: 20px;
+    min-height: 132px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    height: 100%;
+}
+
+.stat-inner::before {
+    content: "";
+    position: absolute;
+    top: -46px;
+    right: -46px;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.11);
+    z-index: 1;
+}
+
+.stat-inner::after {
+    content: "";
+    position: absolute;
+    right: 18px;
+    bottom: -34px;
+    width: 96px;
+    height: 96px;
+    border: 2px solid rgba(255,255,255,.16);
+    border-radius: 50%;
+    z-index: 1;
+}
+
+.stat-icon {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    background: rgba(255,255,255,.20);
+    backdrop-filter: blur(2px);
+    z-index: 3;
+}
+
+.stat-icon svg { width: 19px; height: 19px; stroke: #fff; }
+
+.stat-label { color: rgba(255,255,255,.82); }
+.stat-value { color: #fff; font-size: 34px; text-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.stat-hint  { color: rgba(255,255,255,.74); }
+
+.stat-card:nth-child(1) { background: var(--v-series-1); }
+.stat-card:nth-child(2) { background: var(--v-series-2); }
+.stat-card:nth-child(3) { background: var(--v-series-3); }
+.stat-card:nth-child(4) { background: var(--v-series-4); }
+.stat-card:nth-child(5) { background: var(--v-series-5); }
+
+/* ------------------------------------------------------------------ panels */
+.panel {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(27,48,34,.05), 0 12px 32px rgba(27,48,34,.09);
+}
+
+.panel-head {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F7F9F7 100%);
+    border-bottom: 1px solid var(--brand-line-soft);
+}
+
+/* A colour tab on each panel header ties the panel to its data type. */
+.panel-head { border-left: 4px solid var(--panel-accent, #0A6E68); }
+
+.panel-crm    { --panel-accent: var(--v-sky); }
+.panel-pipeline{ --panel-accent: var(--v-violet); }
+.panel-content{ --panel-accent: #1F7A50; }
+.panel-service{ --panel-accent: #A8620F; }
+
+.panel-title { color: var(--panel-accent, var(--brand-muted)); }
+
+
+.dash-table thead th {
+    background: #F2F6F3;
+    color: #5A6B61;
+    border-bottom: 2px solid var(--brand-line);
+}
+
+.dash-table tbody tr:nth-child(even) { background: #FBFCFB; }
+.dash-table tbody tr.row-link:hover { background: #F2F8F5; }
+
+/* ------------------------------------------------------------------- pills */
+/* One hue per pipeline stage, so the funnel is readable at a glance instead
+   of six variations on the same grey. */
+.pill { box-shadow: inset 0 -1px 0 rgba(0,0,0,.06); }
+
+.pill-new,
+.pill-contacted,
+.pill-qualified,
+.pill-estimate_sent,
+.pill-won,
+.pill-lost {
+    color: #fff;
+    font-weight: 600;
+}
+
+.pill-new          { background: var(--v-sky); }
+.pill-contacted    { background: #0A6E68; }
+.pill-qualified    { background: #A8620F; }
+.pill-estimate_sent{ background: #6A3C8C; }
+.pill-won          { background: #1F7A50; }
+.pill-lost         { background: #B5443A; }
+
+.pill-low      { background: #E7EBE8; color: #5A6B61; }
+.pill-normal   { background: var(--v-sky); color: #fff; }
+.pill-high     { background: #8A4F0A; color: #fff; }
+.pill-urgent   { background: linear-gradient(135deg, #C9483B, #A8352B); color: #fff; }
+
+.pill-yes { background: #1F7A50; color: #fff; }
+.pill-no  { background: #E7EBE8; color: #5A6B61; }
+.pill-neutral { background: #E7EBE8; color: #5A6B61; }
+
+/* ------------------------------------------------------------- score chips */
+.score-chip {
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(27,48,34,.16);
+}
+.score-chip.s-hi  { background: linear-gradient(135deg, #C9483B, #A8352B); }
+.score-chip.s-mid { background: linear-gradient(135deg, #A8620F, #8A4F0A); }
+.score-chip.s-lo  { background: linear-gradient(135deg, #4A5850, #5A6B61); }
+
+/* ---------------------------------------------------------------- pipeline */
+.pipe-row { border-bottom: 1px solid var(--brand-line-soft); }
+.pipe-row:last-child { border-bottom: 0; }
+
+.bar-track {
+    background: #E9EDEA;
+    height: 9px;
+    box-shadow: inset 0 1px 2px rgba(27,48,34,.10);
+}
+
+.bar-fill {
+    background: linear-gradient(90deg, var(--v-violet) 0%, #A87BD8 100%);
+    box-shadow: 0 1px 4px rgba(124,92,191,.40);
+}
+
+.bar-fill.lead {
+    background: linear-gradient(90deg, var(--v-sky) 0%, #5FA8DC 100%);
+    box-shadow: 0 1px 4px rgba(47,123,181,.40);
+}
+
+.pipe-row.is-closed { opacity: .70; }
+.pipe-row.is-closed .bar-fill { background: #A9B5AD; box-shadow: none; }
+.pipe-count { color: var(--brand-primary); }
+
+/* ------------------------------------------------------------- quick links */
+.quick-link {
+    background: linear-gradient(180deg, #FFFFFF, #F6F9F7);
+    border-color: var(--brand-line);
+    box-shadow: 0 1px 2px rgba(27,48,34,.06);
+}
+.quick-link:hover {
+    border-color: var(--v-teal);
+    background: linear-gradient(180deg, #F0FAF8, #E4F5F2);
+    color: #0A6B65;
+    box-shadow: 0 6px 16px rgba(14,143,135,.22);
+    transform: translateY(-2px);
+}
+
+/* ------------------------------------------------------------------ module */
+.module {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(27,48,34,.05), 0 12px 32px rgba(27,48,34,.09);
+}
+
+.module caption, .module h2 {
+    background: linear-gradient(180deg, #FFFFFF, #F7F9F7);
+    color: var(--brand-ink);
+    border-bottom: 1px solid var(--brand-line-soft);
+}
+
+/* ------------------------------------------------------------------ forms */
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+    background: linear-gradient(135deg, #1B3022 0%, #2E5540 100%);
+    box-shadow: 0 2px 8px rgba(27,48,34,.22);
+    transition: transform .16s ease, box-shadow .16s ease;
+}
+.button:hover, input[type=submit]:hover, .submit-row input:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(27,48,34,.30);
+}
+
+.button.addlink, .addlink {
+    background: linear-gradient(135deg, #A8352B 0%, #C9483B 100%) !important;
+    box-shadow: 0 2px 10px rgba(226,125,96,.42) !important;
+}
+.button.addlink:hover { box-shadow: 0 8px 22px rgba(226,125,96,.52) !important; }
+
+.object-tools a {
+    background: linear-gradient(135deg, #0E8F87, #14A79D);
+    box-shadow: 0 2px 8px rgba(14,143,135,.30);
+}
+.object-tools a:hover {
+    background: linear-gradient(135deg, #0B6E68, #0E8F87);
+    box-shadow: 0 6px 18px rgba(14,143,135,.40);
+}
+
+/* ----------------------------------------------------------------- inline */
+.inline-group {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(27,48,34,.05), 0 12px 32px rgba(27,48,34,.09);
+}
+.inline-group h2 {
+    background: linear-gradient(180deg, #FFFFFF, #F7F9F7);
+    color: #0A6E68;
+}
+
+.submit-row {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(27,48,34,.05), 0 12px 32px rgba(27,48,34,.09);
+}
+
+.thumb { border-radius: 8px; border-color: var(--brand-line); }
+
+.storage-warning {
+    border-left-color: var(--v-gold);
+    background: linear-gradient(180deg, #FEF8EC, #FDF1DC);
+}
+
+@media (max-width: 768px) {
+    .stat-inner { min-height: 108px; padding: 16px; }
+    .stat-value { font-size: 27px; }
+}

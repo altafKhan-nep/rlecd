@@ -1,10 +1,18 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n studio_tags %}
 
 {% block bodyclass %}{{ block.super }} studio-dashboard{% endblock %}
 
 {% block userlinks %}{% endblock %}
 {% block usertools %}{{ block.super }}{% endblock %}
+
+{# Django's default content_title renders an <h1> above the content area. On the
+   model index it carries the page title, but here it fights the greeting in
+   .dash-head and can read as a stray model name. The dashboard supplies its own
+   heading, so drop the inherited one. The storage banner in base_site.html also
+   lives in this block and is only relevant to the media upload form, so nothing
+   useful is lost. #}
+{% block content_title %}{% endblock %}
 
 {% block content %}
 <div id="content-main" class="studio-dashboard">
@@ -21,12 +29,19 @@
   </div>
 
   {# --- headline numbers ------------------------------------------- #}
+  {# Each card is its own gradient with an icon, so the row reads as five
+     distinct pieces of information rather than five numbers in a grid. The
+     nth-child rules in admin.css assign the gradient, which keeps the colour
+     scheme in one place instead of splitting it across the template. #}
   <div class="stat-grid">
     {% for s in stats %}
       <a class="stat-card {{ s.tone }}" href="{% url s.url %}{{ s.query }}">
-        <span class="stat-label">{{ s.label }}</span>
-        <span class="stat-value">{{ s.value }}</span>
-        <span class="stat-hint">{{ s.hint }}</span>
+        <span class="stat-icon" aria-hidden="true">{{ s.icon }}</span>
+        <span class="stat-inner">
+          <span class="stat-label">{{ s.label }}</span>
+          <span class="stat-value">{{ s.value }}</span>
+          <span class="stat-hint">{{ s.hint }}</span>
+        </span>
       </a>
     {% endfor %}
   </div>
@@ -36,7 +51,7 @@
     {# --- left column ------------------------------------------- #}
     <div class="dash-col stack">
 
-      <section class="panel">
+      <section class="panel panel-crm">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Recent leads" %}</h2>
           <a class="panel-link" href="{% url 'admin:crm_lead_changelist' %}">{% translate "View all" %}</a>
@@ -60,7 +75,7 @@
                   </td>
                   <td>{{ lead.service|default:lead.service_raw|default:"—" }}</td>
                   <td><span class="pill pill-{{ lead.status }}">{{ lead.get_status_display }}</span></td>
-                  <td class="right"><span class="score-chip">{{ lead.score }}</span></td>
+                  <td class="right"><span class="score-chip {{ lead.score|score_tier }}">{{ lead.score }}</span></td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -70,7 +85,7 @@
         {% endif %}
       </section>
 
-      <section class="panel">
+      <section class="panel panel-crm">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Open tasks" %}</h2>
           <a class="panel-link" href="{% url 'admin:crm_task_changelist' %}">{% translate "View all" %}</a>
@@ -111,7 +126,7 @@
     {# --- right column ------------------------------------------ #}
     <div class="dash-col stack">
 
-      <section class="panel">
+      <section class="panel panel-pipeline">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Pipeline" %}</h2>
         </header>
@@ -126,7 +141,7 @@
         </ul>
       </section>
 
-      <section class="panel">
+      <section class="panel panel-content">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Content" %}</h2>
         </header>
@@ -139,7 +154,7 @@
       </section>
 
       {% if top_services %}
-      <section class="panel">
+      <section class="panel panel-service">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Busiest services" %}</h2>
         </header>
