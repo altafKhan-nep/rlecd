@@ -3,8 +3,7 @@
 
 {% block bodyclass %}{{ block.super }} studio-dashboard{% endblock %}
 
-{% block userlinks %}{% endblock %}
-{% block usertools %}{{ block.super }}{% endblock %}
+{% block topbar_title %}{% translate "Dashboard" %}{% endblock %}
 
 {# Django's default content_title renders an <h1> above the content area. On the
    model index it carries the page title, but here it fights the greeting in
@@ -20,19 +19,17 @@
   <div class="dash-head">
     <div>
       <h1 class="dash-title">Good to see you, {{ user.first_name|default:user.username }}</h1>
-      <p class="dash-sub">Here is where things stand across leads and content.</p>
+      <p class="dash-sub">{% translate "Here is where things stand across your site and your leads." %}</p>
     </div>
     <div class="dash-head-actions">
-      <a class="button" href="{% url 'admin:crm_lead_changelist' %}">{% translate "All leads" %}</a>
+      <a class="button" href="{% url 'admin:content_page_changelist' %}">{% translate "Manage pages" %}</a>
       <a class="button addlink" href="{% url 'admin:crm_lead_add' %}">{% translate "New lead" %}</a>
     </div>
   </div>
 
-  {# --- headline numbers ------------------------------------------- #}
-  {# Each card is its own gradient with an icon, so the row reads as five
-     distinct pieces of information rather than five numbers in a grid. The
-     nth-child rules in admin.css assign the gradient, which keeps the colour
-     scheme in one place instead of splitting it across the template. #}
+  {# Six cards spanning both content and CRM, so the dashboard leads with the
+     website the admin is actually responsible for. Colour comes from the tone
+     class the view assigns, not from position. #}
   <div class="stat-grid">
     {% for s in stats %}
       <a class="stat-card {{ s.tone }}" href="{% url s.url %}{{ s.query }}">
@@ -48,8 +45,7 @@
 
   <div class="dash-grid">
 
-    {# --- left column ------------------------------------------- #}
-    <div class="dash-col stack">
+    <div class="dash-col">
 
       <section class="panel panel-crm">
         <header class="panel-head">
@@ -85,7 +81,7 @@
         {% endif %}
       </section>
 
-      <section class="panel panel-crm">
+      <section class="panel panel-tasks">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Open tasks" %}</h2>
           <a class="panel-link" href="{% url 'admin:crm_task_changelist' %}">{% translate "View all" %}</a>
@@ -123,8 +119,7 @@
       </section>
     </div>
 
-    {# --- right column ------------------------------------------ #}
-    <div class="dash-col stack">
+    <div class="dash-col">
 
       <section class="panel panel-pipeline">
         <header class="panel-head">
@@ -141,34 +136,48 @@
         </ul>
       </section>
 
+      {# Content health: the numbers that tell an owner whether the published
+         site is complete, which is the part the old dashboard was missing. #}
       <section class="panel panel-content">
         <header class="panel-head">
-          <h2 class="panel-title">{% translate "Content" %}</h2>
+          <h2 class="panel-title">{% translate "Content health" %}</h2>
+          <a class="panel-link" href="{% url 'admin:content_page_changelist' %}">{% translate "Manage" %}</a>
         </header>
-        <div class="quick-links">
-          <a class="quick-link" href="{% url 'admin:content_page_changelist' %}">{% translate "Pages" %}</a>
-          <a class="quick-link" href="{% url 'admin:crm_service_changelist' %}">{% translate "Services" %}</a>
-          <a class="quick-link" href="{% url 'admin:content_mediaitem_changelist' %}">{% translate "Media" %}</a>
-          <a class="quick-link" href="{% url 'admin:content_sitesetting_changelist' %}">{% translate "Site settings" %}</a>
-        </div>
-      </section>
-
-      {% if top_services %}
-      <section class="panel panel-service">
-        <header class="panel-head">
-          <h2 class="panel-title">{% translate "Busiest services" %}</h2>
-        </header>
-        <ul class="pipe">
-          {% for s in top_services %}
-            <li class="pipe-row">
-              <a class="pipe-label" href="{% url 'admin:crm_service_change' s.pk %}">{{ s.name }}</a>
-              <span class="bar-track"><span class="bar-fill lead" style="width: {{ s.pct }}%"></span></span>
-              <span class="pipe-count">{{ s.lead_total }}</span>
+        <ul class="health-list">
+          {% for row in content_health %}
+            <li class="health-row" style="--health-c: {{ row.colour }}">
+              <span class="health-dot" aria-hidden="true"></span>
+              <span class="health-name">{{ row.label }}</span>
+              {% if row.note %}<span class="health-note">{{ row.note }}</span>{% endif %}
+              <span class="health-value">{{ row.value }}</span>
             </li>
           {% endfor %}
         </ul>
       </section>
-      {% endif %}
+
+      <section class="panel panel-service">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Quick actions" %}</h2>
+        </header>
+        <div class="quick-links">
+          <a class="quick-link" href="{% url 'admin:content_page_add' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            {% translate "New page" %}
+          </a>
+          <a class="quick-link" href="{% url 'admin:crm_service_add' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            {% translate "New service" %}
+          </a>
+          <a class="quick-link" href="{% url 'admin:content_mediaitem_add' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            {% translate "Upload media" %}
+          </a>
+          <a class="quick-link" href="{% url 'admin:content_sitesetting_changelist' %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            {% translate "Site settings" %}
+          </a>
+        </div>
+      </section>
     </div>
   </div>
 </div>

@@ -26,12 +26,12 @@ class StudioAdminSite(AdminSite):
         return ctx
 
     def _tab_counts(self, request):
-        """Badge counts for the tab bar. Unavailable models degrade to 0.
+        """Badge counts for the sidebar. Unavailable models degrade to 0.
 
         Counts are wrapped so a missing table (fresh database before
         migrations) or a restricted user cannot break every admin page.
         """
-        counts = {"new_leads": 0, "open_tasks": 0}
+        counts = {"new_leads": 0, "open_tasks": 0, "pages": 0, "media": 0}
         if not request.user.is_authenticated or not request.user.is_active:
             return counts
         try:
@@ -53,7 +53,7 @@ class StudioAdminSite(AdminSite):
     def index(self, request, extra_context=None):
         # each_context supplies site_header/site_title/available_apps and the
         # tab_counts consumed by base_site.html. Rendering without it left the
-        # brand line empty and every tab badge missing.
+        # brand line empty and every sidebar badge missing.
         context = {
             **self.each_context(request),
             **_self_queries(request),
@@ -152,6 +152,24 @@ def _self_queries(request):
             '<circle cx="12" cy="8" r="6"/>'
             '<path d="M15.5 13.5L17 22l-5-3-5 3 1.5-8.5"/></svg>'
         ),
+        "page": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+            '<path d="M14 2v6h6M9 13h6M9 17h6"/></svg>'
+        ),
+        "media": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<rect x="3" y="3" width="18" height="18" rx="2"/>'
+            '<circle cx="8.5" cy="8.5" r="1.5"/>'
+            '<path d="M21 15l-5-5L5 21"/></svg>'
+        ),
+        "service": (
+            '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z"/></svg>'
+        ),
     }
 
     # The SVG literals above contain no interpolation, so marking them safe
@@ -159,6 +177,8 @@ def _self_queries(request):
     # them and each card renders literal "&lt;svg" text.
     ICON = {name: mark_safe(markup) for name, markup in ICON.items()}
 
+    # Six cards: three CRM, three content. The tone class drives the gradient,
+    # so colour is assigned here rather than by position in the template.
     stats = [
         {
             "label": "Open leads",
@@ -166,7 +186,7 @@ def _self_queries(request):
             "hint": f"{new_leads.count()} awaiting first contact",
             "url": "admin:crm_lead_changelist",
             "query": "",
-            "tone": "",
+            "tone": "t-leads",
             "icon": ICON["leads"],
         },
         {
@@ -175,17 +195,8 @@ def _self_queries(request):
             "hint": "Score 70 or above",
             "url": "admin:crm_lead_changelist",
             "query": "?score__gte=70",
-            "tone": "accent",
+            "tone": "t-hot",
             "icon": ICON["hot"],
-        },
-        {
-            "label": "New today",
-            "value": Lead.objects.filter(created_at__gte=day_ago).count(),
-            "hint": "In the last 24 hours",
-            "url": "admin:crm_lead_changelist",
-            "query": "",
-            "tone": "",
-            "icon": ICON["today"],
         },
         {
             "label": "Overdue tasks",
@@ -193,19 +204,35 @@ def _self_queries(request):
             "hint": f"{open_tasks.count()} open in total",
             "url": "admin:crm_task_changelist",
             "query": "",
-            "tone": "accent" if overdue.count() else "muted",
+            "tone": "t-tasks",
             "icon": ICON["task"],
         },
         {
-            "label": "Won this week",
-            "value": Lead.objects.filter(
-                status=LeadStatus.WON, created_at__gte=week_ago
-            ).count(),
-            "hint": "Enquiries in the last 7 days",
-            "url": "admin:crm_lead_changelist",
+            "label": "Pages",
+            "value": _content_counts()["pages"],
+            "hint": f"{_content_counts()['published']} published",
+            "url": "admin:content_page_changelist",
             "query": "",
-            "tone": "",
-            "icon": ICON["won"],
+            "tone": "t-pages",
+            "icon": ICON["page"],
+        },
+        {
+            "label": "Media items",
+            "value": _content_counts()["media"],
+            "hint": "In the library",
+            "url": "admin:content_mediaitem_changelist",
+            "query": "",
+            "tone": "t-media",
+            "icon": ICON["media"],
+        },
+        {
+            "label": "Services",
+            "value": _content_counts()["services"],
+            "hint": "Across the site",
+            "url": "admin:crm_service_changelist",
+            "query": "",
+            "tone": "t-today",
+            "icon": ICON["service"],
         },
     ]
 
@@ -214,6 +241,36 @@ def _self_queries(request):
     upcoming = open_tasks.select_related("lead", "assigned_to").order_by(
         "due_at"
     )[:8]
+
+    # Content health: the numbers that tell an owner whether the published
+    # site is complete. This is the part the CRM-only dashboard was missing.
+    content = _content_counts()
+    content_health = [
+        {
+            "label": "Pages",
+            "value": str(content["pages"]),
+            "note": f"{content['published']} published",
+            "colour": "#2F7BB5",
+        },
+        {
+            "label": "Sections",
+            "value": str(content["sections"]),
+            "note": "Across all pages",
+            "colour": "#0E8F87",
+        },
+        {
+            "label": "Services",
+            "value": str(content["services"]),
+            "note": "Listed on the site",
+            "colour": "#A8620F",
+        },
+        {
+            "label": "Media items",
+            "value": str(content["media"]),
+            "note": "In the library",
+            "colour": "#7C5CBF",
+        },
+    ]
 
     # Scale against the busiest service, not the raw count, so the bars are
     # comparable to each other rather than rendering at 1% when every service
@@ -234,7 +291,26 @@ def _self_queries(request):
         "recent_leads": recent_leads,
         "upcoming_tasks": upcoming,
         "top_services": service_rows,
+        "content_health": content_health,
     }
 
 
-studio_admin = StudioAdminSite(name="admin")
+def _content_counts():
+    """Content totals for the dashboard cards and the health panel.
+
+    Wrapped because a fresh database before migrations has no tables, and the
+    dashboard must still render.
+    """
+    try:
+        content = apps.get_app_config("content")
+        crm = apps.get_app_config("crm")
+        pages = content.get_model("Page").objects
+        return {
+            "pages": pages.count(),
+            "published": pages.filter(is_published=True).count(),
+            "sections": content.get_model("Section").objects.count(),
+            "media": content.get_model("MediaItem").objects.count(),
+            "services": crm.get_model("Service").objects.count(),
+        }
+    except Exception:
+        return {"pages": 0, "published": 0, "sections": 0, "media": 0, "services": 0}

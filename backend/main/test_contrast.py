@@ -52,33 +52,42 @@ class AdminStylesheetContrastTests(SimpleTestCase):
     def test_stylesheet_exists(self):
         self.assertTrue(CSS_PATH.is_file(), f"missing stylesheet at {CSS_PATH}")
 
-    def _series_gradient(self, name):
-        """Pull both colour stops out of a --v-series-N gradient."""
+    def _series_gradient(self, tone):
+        """Pull both colour stops out of a .stat-card.t-* gradient."""
         match = re.search(
-            rf"--v-series-{name}\s*:\s*[^;]*?#([0-9A-Fa-f]{{6}})\s*0%\s*,\s*"
-            rf"#([0-9A-Fa-f]{{6}})\s*100%",
+            rf"\.stat-card\.{re.escape(tone)}\s*\{{[^}}]*?--card-bg:\s*"
+            rf"linear-gradient\(135deg,\s*#([0-9A-Fa-f]{{6}})\s*0%,\s*"
+            rf"#([0-9A-Fa-f]{{6}})\s*100%\)",
             self.css,
         )
-        self.assertIsNotNone(match, f"could not parse --v-series-{name}")
+        self.assertIsNotNone(match, f"could not parse .stat-card.{tone}")
         return "#" + match.group(1), "#" + match.group(2)
 
     def _declaration(self, selector, prop="background"):
         """Read a property from a rule, ignoring colour shorthand fallbacks.
 
-        The vibrant layer is appended to the end of the file and relies on
-        source order, so several selectors appear more than once with equal
-        specificity. The last match is the one that actually paints.
+        Selectors can appear more than once with equal specificity, so the
+        last match is the one that actually paints.
         """
+        # Grouped selectors (".pill-low, .pill-no { ... }") must match too, so
+        # split on commas and test each part rather than requiring the selector
+        # to open a block on its own.
         pattern = re.escape(selector) + r"\s*\{([^}]*)\}"
         found = None
         for body in re.findall(pattern, self.css):
-            # \b cannot be used to guard a custom property: a leading "--" is
-            # all non-word characters, so there is no boundary to anchor to.
-            # Look behind for anything word-like or another hyphen instead, so
-            # "--panel-accent" does not match inside a longer name.
             match = re.search(rf"(?<![-\w]){re.escape(prop)}\s*:\s*([^;]+)", body)
             if match:
                 found = match.group(1).strip()
+        if found is None:
+            # Try as one member of a grouped selector list.
+            for group in re.findall(r"([^{}]+)\{([^}]*)\}", self.css):
+                selectors, body = group
+                if selector in [s.strip() for s in selectors.split(",")]:
+                    match = re.search(
+                        rf"(?<![-\w]){re.escape(prop)}\s*:\s*([^;]+)", body)
+                    if match:
+                        found = match.group(1).strip()
+                        break
         if found is None:
             self.fail(f"no {prop} declaration found for {selector}")
         return self._resolve(found)
@@ -103,27 +112,28 @@ class AdminStylesheetContrastTests(SimpleTestCase):
         return value
 
     def test_card_gradients_have_colourful_distinct_stops(self):
-        """The point of the vibrant layer: five different, saturated cards.
-        Guards against someone flattening them back to one hue."""
+        """Six different, saturated cards. Guards against someone flattening
+        them back to one hue."""
+        tones = ("t-leads", "t-hot", "t-today", "t-tasks", "t-pages", "t-media")
         series = {}
-        for name in ("1", "2", "3", "4", "5"):
-            series[name] = self._series_gradient(name)
+        for tone in tones:
+            series[tone] = self._series_gradient(tone)
             self.assertNotEqual(
-                series[name][0], series[name][1],
-                f"series {name} gradient has a single flat colour",
+                series[tone][0], series[tone][1],
+                f"{tone} gradient has a single flat colour",
             )
-        distinct = {series[n][0] for n in series}
-        self.assertEqual(len(distinct), 5, "card gradients are not distinct")
+        distinct = {series[t][0] for t in series}
+        self.assertEqual(len(distinct), 6, "card gradients are not distinct")
 
     def test_stat_card_labels_are_readable_on_every_gradient(self):
-        for name in ("1", "2", "3", "4", "5"):
+        for tone in ("t-leads", "t-hot", "t-today", "t-tasks", "t-pages", "t-media"):
             for stop, background in zip(("start", "end"),
-                                        self._series_gradient(name)):
-                with self.subTest(card=name, stop=stop):
+                                        self._series_gradient(tone)):
+                with self.subTest(card=tone, stop=stop):
                     ratio = contrast_ratio("#FFFFFF", background)
                     self.assertGreaterEqual(
                         ratio, 4.5,
-                        f"card {name} {stop} {background}: white text is "
+                        f"card {tone} {stop} {background}: white text is "
                         f"{ratio:.2f}:1",
                     )
 

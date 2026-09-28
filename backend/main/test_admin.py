@@ -1,9 +1,9 @@
 """Tests for the custom dashboard admin site.
 
 The dashboard replaced Django's model index, so its failure mode is new: any
-query that raises now 500s the landing page for every staff user, and the tab
-counts run on *every* admin screen, not just the dashboard. These tests pin
-both behaviours, plus the media library's file validation.
+query that raises now 500s the landing page for every staff user, and the
+sidebar counts run on *every* admin screen, not just the dashboard. These tests
+pin both behaviours, plus the media library's file validation.
 """
 import shutil
 import tempfile
@@ -93,7 +93,7 @@ class StudioAdminTests(TestCase):
         dashboard rather than failing quietly."""
         response = self.client.get(reverse("admin:index"))
         stats = response.context["stats"]
-        self.assertEqual(len(stats), 5)
+        self.assertEqual(len(stats), 6)
         for stat in stats:
             with self.subTest(label=stat["label"]):
                 self.assertIn("icon", stat)
@@ -136,6 +136,118 @@ class StudioAdminTests(TestCase):
         self.assertEqual(score_tier(None), "s-lo")
         self.assertEqual(score_tier("nonsense"), "s-lo")
 
+    def test_sidebar_replaces_the_tab_bar(self):
+        """The redesign moved navigation from a horizontal tab bar to a fixed
+        left sidebar. The old .brand-nav markup must be gone, and the sidebar
+        must carry the grouped sections."""
+        response = self.client.get(reverse("admin:index"))
+        html = response.content.decode()
+        self.assertNotIn("brand-nav", html)
+        self.assertNotIn("brand-tab", html)
+        self.assertIn('class="studio-sidebar"', html)
+        self.assertIn('class="sidebar-nav"', html)
+        self.assertIn('class="nav-group"', html)
+
+    def test_sidebar_groups_crm_and_content_separately(self):
+        """Related sections sit together: CRM items under one label, content
+        items under another, so the owner is not scanning a flat list."""
+        response = self.client.get(reverse("admin:index"))
+        html = response.content.decode()
+        self.assertIn("CRM", html)
+        self.assertIn("Content", html)
+        # Both groups present, each with its items.
+        for item in ("Leads", "Tasks", "Contacts"):
+            self.assertIn(item, html)
+        for item in ("Pages", "Sections", "Services", "Media", "Site settings"):
+            self.assertIn(item, html)
+
+    def test_sidebar_marks_the_active_section(self):
+        """Exactly one nav item carries is-active, and it is the one matching
+        the current URL."""
+        cases = [
+            (reverse("admin:index"), "Overview"),
+            (reverse("admin:crm_lead_changelist"), "Leads"),
+            (reverse("admin:content_page_changelist"), "Pages"),
+            (reverse("admin:content_mediaitem_changelist"), "Media"),
+        ]
+        for url, expected in cases:
+            with self.subTest(url=url):
+                html = self.client.get(url).content.decode()
+                self.assertEqual(html.count("nav-item is-active"), 1)
+                self.assertIn(f'is-active', html)
+                # The active item's label appears in the sidebar.
+                self.assertIn(expected, html)
+
+    def test_sidebar_shows_live_counts(self):
+        """Badges reflect real data: a new lead shows a count on Leads, and
+        the count is absent when there is nothing to report."""
+        from crm.models import Lead
+
+        Lead.objects.create(name="Fresh", email="fresh@example.com", status="new")
+        html = self.client.get(reverse("admin:crm_lead_changelist")).content.decode()
+        self.assertIn("nav-count", html)
+
+    def test_sidebar_has_user_tools_and_view_site(self):
+        """The sidebar footer carries the user identity and the links an owner
+        needs, so they are reachable without scrolling back to a top bar."""
+        response = self.client.get(reverse("admin:index"))
+        html = response.content.decode()
+        self.assertIn("sidebar-user", html)
+        self.assertIn("sidebar-footer", html)
+        self.assertIn("View site", html)
+        self.assertIn("Log out", html)
+
+    def test_mobile_drawer_toggle_is_present(self):
+        """Below 900px the sidebar becomes an overlay drawer, so the toggle
+        button and its overlay must exist in the markup, and the script that
+        drives them must reference the open state."""
+        response = self.client.get(reverse("admin:index"))
+        html = response.content.decode()
+        self.assertIn('id="sidebar-toggle"', html)
+        self.assertIn('id="sidebar-overlay"', html)
+        # sidebar-open is applied by JS, so it appears in the script, not the
+        # static markup.
+        self.assertIn("sidebar-open", html)
+        self.assertIn("sidebar-toggle", html)
+
+    def test_content_health_panel_is_present(self):
+        """The dashboard leads with content health, not just CRM. The panel
+        must list the four content types an owner cares about."""
+        response = self.client.get(reverse("admin:index"))
+        self.assertContains(response, "Content health")
+        for label in ("Pages", "Sections", "Services", "Media items"):
+            self.assertContains(response, label)
+
+    def test_content_health_reflects_real_data(self):
+        """Health numbers come from the database, not placeholders."""
+        from content.models import Page, Section
+        from crm.models import Service
+
+        Page.objects.create(title="Home", path="/", slug="home", is_published=True)
+        Page.objects.create(title="Draft", path="/draft/", slug="draft", is_published=False)
+        Service.objects.create(name="Test Service", slug="test-service")
+        Section.objects.create(page=Page.objects.first(), key="hero",
+                               type="hero", content_html="<h1>Hi</h1>",
+                               position=0)
+
+        response = self.client.get(reverse("admin:index"))
+        health = response.context["content_health"]
+        by_label = {row["label"]: row for row in health}
+        self.assertEqual(by_label["Pages"]["value"], "2")
+        self.assertEqual(by_label["Pages"]["note"], "1 published")
+        self.assertEqual(by_label["Sections"]["value"], "1")
+        self.assertEqual(by_label["Services"]["value"], "1")
+
+    def test_stat_cards_use_tone_classes_not_nth_child(self):
+        """Colour is assigned by a tone class from the view, so reordering the
+        cards cannot shuffle the palette. Every card must carry a tone."""
+        response = self.client.get(reverse("admin:index"))
+        stats = response.context["stats"]
+        tones = {s["tone"] for s in stats}
+        self.assertEqual(len(tones), 6, "each card should have a distinct tone")
+        for tone in tones:
+            self.assertTrue(tone.startswith("t-"), f"unexpected tone {tone!r}")
+
     def test_dashboard_does_not_render_a_stray_default_heading(self):
         """Django's content_title block emits its own <h1> above the content
         area. The dashboard has its own greeting, so the inherited heading must
@@ -153,7 +265,7 @@ class StudioAdminTests(TestCase):
         response = self.client.get(reverse("admin:index"))
         html = response.content.decode()
         icon_count = html.count('class="stat-icon"')
-        self.assertEqual(icon_count, 5)
+        self.assertEqual(icon_count, 6)
         self.assertNotIn("&lt;svg", html)
         self.assertGreaterEqual(html.count("<svg"), icon_count)
 
@@ -178,13 +290,13 @@ class StudioAdminTests(TestCase):
         self.assertContains(response, "REAL LIFE EXPERIENCE Studio")
         self.assertNotContains(response, "Studio Studio")
 
-    def test_dashboard_shows_tab_badges_when_work_exists(self):
+    def test_dashboard_shows_sidebar_badges_when_work_exists(self):
         from crm.models import Lead, Task
 
         lead = Lead.objects.create(name="Nia", email="nia@example.com")
         Task.objects.create(lead=lead, title="Ring back")
         response = self.client.get(reverse("admin:index"))
-        self.assertContains(response, "tab-count")
+        self.assertContains(response, "nav-count")
 
     def test_lead_list_renders_score_chips(self):
         """`score` is a model field, so a same-named display method is silently

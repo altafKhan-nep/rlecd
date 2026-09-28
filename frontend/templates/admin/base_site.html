@@ -1,10 +1,10 @@
 {% extends "admin/base.html" %}
 {% load static i18n %}
 
-{# Branded shell: replaces Django's flat model index with a dashboard-first
-   layout and tabbed navigation. Everything still extends Django's own base, so
-   permissions, forms and the changelist machinery are untouched -- only the
-   frame around them changes. #}
+{# Branded shell: a fixed left sidebar for navigation with the content column
+   to its right, plus a slim topbar. Everything still extends Django's own
+   base, so permissions, forms and the changelist machinery are untouched --
+   only the frame around them changes. #}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:"Studio" }}{% endblock %}
 
@@ -17,7 +17,7 @@
 
 {% block bodyclass %}{{ block.super }} studio-admin{% endblock %}
 
-{# Django 5's sidebar lists every model; the tab bar replaces it. #}
+{# Django 5's sidebar lists every model; the left sidebar replaces it. #}
 {% block nav-sidebar %}{% endblock %}
 {% block nav-global %}{% endblock %}
 {% block breadcrumbs %}{% endblock %}
@@ -43,51 +43,153 @@
 {% endblock %}
 
 {% block header %}
-<div id="header">
-  <div class="header-title">
+<aside class="studio-sidebar" id="studio-sidebar" aria-label="{% translate 'Admin navigation' %}">
+  <div class="sidebar-brand">
     <span class="brand-mark" aria-hidden="true">R</span>
-    <span class="header-title-text">
-      <a href="{% url 'admin:index' %}">{{ site_header }}</a>
+    <span class="sidebar-brand-name">
+      {{ site_header }}
+      <span class="sidebar-brand-sub">{% translate "Studio" %}</span>
     </span>
   </div>
 
-  {% block usertools %}
-  <div id="user-tools">
-    <a href="/">{% translate "View site" %}</a>
+  <nav class="sidebar-nav">
+    <div class="nav-group">
+      <a class="nav-item{% if request.resolver_match.url_name == 'index' %} is-active{% endif %}"
+         href="{% url 'admin:index' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span>{% translate "Overview" %}</span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <p class="nav-group-label">{% translate "CRM" %}</p>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'crm_lead_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:crm_lead_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        <span>{% translate "Leads" %}</span>
+        {% if tab_counts.new_leads %}<span class="nav-count">{{ tab_counts.new_leads }}</span>{% endif %}
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'crm_task_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:crm_task_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>{% translate "Tasks" %}</span>
+        {% if tab_counts.open_tasks %}<span class="nav-count">{{ tab_counts.open_tasks }}</span>{% endif %}
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'crm_contact_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:crm_contact_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" opacity="0"/><path d="M6 8h12M6 12h12M6 16h7"/></svg>
+        <span>{% translate "Contacts" %}</span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <p class="nav-group-label">{% translate "Content" %}</p>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'content_page_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:content_page_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+        <span>{% translate "Pages" %}</span>
+        {% if tab_counts.pages %}<span class="nav-count">{{ tab_counts.pages }}</span>{% endif %}
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'content_section_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:content_section_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg>
+        <span>{% translate "Sections" %}</span>
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'crm_service_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:crm_service_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z"/></svg>
+        <span>{% translate "Services" %}</span>
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'content_mediaitem_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:content_mediaitem_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span>{% translate "Media" %}</span>
+        {% if tab_counts.media %}<span class="nav-count">{{ tab_counts.media }}</span>{% endif %}
+      </a>
+
+      <a class="nav-item{% if request.resolver_match.url_name == 'content_sitesetting_changelist' %} is-active{% endif %}"
+         href="{% url 'admin:content_sitesetting_changelist' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>{% translate "Site settings" %}</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <span class="sidebar-avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span>
+      <span class="sidebar-user-name">{{ user.first_name|default:user.username }}</span>
+    </div>
     {% if user.is_active and user.is_staff %}
-      {% if user.is_superuser %}<a href="{% url 'admin:index' %}">{% translate "Dashboard" %}</a>{% endif %}
-      <a href="{% url 'admin:password_change' %}">{% translate "Change password" %}</a>
+      <a class="sidebar-link" href="{% url 'admin:password_change' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        <span>{% translate "Change password" %}</span>
+      </a>
     {% endif %}
-    <a href="{% url 'admin:logout' %}">{% translate "Log out" %}</a>
+    <a class="sidebar-link" href="{% url 'admin:logout' %}">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+      <span>{% translate "Log out" %}</span>
+    </a>
   </div>
-  {% endblock %}
-</div>
+</aside>
 
-<nav class="brand-nav" aria-label="Sections">
-  <div class="brand-nav-inner">
-    <a class="brand-tab{% if request.resolver_match.url_name == 'index' %} is-active{% endif %}"
-       href="{% url 'admin:index' %}">{% translate "Overview" %}</a>
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_lead_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:crm_lead_changelist' %}">{% translate "Leads" %}{% if tab_counts.new_leads %} <span class="tab-count">{{ tab_counts.new_leads }}</span>{% endif %}</a>
+<header class="studio-topbar">
+  <button class="sidebar-toggle" id="sidebar-toggle" type="button"
+          aria-label="{% translate 'Toggle navigation' %}" aria-expanded="false" aria-controls="studio-sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
 
-    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_task_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:crm_task_changelist' %}">{% translate "Tasks" %}{% if tab_counts.open_tasks %} <span class="tab-count">{{ tab_counts.open_tasks }}</span>{% endif %}</a>
-
-    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_contact_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:crm_contact_changelist' %}">{% translate "Contacts" %}</a>
-
-    <a class="brand-tab{% if request.resolver_match.url_name == 'content_page_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:content_page_changelist' %}">{% translate "Pages" %}</a>
-
-    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_service_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:crm_service_changelist' %}">{% translate "Services" %}</a>
-
-    <a class="brand-tab{% if request.resolver_match.url_name == 'content_mediaitem_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:content_mediaitem_changelist' %}">{% translate "Media" %}</a>
-
-    <a class="brand-tab{% if request.resolver_match.url_name == 'content_sitesetting_changelist' %} is-active{% endif %}"
-       href="{% url 'admin:content_sitesetting_changelist' %}">{% translate "Settings" %}</a>
+  <div class="topbar-title">
+    {% block topbar_title %}{{ title }}{% endblock %}
   </div>
-</nav>
+
+  <div class="topbar-actions">
+    <a class="topbar-link" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      <span>{% translate "View site" %}</span>
+    </a>
+  </div>
+</header>
+
+<script>
+/* Sidebar drawer for small screens. Kept dependency-free and a11y-aware:
+   Escape closes it, the overlay click closes it, and aria-expanded stays in
+   sync so a screen reader announces the toggle's state. */
+(function () {
+    var body = document.body;
+    var toggle = document.getElementById('sidebar-toggle');
+    var overlay = document.getElementById('sidebar-overlay');
+
+    function setOpen(open) {
+        body.classList.toggle('sidebar-open', open);
+        if (toggle) toggle.setAttribute('aria-expanded', String(open));
+    }
+
+    if (toggle) {
+        toggle.addEventListener('click', function () {
+            setOpen(!body.classList.contains('sidebar-open'));
+        });
+    }
+    if (overlay) overlay.addEventListener('click', function () { setOpen(false); });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') setOpen(false);
+    });
+
+    /* Leaving the mobile breakpoint with the drawer open would strand the
+       sidebar off-canvas, so reset it when the viewport grows. */
+    window.addEventListener('resize', function () {
+        if (window.innerWidth > 900) setOpen(false);
+    });
+})();
+</script>
 {% endblock %}
