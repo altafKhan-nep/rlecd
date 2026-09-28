@@ -28,24 +28,98 @@ REPO_ROOT = BASE_DIR.parent
 FRONTEND_DIR = REPO_ROOT / 'frontend'
 
 
+def _blank_to_default(name, default, cast):
+    """Read an env var, treating an empty value as "not set".
+
+    Deployment dashboards keep a key whose value field was left empty as an
+    empty string rather than dropping it. `config(..., cast=int)` on such a
+    value raises `ValueError: invalid literal for int() with base 10: ''` while
+    the settings module is being imported, which fails the build with a
+    traceback that names neither the variable nor the remedy.
+
+    In practice a blank value means "not configured yet", so fall back to the
+    default and let `scripts/preflight.py` report the real problem with a
+    message that names it.
+
+    The cast is applied to the default as well as to a present value, because
+    decouple casts its default too. Skipping that returns a default of the
+    wrong type: a blank CSRF_TRUSTED_ORIGINS would yield the bare string
+    "https://rlecd.com" instead of a list, and Django then validates each
+    character of it as an origin.
+    """
+    raw = config(name, default="")
+    if raw is None or not str(raw).strip():
+        raw = default
+    return cast(raw)
+
+
+def _int_env(name, default, minimum=None):
+    """Read an integer env var, tolerating a blank value.
+
+    A present-but-unparseable value is a genuine typo and still raises, but as
+    ImproperlyConfigured naming the variable and the bad value, instead of a
+    bare ValueError from inside decouple naming neither.
+    """
+    raw = config(name, default="")
+    if raw is None or not str(raw).strip():
+        raw = default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ImproperlyConfigured(
+            f"{name} must be a whole number, but is set to {raw!r}."
+        ) from None
+    if minimum is not None and value < minimum:
+        raise ImproperlyConfigured(
+            f"{name} must be >= {minimum}, but is set to {raw!r}."
+        )
+    return value
+
+
+def _bool_env(name, default):
+    """Read a boolean env var, treating a blank value as "not set".
+
+    decouple's `cast=bool` calls bool() on the raw string, so a variable that
+    was added to the deployment dashboard with an empty value field becomes
+    False rather than falling back to the default. For SESSION_COOKIE_SECURE
+    and CSRF_COOKIE_SECURE that silently *downgrades* security, which is worse
+    than the crash it avoids.
+    """
+    return _blank_to_default(
+        name, default,
+        lambda v: str(v).strip().lower() in ('1', 'true', 'yes', 'on'),
+    )
+
+
 # Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# See https://docs.djangoproject.com/en/6.0/topics/settings/
+
+from django.core.exceptions import ImproperlyConfigured
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', cast=bool)
+DEBUG = _bool_env('DEBUG', False)
 
-ALLOWED_HOSTS = config(
+_ALLOWED_HOSTS_DEFAULT = 'homeimp.quantumcoresoftware.com,www.homeimp.quantumcoresoftware.com'
+ALLOWED_HOSTS = _blank_to_default(
     'ALLOWED_HOSTS',
-    default='homeimp.quantumcoresoftware.com,www.homeimp.quantumcoresoftware.com',
-    cast=lambda v: [h.strip() for h in str(v).split(',') if h.strip()],
+    _ALLOWED_HOSTS_DEFAULT,
+    lambda v: [h.strip() for h in str(v).split(',') if h.strip()],
 )
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS resolved to an empty list. Set it to the hostname the "
+        "site is served from, e.g. ALLOWED_HOSTS=rlecd.com,www.rlecd.com — "
+        "without it every request returns 400."
+    )
 
 # Canonical site origin. Used for <link rel="canonical">, Open Graph URLs and
 # the sitemap. Falls back to the primary ALLOWED_HOSTS entry when unset.
-SITE_URL = config('SITE_URL', default=f"https://{ALLOWED_HOSTS[0]}").rstrip('/')
+SITE_URL = _blank_to_default(
+    'SITE_URL', f"https://{ALLOWED_HOSTS[0]}", lambda v: v
+).rstrip('/')
 
 
 # Application definition
@@ -76,7 +150,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Force HTTPS. Enabled in production only — with it on in local dev, Django
 # 301-redirects every request to https:// and the dev server has no TLS cert,
 # producing an infinite redirect loop.
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
+SECURE_SSL_REDIRECT = _bool_env('SECURE_SSL_REDIRECT', not DEBUG)
 
 # The Edge/load balancer terminates TLS upstream, so Django sees plain HTTP
 # unless it is told to trust the forwarding header. The host allowlist stays
@@ -104,17 +178,17 @@ def _origin(value):
     return value
 
 
-CSRF_TRUSTED_ORIGINS = config(
+CSRF_TRUSTED_ORIGINS = _blank_to_default(
     'CSRF_TRUSTED_ORIGINS',
-    default=_origin(SITE_URL),
-    cast=lambda v: [o for o in (_origin(o) for o in str(v).split(',')) if o],
+    _origin(SITE_URL),
+    lambda v: [o for o in (_origin(o) for o in str(v).split(',')) if o] or [_origin(SITE_URL)],
 )
 
 # Secure cookies. A "Secure" cookie is withheld by the browser over plain HTTP,
 # so leaving these on would make every form POST fail with 403 during local dev
 # against the runserver. Off in DEBUG, on in production.
-SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=not DEBUG, cast=bool)
-CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=not DEBUG, cast=bool)
+SESSION_COOKIE_SECURE = _bool_env('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _bool_env('CSRF_COOKIE_SECURE', not DEBUG)
 
 # Optional: SameSite policy for extra security
 SESSION_COOKIE_SAMESITE = 'Lax'
@@ -126,11 +200,9 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # shared platform hostname (e.g. *.vercel.app) must not inherit a one-year
 # include-subdomains policy or be submitted to the preload list, because that
 # would affect every other site sharing that platform's parent domain.
-SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=31536000, cast=int)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
-    'SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False, cast=bool
-)
-SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=False, cast=bool)
+SECURE_HSTS_SECONDS = _int_env('SECURE_HSTS_SECONDS', 31536000, minimum=0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _bool_env('SECURE_HSTS_INCLUDE_SUBDOMAINS', False)
+SECURE_HSTS_PRELOAD = _bool_env('SECURE_HSTS_PRELOAD', False)
 
 # Security headers
 SECURE_BROWSER_XSS_FILTER = True
@@ -142,7 +214,7 @@ X_FRAME_OPTIONS = 'DENY'
 # {% csrf_token %}. That makes content-editing accounts as powerful as template
 # authors, so section/page change permissions should be restricted to trusted
 # staff. Set False to treat stored section HTML as literal text instead.
-CONTENT_ALLOW_TEMPLATES = config('CONTENT_ALLOW_TEMPLATES', default=True, cast=bool)
+CONTENT_ALLOW_TEMPLATES = _bool_env('CONTENT_ALLOW_TEMPLATES', True)
 
 
 MIDDLEWARE = [
@@ -162,7 +234,7 @@ MIDDLEWARE = [
 # non-manifest storage backend above does not fingerprint filenames, so a long
 # TTL would make clients hold a stale CSS/JS file after a deploy. Raise it only
 # if asset names are made content-addressed.
-WHITENOISE_MAX_AGE = config('WHITENOISE_MAX_AGE', default=3600, cast=int)
+WHITENOISE_MAX_AGE = _int_env('WHITENOISE_MAX_AGE', 3600, minimum=0)
 
 ROOT_URLCONF = 'home_improvement.urls'
 
@@ -361,23 +433,42 @@ MESSAGE_TAGS = {
     50: "critical",
 }
 
-EMAIL_BACKEND = config('EMAIL_BACKEND')
-EMAIL_HOST = config('EMAIL_HOST')
-EMAIL_PORT = config('EMAIL_PORT', cast=int)
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', cast=bool)
-EMAIL_USE_SSL = config('EMAIL_USE_SSL', cast=bool)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+# Email defaults to the console backend so that a deployment which has not
+# finished configuring SMTP still *builds and serves pages*. Nine mandatory
+# variables here previously meant the build could not succeed at all until
+# working SMTP credentials existed, which blocks deploying the site itself over
+# a missing notification channel.
+#
+# This is deliberately not silent: scripts/preflight.py fails on the console
+# backend, on an empty ADMIN_EMAIL, and on EMAIL_USE_SSL/EMAIL_USE_TLS both
+# being set, so an unconfigured mail setup blocks a release rather than
+# quietly dropping lead notifications.
+EMAIL_BACKEND = _blank_to_default(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend',
+    lambda v: v,
+)
+EMAIL_HOST = _blank_to_default('EMAIL_HOST', '', lambda v: v)
+EMAIL_PORT = _int_env('EMAIL_PORT', 587, minimum=1)
+EMAIL_USE_TLS = _bool_env('EMAIL_USE_TLS', True)
+EMAIL_USE_SSL = _bool_env('EMAIL_USE_SSL', False)
+EMAIL_HOST_USER = _blank_to_default('EMAIL_HOST_USER', '', lambda v: v)
+EMAIL_HOST_PASSWORD = _blank_to_default('EMAIL_HOST_PASSWORD', '', lambda v: v)
 
 # Bound how long a send may block. A serverless request has a hard wall-clock
 # limit, and a hung SMTP connection would otherwise hold the invocation open
 # until it is killed. Failures are already caught in crm.services, so an
 # early timeout degrades to "no notification" instead of a dead request.
-EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=10, cast=int)
+EMAIL_TIMEOUT = _int_env('EMAIL_TIMEOUT', 10, minimum=1)
 
 # --- Email addresses ---
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
-ADMIN_EMAIL = config('ADMIN_EMAIL').split(',')
+DEFAULT_FROM_EMAIL = _blank_to_default('DEFAULT_FROM_EMAIL', 'webmaster@localhost', lambda v: v)
+# Comma-separated, blanks dropped: a trailing comma must not become a recipient.
+ADMIN_EMAIL = [
+    addr.strip()
+    for addr in _blank_to_default('ADMIN_EMAIL', '', lambda v: v).split(',')
+    if addr.strip()
+]
 
 # Refuse to serve with DEBUG on in a real Vercel environment. Debug mode
 # renders detailed tracebacks containing settings and environment values, and

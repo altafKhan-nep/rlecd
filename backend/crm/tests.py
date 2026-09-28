@@ -661,3 +661,174 @@ class TestDiscoveryLayoutTests(SimpleTestCase):
         args, kwargs = parent_build.call_args
         self.assertEqual(args[0], ["crm.tests"])
         self.assertNotIn("top_level", kwargs)
+
+
+class EnvVarToleranceTests(SimpleTestCase):
+    """A blank env var must not fail the build.
+
+    A deployment dashboard keeps a key whose value field was left empty as an
+    empty string rather than dropping it. `config(..., cast=int)` on such a
+    value raised `ValueError: invalid literal for int() with base 10: ''` while
+    the settings module was still being imported, which failed the Vercel build
+    with a traceback naming neither the variable nor the fix.
+
+    These run settings import in a subprocess against an injected repository so
+    the developer's real .env cannot mask the behaviour being tested.
+    """
+
+    # Runs in a subprocess so the real .env cannot supply the values under
+    # test. decouple resolves config through a lazily-built `config.config`
+    # (a Config wrapping a repository) and Config.get reads os.environ first,
+    # so both must be replaced for the injected values to be authoritative.
+    DRIVER = """
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path({backend!r}) / "backend"))
+
+import decouple
+from decouple import UndefinedValueError, Config
+
+class DictRepository:
+    def __init__(self, data):
+        self.data = data
+    def __contains__(self, key):
+        return key in self.data
+    def __getitem__(self, key):
+        if key in self.data:
+            return self.data[key]
+        raise UndefinedValueError(key)
+
+for _key in list(os.environ):
+    if _key.isupper() and ("EMAIL" in _key or "SECRET" in _key or "ALLOWED" in _key):
+        del os.environ[_key]
+
+decouple.config.config = Config(DictRepository(json.loads(sys.argv[1])))
+
+os.environ["DJANGO_SETTINGS_MODULE"] = "home_improvement.settings"
+import django
+django.setup()
+from django.conf import settings
+keys = {keys!r}
+print(json.dumps({{k: getattr(settings, k) for k in keys}}))
+"""
+
+    KEYS = [
+        "DEBUG", "ALLOWED_HOSTS", "SITE_URL", "CSRF_TRUSTED_ORIGINS",
+        "EMAIL_BACKEND", "EMAIL_HOST", "EMAIL_PORT", "EMAIL_USE_TLS",
+        "EMAIL_USE_SSL", "EMAIL_HOST_USER", "DEFAULT_FROM_EMAIL",
+        "ADMIN_EMAIL", "EMAIL_TIMEOUT", "SECURE_HSTS_SECONDS",
+        "SECURE_HSTS_INCLUDE_SUBDOMAINS", "SECURE_HSTS_PRELOAD",
+        "SECURE_SSL_REDIRECT", "SESSION_COOKIE_SECURE", "CSRF_COOKIE_SECURE",
+        "CONTENT_ALLOW_TEMPLATES", "WHITENOISE_MAX_AGE",
+    ]
+
+    def load(self, env, expect_error=None):
+        """Import settings in a subprocess; return resolved values or the error."""
+        import json as _json
+        import subprocess
+        import sys as _sys
+
+        script = self.DRIVER.format(
+            backend=str(settings.REPO_ROOT), keys=self.KEYS
+        )
+        proc = subprocess.run(
+            [_sys.executable, "-c", script, _json.dumps(env)],
+            capture_output=True, text=True, cwd=str(settings.REPO_ROOT),
+        )
+        if expect_error:
+            self.assertNotEqual(proc.returncode, 0, f"expected failure, got:\n{proc.stdout}")
+            self.assertIn(expect_error, proc.stdout + proc.stderr)
+            return None
+        self.assertEqual(
+            proc.returncode, 0,
+            f"settings import failed:\n{proc.stdout}\n{proc.stderr}",
+        )
+        return _json.loads(proc.stdout.strip().splitlines()[-1])
+
+    MINIMAL = {"SECRET_KEY": "x" * 50, "DEBUG": "False"}
+
+    def test_minimal_environment_imports(self):
+        """The site must be deployable before SMTP is configured."""
+        cfg = self.load(self.MINIMAL)
+        self.assertIs(cfg["DEBUG"], False)
+        self.assertIn("console.EmailBackend", cfg["EMAIL_BACKEND"])
+        self.assertEqual(cfg["EMAIL_PORT"], 587)
+        self.assertIs(cfg["EMAIL_USE_TLS"], True)
+        self.assertIs(cfg["EMAIL_USE_SSL"], False)
+        self.assertEqual(cfg["EMAIL_TIMEOUT"], 10)
+
+    def test_blank_int_vars_fall_back_to_defaults(self):
+        for name, expected in (
+            ("EMAIL_PORT", 587),
+            ("EMAIL_TIMEOUT", 10),
+            ("SECURE_HSTS_SECONDS", 31536000),
+            ("WHITENOISE_MAX_AGE", 3600),
+        ):
+            with self.subTest(var=name):
+                cfg = self.load({**self.MINIMAL, name: ""})
+                self.assertEqual(cfg[name], expected)
+
+    def test_blank_bool_vars_keep_their_default_not_false(self):
+        """A blank must not silently become False.
+
+        decouple's cast=bool calls bool('') -> False, which for the secure
+        cookie flags is a silent security downgrade.
+        """
+        cfg = self.load({
+            **self.MINIMAL,
+            "SESSION_COOKIE_SECURE": "", "CSRF_COOKIE_SECURE": "",
+            "SECURE_SSL_REDIRECT": "",
+        })
+        self.assertIs(cfg["SESSION_COOKIE_SECURE"], True)
+        self.assertIs(cfg["CSRF_COOKIE_SECURE"], True)
+        self.assertIs(cfg["SECURE_SSL_REDIRECT"], True)
+
+    def test_explicit_false_still_works(self):
+        """...but a deliberate 'False' must be honoured, not treated as blank."""
+        cfg = self.load({
+            **self.MINIMAL,
+            "SECURE_HSTS_PRELOAD": "False",
+            "SECURE_HSTS_INCLUDE_SUBDOMAINS": "false",
+            "EMAIL_USE_TLS": "False",
+            "DEBUG": "False",
+        })
+        self.assertIs(cfg["SECURE_HSTS_PRELOAD"], False)
+        self.assertIs(cfg["SECURE_HSTS_INCLUDE_SUBDOMAINS"], False)
+        self.assertIs(cfg["EMAIL_USE_TLS"], False)
+
+    def test_csrf_origins_always_a_nonempty_list(self):
+        """Regression: a blank value once returned a bare string.
+
+        Django iterates CSRF_TRUSTED_ORIGINS, so a string made it validate each
+        character as an origin and `manage.py check` failed with 17 errors.
+        """
+        for value in ("", "  ", ","):
+            with self.subTest(value=value):
+                cfg = self.load({**self.MINIMAL, "CSRF_TRUSTED_ORIGINS": value})
+                origins = cfg["CSRF_TRUSTED_ORIGINS"]
+                self.assertIsInstance(origins, list)
+                self.assertTrue(origins)
+                for origin in origins:
+                    self.assertTrue(origin.startswith(("http://", "https://")))
+
+    def test_allowed_hosts_blank_falls_back_and_never_empty(self):
+        cfg = self.load({**self.MINIMAL, "ALLOWED_HOSTS": ""})
+        self.assertIsInstance(cfg["ALLOWED_HOSTS"], list)
+        self.assertTrue(cfg["ALLOWED_HOSTS"])
+
+    def test_admin_email_drops_trailing_comma(self):
+        cfg = self.load({**self.MINIMAL, "ADMIN_EMAIL": "a@b.c,"})
+        self.assertEqual(cfg["ADMIN_EMAIL"], ["a@b.c"])
+        cfg = self.load({**self.MINIMAL, "ADMIN_EMAIL": ""})
+        self.assertEqual(cfg["ADMIN_EMAIL"], [])
+
+    def test_real_typos_still_fail_and_name_the_variable(self):
+        for env, needle in (
+            ({"EMAIL_PORT": "notanumber"}, "EMAIL_PORT must be a whole number"),
+            ({"SECURE_HSTS_SECONDS": "abc"}, "SECURE_HSTS_SECONDS must be a whole number"),
+            ({"EMAIL_PORT": "0"}, "EMAIL_PORT must be >= 1"),
+            ({"WHITENOISE_MAX_AGE": "-1"}, "WHITENOISE_MAX_AGE must be >= 0"),
+            ({"ALLOWED_HOSTS": ", ,"}, "ALLOWED_HOSTS resolved to an empty list"),
+        ):
+            with self.subTest(env=env):
+                self.load({**self.MINIMAL, **env}, expect_error=needle)
