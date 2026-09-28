@@ -115,6 +115,17 @@ if not ALLOWED_HOSTS:
         "without it every request returns 400."
     )
 
+# Vercel generates a new hostname per deployment and per preview, so an
+# exact-match ALLOWED_HOSTS is a trap: the build succeeds and then every
+# request 400s on a name nobody predicted. Django treats a leading dot as
+# "this domain and all subdomains", which covers the generated hosts.
+# A custom domain still has to be listed in ALLOWED_HOSTS, because
+# deliberately guessing an apex domain is how host-header tricks get in.
+if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
+    _PLATFORM_HOST = '.vercel.app'
+    if _PLATFORM_HOST not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_PLATFORM_HOST)
+
 # Canonical site origin. Used for <link rel="canonical">, Open Graph URLs and
 # the sitemap. Falls back to the primary ALLOWED_HOSTS entry when unset.
 SITE_URL = _blank_to_default(

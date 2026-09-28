@@ -9,6 +9,7 @@ explicitly:
 """
 from unittest import mock
 
+import importlib
 import os
 
 from django.conf import settings
@@ -902,3 +903,42 @@ print(json.dumps({{k: getattr(settings, k) for k in keys}}))
         ):
             with self.subTest(env=env):
                 self.load({**self.MINIMAL, **env}, expect_error=needle)
+
+
+class VercelHostTests(SimpleTestCase):
+    """Vercel generates hostnames, so ALLOWED_HOSTS must not be an exact list."""
+
+    def _load(self, **overrides):
+        mod = importlib.import_module("home_improvement.settings")
+        env = {
+            "VERCEL": "1",
+            "VERCEL_ENV": "production",
+            "DEBUG": "False",
+            "ALLOWED_HOSTS": "",
+            "SITE_URL": "https://rlecd.com",
+        }
+        env.update(overrides)
+        with mock.patch.dict(os.environ, env, clear=False):
+            mod = importlib.reload(mod)
+            self.addCleanup(importlib.reload, mod)
+            return mod
+
+    def test_blank_allowed_hosts_still_serves_generated_vercel_hostname(self):
+        """A blank value must not 400 every Vercel request."""
+        mod = self._load()
+        self.assertIn(".vercel.app", mod.ALLOWED_HOSTS)
+        self.assertNotIn(".vercel.app", mod.CSRF_TRUSTED_ORIGINS)
+
+    def test_custom_domain_is_preserved_alongside_platform_host(self):
+        mod = self._load(ALLOWED_HOSTS="rlecd.com,www.rlecd.com")
+        self.assertEqual(
+            [h for h in mod.ALLOWED_HOSTS if h != ".vercel.app"],
+            ["rlecd.com", "www.rlecd.com"],
+        )
+
+    def test_platform_host_not_added_off_vercel(self):
+        mod = importlib.import_module("home_improvement.settings")
+        with mock.patch.dict(os.environ, {"ALLOWED_HOSTS": "example.com"}, clear=True):
+            mod = importlib.reload(mod)
+            self.addCleanup(importlib.reload, mod)
+            self.assertNotIn(".vercel.app", mod.ALLOWED_HOSTS)
