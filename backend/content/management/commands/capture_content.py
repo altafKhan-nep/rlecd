@@ -25,11 +25,13 @@ class Command(BaseCommand):
                             help="Report what would change without writing.")
 
     def handle(self, *args, **options):
-        base_dir = settings.BASE_DIR
+        # Captured templates live under frontend/, a sibling of backend/,
+        # so the importer is driven from the repository root.
+        root_dir = settings.REPO_ROOT
 
         if options["dry_run"]:
             try:
-                specs = importer.collect_specs(base_dir)
+                specs = importer.collect_specs(root_dir)
             except FileNotFoundError as exc:
                 raise CommandError(str(exc)) from exc
             for spec in specs:
@@ -44,7 +46,7 @@ class Command(BaseCommand):
 
         try:
             created, updated, removed, written = importer.import_pages(
-                base_dir, reset=options["reset"], log=self.stdout.write)
+                root_dir, reset=options["reset"], log=self.stdout.write)
         except FileNotFoundError as exc:
             raise CommandError(str(exc)) from exc
 

@@ -11,7 +11,8 @@ things that work locally cannot work in production:
 | Django's static serving | no web server to hand assets to | WhiteNoise serves `/static` from the bundle |
 
 Local development is unchanged: with `DATABASE_URL` unset, settings falls back
-to `db.sqlite3`, so `manage.py` and the full test suite still work untouched.
+to `backend/db.sqlite3`, so `backend/manage.py` and the full test suite still
+work untouched.
 
 ## Files added
 
@@ -87,7 +88,7 @@ The build runs `collectstatic`. Migrations are deliberately **not** automatic
 production database. Bootstrap once, from a machine that can reach the DB:
 
 ```bash
-DATABASE_URL='postgresql://...' python manage.py migrate
+DATABASE_URL='postgresql://...' python backend/manage.py migrate
 ```
 
 ### 4. Seed content
@@ -96,9 +97,9 @@ The production database starts empty — it does not inherit local sqlite data.
 Seed it explicitly:
 
 ```bash
-DATABASE_URL='postgresql://...' python manage.py seed_services
-DATABASE_URL='postgresql://...' python manage.py capture_content
-DATABASE_URL='postgresql://...' python manage.py createsuperuser
+DATABASE_URL='postgresql://...' python backend/manage.py seed_services
+DATABASE_URL='postgresql://...' python backend/manage.py capture_content
+DATABASE_URL='postgresql://...' python backend/manage.py createsuperuser
 ```
 
 `capture_content` is safe to re-run and is how the 19 mirrored pages populate
@@ -112,7 +113,7 @@ sqlite file.
 
 ## Operating notes
 
-**Static payload is the main risk.** `main/static` is ~56MB, dominated by a
+**Static payload is the main risk.** `frontend/static` is ~56MB, dominated by a
 single 14MB `bathroom-hero-bg.jpg` used as a `center/cover` background on
 `/bathroom-remodeling/`. WhiteNoise's Brotli precompression does not help,
 because JPEG is already compressed. This inflates the function bundle and
@@ -137,3 +138,26 @@ connection is the realistic worst case.
 **Preview deployments** share the same database unless a separate
 `DATABASE_URL` is scoped to them, so a preview build can write to production
 leads. Scope a separate database if that matters.
+
+## Deploying to Render instead
+
+Vercel's Hobby plan is not licensed for commercial use, so if this site is
+being deployed for the business you need Vercel Pro or a different host.
+Render is the straightforward alternative: a real WSGI process, no bundle size
+ceiling, and the same `DATABASE_URL` contract.
+
+- **Build command:** `python backend/manage.py collectstatic --noinput`
+- **Start command:** `gunicorn home_improvement.wsgi:application --chdir backend`
+- **Root directory:** repository root (leave the default)
+
+`--chdir backend` is what puts the apps on `sys.path`; without it Gunicorn
+cannot import `home_improvement`. Verified locally: `/`, `/admin/login/`,
+`/contact/`, `/cabinets/` and `/static/*` all serve 200 under this command.
+
+Two differences from Vercel worth knowing:
+
+* The free tier spins down after inactivity, so the first request after a
+  quiet period is slow (cold start, not an error).
+* `collectstatic` output is served by WhiteNoise from `STATIC_ROOT` exactly as
+  on Vercel, so `DEBUG=False` still matters — with `DEBUG=True` Django does not
+  apply the compressed storage backend.

@@ -15,8 +15,17 @@ import os
 from urllib.parse import urlparse, parse_qs, unquote, urlencode, urlunparse
 from decouple import config
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# Repository layout:
+#
+#   backend/   Django project + apps (Python only)
+#   frontend/  templates, static assets, captured page sources
+#
+# BASE_DIR is the backend directory so it stays the anchor for app code.
+# REPO_ROOT is the checkout root, and FRONTEND_DIR holds everything that is
+# presented to a visitor.
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent
+FRONTEND_DIR = REPO_ROOT / 'frontend'
 
 
 # Quick-start development settings - unsuitable for production
@@ -161,12 +170,19 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
-            os.path.join(BASE_DIR, 'templates'),
+            # Project-level overrides, e.g. admin/login.html.
+            os.path.join(FRONTEND_DIR, 'templates'),
+            # The runtime shell: base.html plus the nav/foot/post partials.
+            # These are referenced unprefixed ("base.html",
+            # "partials/_nav_1.html") throughout the stored page markup, so
+            # they must be on DIRS now that they no longer live inside an
+            # app's templates/ directory.
+            os.path.join(FRONTEND_DIR, 'templates_main'),
             # The page templates captured from the live site. They are import
             # input and the legacy fallback used if a Page row is missing, not
             # the runtime templates. Listed here so {% extends 'main/x.html' %}
             # still resolves for that fallback.
-            os.path.join(BASE_DIR, 'content', 'source_templates'),
+            os.path.join(FRONTEND_DIR, 'source_templates'),
         ],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -306,7 +322,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR,'staticfiles')
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR,'static')
+    os.path.join(FRONTEND_DIR, 'static')
 ]
 MEDIA_ROOT = os.path.join(BASE_DIR,'media')
 MEDIA_URL = '/media/'
@@ -331,6 +347,10 @@ if not DEBUG:
             'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
         },
     }
+
+# Pin test discovery to backend/ so `manage.py test` finds the apps no matter
+# which directory it is invoked from. See home_improvement/runner.py.
+TEST_RUNNER = 'home_improvement.runner.BackendDiscoverRunner'
 
 #django message framework
 from django.contrib.messages import constants as messages

@@ -183,41 +183,42 @@ def capture_page_spec(template_source, base_blocks, path, title):
 #: Where the page templates captured from the live site live, most preferred
 #: first. They are import input and legacy-fallback markup, not the runtime
 #: templates: the running site renders content/page.html from the database.
-SOURCE_TEMPLATE_DIRS = ("content/source_templates/main", "main/templates/main")
-BASE_TEMPLATE_DIRS = ("main/templates", "content/source_templates")
+#: Paths are relative to the repository root, which is what callers pass in.
+SOURCE_TEMPLATE_DIRS = ("frontend/source_templates/main", "main/templates/main")
+BASE_TEMPLATE_DIRS = ("frontend/templates_main", "frontend/source_templates")
 
 #: chunks that carry page structure rather than editable copy. Marked locked so
 #: the CRM shows a warning instead of letting staff break the page shell.
 LOCKED_TAGS = {"style", "main"}
 
 
-def _first_existing(base_dir, rels, filename):
+def _first_existing(root_dir, rels, filename):
     for rel in rels:
-        candidate = base_dir / rel / filename
+        candidate = root_dir / rel / filename
         if candidate.exists():
             return candidate
     tried = ", ".join(f"{rel}/{filename}" for rel in rels)
     raise FileNotFoundError(f"not found, tried: {tried}")
 
 
-def _first_existing_dir(base_dir, rels):
+def _first_existing_dir(root_dir, rels):
     for rel in rels:
-        candidate = base_dir / rel
+        candidate = root_dir / rel
         if candidate.is_dir():
             return candidate
     tried = ", ".join(rels)
     raise FileNotFoundError(f"no page template directory found, tried: {tried}")
 
 
-def collect_specs(base_dir):
+def collect_specs(root_dir):
     """Build one spec dict per page, from the captured templates.
 
-    base.html and the page templates are located independently: base.html is
-    the runtime shell and lives in main/templates, while the page templates are
-    the captured mirror source and live in content/source_templates/main.
+    root_dir is the repository root: base.html is the runtime shell and lives
+    in frontend/templates_main, while the page templates are the captured
+    mirror source and live in frontend/source_templates/main.
     """
-    base_path = _first_existing(base_dir, BASE_TEMPLATE_DIRS, "base.html")
-    pages_dir = _first_existing_dir(base_dir, SOURCE_TEMPLATE_DIRS)
+    base_path = _first_existing(root_dir, BASE_TEMPLATE_DIRS, "base.html")
+    pages_dir = _first_existing_dir(root_dir, SOURCE_TEMPLATE_DIRS)
     base_blocks = parse_blocks(base_path.read_text(encoding="utf-8"))
 
     specs = []
@@ -242,7 +243,7 @@ def collect_specs(base_dir):
     return specs
 
 
-def import_pages(base_dir, *, reset=False, log=None):
+def import_pages(root_dir, *, reset=False, log=None):
     """Create/update Page rows and their sections from the captured templates.
 
     Returns (created, updated, removed, sections_written). Safe to re-run.
@@ -250,7 +251,7 @@ def import_pages(base_dir, *, reset=False, log=None):
     from content.models import Page, Section
     from django.db import transaction
 
-    specs = collect_specs(base_dir)
+    specs = collect_specs(root_dir)
     created = updated = removed = written = 0
 
     with transaction.atomic():

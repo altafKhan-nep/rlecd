@@ -21,8 +21,13 @@ import os
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BASE_DIR))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+# The Django apps live in backend/ and must import as top-level `main`, `crm`
+# and `content` -- the app labels recorded in migrations.
+BACKEND_DIR = REPO_ROOT / "backend"
+for _path in (BACKEND_DIR,):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 FAILURES = []
 WARNINGS = []

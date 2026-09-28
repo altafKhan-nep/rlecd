@@ -495,7 +495,7 @@ class DeploymentSettingsTests(TestCase):
         from pathlib import Path
 
         spec = importlib.util.spec_from_file_location(
-            "preflight", Path(__file__).resolve().parent.parent / "scripts" / "preflight.py"
+            "preflight", settings.REPO_ROOT / "scripts" / "preflight.py"
         )
         preflight = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(preflight)
@@ -609,3 +609,55 @@ class DatabaseUrlParsingTests(SimpleTestCase):
         db = self.parse("postgresql://u:pw@host:5432/db?sslmode=require")
         for key in ("dbname", "user", "password", "host", "port"):
             self.assertNotIn(key, db["OPTIONS"])
+
+
+class TestDiscoveryLayoutTests(SimpleTestCase):
+    """Guards the frontend/backend split against silent test loss.
+
+    Django's default discovery searches the current working directory. After the
+    move, `manage.py test` run from the repository root found *zero* tests and
+    still exited 0, which would let a broken suite pass CI unnoticed. These
+    tests fail loudly if that ever regresses.
+    """
+
+    def test_apps_live_in_backend_not_at_repo_root(self):
+        # The reason the default runner is not usable: nothing importable as a
+        # test package sits at the root any more.
+        self.assertTrue((settings.BASE_DIR / "main" / "tests.py").is_file())
+        self.assertTrue((settings.BASE_DIR / "crm" / "tests.py").is_file())
+        self.assertTrue((settings.BASE_DIR / "content" / "tests.py").is_file())
+        self.assertFalse((settings.REPO_ROOT / "main").exists())
+        self.assertFalse((settings.REPO_ROOT / "crm").exists())
+        self.assertFalse((settings.REPO_ROOT / "content").exists())
+
+    def test_custom_test_runner_is_configured(self):
+        self.assertEqual(
+            settings.TEST_RUNNER, "home_improvement.runner.BackendDiscoverRunner"
+        )
+
+    def test_runner_pins_discovery_to_backend(self):
+        from home_improvement.runner import BackendDiscoverRunner
+
+        runner = BackendDiscoverRunner(verbosity=0, interactive=False)
+        # With no explicit targets, both the start dir and the import top level
+        # must be backend/ -- pinning only top_level still discovers nothing,
+        # because Django defaults start_dir to '.'.
+        with mock.patch.object(
+            type(runner).__bases__[0], "build_suite", return_value=mock.Mock()
+        ) as parent_build:
+            runner.build_suite(None)
+        args, kwargs = parent_build.call_args
+        self.assertEqual(args[0], [str(settings.BASE_DIR)])
+        self.assertEqual(kwargs["top_level"], str(settings.BASE_DIR))
+
+    def test_explicit_test_labels_are_left_alone(self):
+        from home_improvement.runner import BackendDiscoverRunner
+
+        runner = BackendDiscoverRunner(verbosity=0, interactive=False)
+        with mock.patch.object(
+            type(runner).__bases__[0], "build_suite", return_value=mock.Mock()
+        ) as parent_build:
+            runner.build_suite(["crm.tests"])
+        args, kwargs = parent_build.call_args
+        self.assertEqual(args[0], ["crm.tests"])
+        self.assertNotIn("top_level", kwargs)

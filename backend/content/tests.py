@@ -29,7 +29,7 @@ class ChunkingTests(TestCase):
 
     def test_chunks_rejoin_byte_identically(self):
         for name, (path, _title) in importer.TEMPLATE_SPECS.items():
-            source = f"main/templates/main/{name}.html"
+            source = str(settings.REPO_ROOT / "frontend" / "source_templates" / "main" / f"{name}.html")
             try:
                 with open(source, encoding="utf-8") as fh:
                     src = fh.read()
@@ -269,7 +269,7 @@ class MirrorRegressionTests(TestCase):
 
     @classmethod
     def setUpTestData(cls):
-        importer.import_pages(settings.BASE_DIR, reset=True)
+        importer.import_pages(settings.REPO_ROOT, reset=True)
         clear_template_cache()
 
     def test_imported_sections_reproduce_the_captured_body(self):
@@ -279,7 +279,7 @@ class MirrorRegressionTests(TestCase):
         captured template exactly. If this drifts, the running site can no longer
         be compared against the live markup.
         """
-        specs = {s["slug"]: s for s in importer.collect_specs(settings.BASE_DIR)}
+        specs = {s["slug"]: s for s in importer.collect_specs(settings.REPO_ROOT)}
         for slug, spec in specs.items():
             with self.subTest(page=spec["path"]):
                 page = Page.objects.get(slug=slug)
@@ -288,7 +288,7 @@ class MirrorRegressionTests(TestCase):
                 self.assertEqual(joined, spec["body"])
 
     def test_page_shell_fields_match_the_captured_template(self):
-        specs = {s["slug"]: s for s in importer.collect_specs(settings.BASE_DIR)}
+        specs = {s["slug"]: s for s in importer.collect_specs(settings.REPO_ROOT)}
         for slug, spec in specs.items():
             with self.subTest(page=spec["path"]):
                 page = Page.objects.get(slug=slug)

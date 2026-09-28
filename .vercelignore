@@ -6,12 +6,15 @@
 
 # Build output. `collectstatic` regenerates this on every build, so shipping
 # the previous run only inflates the function bundle.
+backend/staticfiles/
 staticfiles/
 
 # Local database. Never deployed: production uses Postgres via DATABASE_URL,
 # and a sqlite file in the bundle would be a stale, confusing fallback.
+backend/db.sqlite3
 db.sqlite3
 db.sqlite3-journal
+backend/media/
 
 # Secrets. Vercel supplies these as environment variables.
 .env
