@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "framework": null,
-  "buildCommand": "python backend/manage.py collectstatic --noinput && if [ \"$RUN_MIGRATIONS_ON_BUILD\" = \"true\" ]; then python backend/manage.py migrate --noinput; fi",
+  "buildCommand": "python scripts/check_python_version.py && python backend/manage.py collectstatic --noinput && if [ \"$RUN_MIGRATIONS_ON_BUILD\" = \"true\" ]; then python backend/manage.py migrate --noinput; fi",
   "functions": {
     "api/index.py": {
       "maxDuration": 30

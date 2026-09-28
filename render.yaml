@@ -17,7 +17,7 @@ services:
     # Standard pip against a real Linux image, so compiled wheels install and
     # import normally. collectstatic also proves the settings module and the
     # template/static paths are wired correctly before the service goes live.
-    buildCommand: pip install -r requirements.txt && python backend/manage.py collectstatic --noinput
+    buildCommand: python scripts/check_python_version.py && pip install -r requirements.txt && python backend/manage.py collectstatic --noinput
     # Migrations run on every start. This is safe for a single instance, which
     # is what the free plan gives us; a multi-instance deploy would want
     # preDeployCommand instead so it runs once before traffic arrives.
