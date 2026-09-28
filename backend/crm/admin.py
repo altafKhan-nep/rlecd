@@ -10,6 +10,7 @@ from datetime import timedelta
 from django.contrib import admin, messages
 from django.db.models import Count
 from django.utils import timezone
+from django.utils.html import format_html
 
 from . import services
 from .models import (
@@ -54,7 +55,7 @@ class TaskInline(admin.TabularInline):
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
     list_display = (
-        "name", "service_label", "status_badge", "priority_badge", "score",
+        "name", "service_label", "status_badge", "priority_badge", "score_chip",
         "owner", "source", "created_at",
     )
     list_filter = ("status", "priority", "source", "service", "owner", "created_at")
@@ -131,11 +132,25 @@ class LeadAdmin(admin.ModelAdmin):
 
     @admin.display(description="Stage", ordering="status")
     def status_badge(self, obj):
-        return obj.get_status_display()
+        return format_html(
+            '<span class="pill pill-{}">{}</span>', obj.status,
+            obj.get_status_display())
 
     @admin.display(description="Priority", ordering="priority")
     def priority_badge(self, obj):
-        return f"{'HOT ' if obj.is_hot else ''}{obj.get_priority_display()}"
+        return format_html(
+            '<span class="pill pill-{}">{}</span>', obj.priority,
+            obj.get_priority_display())
+
+    @admin.display(description="Score", ordering="score")
+    def score_chip(self, obj):
+        if obj.is_hot:
+            tone = "s-hi"
+        elif obj.score >= 40:
+            tone = "s-mid"
+        else:
+            tone = "s-lo"
+        return format_html('<span class="score-chip {}">{}</span>', tone, obj.score)
 
     # --- bulk actions ----------------------------------------------------
     @admin.action(description="Mark selected as Contacted")
@@ -227,15 +242,30 @@ class LeadActivityAdmin(admin.ModelAdmin):
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ("title", "lead", "due_at", "done", "assigned_to", "overdue")
+    list_display = ("title", "lead", "due_label", "state", "assigned_to")
     list_filter = ("done", "due_at", "assigned_to")
     search_fields = ("title", "lead__name", "lead__email")
     list_select_related = ("lead", "assigned_to")
     actions = ("action_mark_done",)
 
-    @admin.display(boolean=True, description="Overdue")
-    def overdue(self, obj):
-        return obj.is_overdue
+    @admin.display(description="Due", ordering="due_at")
+    def due_label(self, obj):
+        if not obj.due_at:
+            return format_html('<span class="muted">—</span>')
+        text = timezone.localtime(obj.due_at).strftime("%b %-d, %H:%M")
+        if obj.done:
+            return format_html('<span class="muted">{}</span>', text)
+        if obj.is_overdue:
+            return format_html('<span class="pill pill-urgent">{}</span>', text)
+        return text
+
+    @admin.display(description="State", ordering="done")
+    def state(self, obj):
+        if obj.done:
+            return format_html('<span class="pill pill-won">Done</span>')
+        if obj.is_overdue:
+            return format_html('<span class="pill pill-urgent">Overdue</span>')
+        return format_html('<span class="pill pill-new">Open</span>')
 
     @admin.action(description="Mark selected tasks done")
     def action_mark_done(self, request, queryset):
@@ -260,6 +290,7 @@ class ContactAdmin(admin.ModelAdmin):
     raw_id_fields = ("owner", "source_lead")
 
 
-admin.site.site_header = "REAL LIFE EXPERIENCE — CRM"
-admin.site.site_title = "RLECD CRM"
+# Branding lives on StudioAdminSite (main/admin_site.py) rather than being
+# assigned onto admin.site here. Module-level assignment ran after the custom
+# site was installed and silently overwrote its site_header/site_title.
 admin.site.index_title = "Pipeline"

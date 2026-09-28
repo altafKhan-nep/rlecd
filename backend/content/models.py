@@ -10,6 +10,7 @@ and its `Section` rows hold the page body split at lossless top-level HTML
 boundaries. Rendering is a plain ordered concatenation, which is why an edit
 made in the CRM is the only difference between the local page and the live one.
 """
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
@@ -310,3 +311,85 @@ class SiteSetting(models.Model):
     def load(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class MediaItem(models.Model):
+    """An uploaded image, addressable by a stable public path.
+
+    Image-bearing content fields (Page.og_image, Project.image, TrustBadge.image)
+    are deliberately CharFields holding a path like "/static/img/x.jpg" rather
+    than ImageFields. They were populated by capturing the mirror, where the
+    values are already public URLs. Converting them to ImageFields would
+    orphan every captured row and point at files that live in the repo, not in
+    MEDIA_ROOT.
+
+    This model is the upload side of that arrangement: editors add images here,
+    then copy the resulting path into whichever field needs it. Keeping those
+    fields as text is what lets one image reference a repo static file, a CDN,
+    or an upload made here.
+    """
+
+    ALLOWED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
+
+    class Meta:
+        verbose_name = "Media item"
+        verbose_name_plural = "Media library"
+        ordering = ("-created_at",)
+
+    image = models.ImageField(upload_to="uploads/%Y/%m")
+    title = models.CharField(
+        max_length=160, blank=True,
+        help_text="Shown in the library. Falls back to the filename.",
+    )
+    alt_text = models.CharField(
+        max_length=200, blank=True,
+        help_text=(
+            "Describes the image for screen readers and when it fails to "
+            "load. Used by pickers when they build an img tag."
+        ),
+    )
+    is_published = models.BooleanField(
+        default=True,
+        help_text=(
+            "Unpublished images stay in the library but are hidden from "
+            "pickers. Untick to retire an image without breaking live pages "
+            "that already reference it."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title or self.filename
+
+    def clean(self):
+        # Checked here rather than in upload_to so a rejected file produces a
+        # form validation error naming the field, instead of a ValueError from
+        # inside the storage layer after the upload has already been written.
+        name = (self.image.name or "").lower()
+        if name and not name.endswith(self.ALLOWED_EXTENSIONS):
+            raise ValidationError(
+                "Unsupported image type. Allowed: %s"
+                % ", ".join(self.ALLOWED_EXTENSIONS)
+            )
+
+    def save(self, *args, **kwargs):
+        if not self.title:
+            self.title = (self.image.name or "").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        super().save(*args, **kwargs)
+
+    @property
+    def filename(self):
+        return (self.image.name or "").rsplit("/", 1)[-1]
+
+    @property
+    def public_path(self):
+        """The value to paste into Page.og_image, Project.image, etc."""
+        return self.image.url if self.image else ""
+
+    @property
+    def size_display(self):
+        try:
+            return self.image.size
+        except (OSError, ValueError):
+            return 0

@@ -144,7 +144,9 @@ SITE_URL = _blank_to_default('SITE_URL', '', lambda v: v).rstrip('/')
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    # Replaces django.contrib.admin: same app, but admin.site resolves to
+    # main.admin_site.StudioAdminSite so /admin/ opens on the dashboard.
+    'main.admin_config.StudioAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

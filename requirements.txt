@@ -22,3 +22,4 @@ gunicorn==26.2.0
 # automatically and serves the smaller of gzip/brotli per request. Worth the
 # one dependency given the static payload is ~55MB gzipped.
 Brotli==1.2.0
+Pillow==12.1.0

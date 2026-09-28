@@ -24,5 +24,8 @@ urlpatterns = [
     path("",include('main.urls'))
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Uploaded images. Served in DEBUG by the staticfiles helper, and in production
+# by Django's own media view so /media/ resolves on hosts that are not behind a
+# separate static domain. Both routes are equivalent; the explicit one is only
+# added outside DEBUG because the helper is a no-op there.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -9,7 +9,8 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from content.models import (
-    FAQ, Page, Project, Section, ServiceArea, SiteSetting, Testimonial, TrustBadge,
+    FAQ, MediaItem, Page, Project, Section, ServiceArea, SiteSetting,
+    Testimonial, TrustBadge,
 )
 from content.render import clear_template_cache
 
@@ -198,19 +199,80 @@ class TestimonialAdmin(admin.ModelAdmin):
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ("title", "service", "area", "completed_on", "is_published")
+    list_display = ("project_thumb", "title", "service", "area", "completed_on",
+                    "is_published")
+    list_display_links = ("project_thumb", "title")
     list_editable = ("is_published",)
     list_filter = ("is_published", "service", "area")
-    search_fields = ("title", "summary")
+    search_fields = ("title", "summary", "image")
     date_hierarchy = "completed_on"
+    readonly_fields = ("image_reference",)
+
+    @admin.display(description="")
+    def project_thumb(self, obj):
+        # `image` is a CharField holding a URL or a path into the repo's
+        # static files, so a request for a stored upload and a request for a
+        # captured static path are different URLs. Only build an <img> when the
+        # value actually points at something servable.
+        src = self._image_src(obj.image)
+        if not src:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<img src="{}" class="thumb" alt="{}" loading="lazy">',
+            src, obj.title or "project")
+
+    @admin.display(description="Stored image reference")
+    def image_reference(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        return format_html(
+            '<code class="mono" style="background:#f4f4f2;padding:3px 7px;'
+            'border-radius:5px;display:inline-block">{}</code>', obj.image or "—")
+
+    @staticmethod
+    def _image_src(value):
+        """Turn a stored image value into a servable URL, or None.
+
+        Accepts an absolute URL, a root-relative path, or a bare filename that
+        resolves under /static/img/ (how the captured rows are stored).
+        """
+        if not value:
+            return None
+        value = str(value).strip()
+        if value.startswith(("http://", "https://", "/media/")):
+            return value
+        if value.startswith("/static/"):
+            return value
+        if value.startswith("/"):
+            return None
+        return f"/static/img/{value}"
 
 
 @admin.register(TrustBadge)
 class TrustBadgeAdmin(admin.ModelAdmin):
-    list_display = ("label", "issuer", "sort_order", "is_published")
+    list_display = ("badge_thumb", "label", "issuer", "sort_order", "is_published")
+    list_display_links = ("badge_thumb", "label")
     list_editable = ("sort_order", "is_published")
     list_filter = ("is_published",)
-    search_fields = ("label", "issuer")
+    search_fields = ("label", "issuer", "image")
+    readonly_fields = ("image_reference",)
+
+    @admin.display(description="")
+    def badge_thumb(self, obj):
+        src = ProjectAdmin._image_src(obj.image)
+        if not src:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<img src="{}" class="thumb" alt="{}" loading="lazy">',
+            src, obj.label or "badge")
+
+    @admin.display(description="Stored image reference")
+    def image_reference(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        return format_html(
+            '<code class="mono" style="background:#f4f4f2;padding:3px 7px;'
+            'border-radius:5px;display:inline-block">{}</code>', obj.image or "—")
 
 
 @admin.register(SiteSetting)
@@ -226,3 +288,108 @@ class SiteSettingAdmin(admin.ModelAdmin):
         obj.pk = 1
         clear_template_cache()
         super().save_model(request, obj, form, change)
+
+
+class MediaItemInline(admin.TabularInline):
+    """Quick-add images while editing a page, without leaving the screen."""
+
+    model = MediaItem
+    extra = 1
+    fields = ("image", "title", "alt_text", "is_published")
+    readonly_fields = ("path_hint",)
+    verbose_name = "Image"
+    verbose_name_plural = "Images"
+
+    def path_hint(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        return obj.public_path
+
+    path_hint.short_description = "Paste this path"
+
+
+@admin.register(MediaItem)
+class MediaItemAdmin(admin.ModelAdmin):
+    """Image library: upload, preview, publish, retire, delete.
+
+    Uploaded files land in MEDIA_ROOT, which on a free Render service is
+    ephemeral. The dashboard shows that warning on the add form so nobody
+    assumes an upload is permanent until durable storage is configured.
+    """
+
+    list_display = (
+        "thumb", "title", "filename", "path_display", "is_published",
+        "size_display", "created_at",
+    )
+    list_display_links = ("thumb", "title")
+    list_editable = ("is_published",)
+    list_filter = ("is_published", "created_at")
+    search_fields = ("title", "alt_text", "image")
+    readonly_fields = ("path_display", "size_display", "created_at", "updated_at")
+    ordering = ("-created_at",)
+    actions = ("action_unpublish", "action_publish")
+    fieldsets = (
+        (None, {"fields": ("image", "title", "alt_text", "is_published")}),
+        ("Details", {
+            "classes": ("collapse",),
+            "fields": ("path_display", "size_display", "created_at", "updated_at"),
+        }),
+    )
+
+    @admin.display(description="Preview")
+    def thumb(self, obj):
+        if not obj.image:
+            return "-"
+        return format_html(
+            '<img src="{}" class="thumb" alt="{}" loading="lazy">',
+            obj.image.url, obj.alt_text or obj.title or "image preview")
+
+    @admin.display(description="Path to paste")
+    def path_display(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        return format_html(
+            '<code class="mono" style="background:#f4f4f2;padding:3px 7px;'
+            'border-radius:5px;display:inline-block">{}</code>', obj.public_path)
+
+    @admin.display(description="Size", ordering="image")
+    def size_display(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        size = obj.size_display
+        if not size:
+            return "-"
+        if size < 1024:
+            return f"{size} B"
+        if size < 1024 * 1024:
+            return f"{size / 1024:.0f} KB"
+        return f"{size / (1024 * 1024):.1f} MB"
+
+    @admin.action(description="Unpublish selected images")
+    def action_unpublish(self, request, queryset):
+        updated = queryset.update(is_published=False)
+        self.message_user(request, f"{updated} image(s) unpublished.")
+
+    @admin.action(description="Publish selected images")
+    def action_publish(self, request, queryset):
+        updated = queryset.update(is_published=True)
+        self.message_user(request, f"{updated} image(s) published.")
+
+    def add_view(self, request, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["storage_is_ephemeral"] = self._storage_is_ephemeral()
+        return super().add_view(request, form_url, extra_context)
+
+    def _storage_is_ephemeral(self):
+        """True when MEDIA_ROOT is on a platform filesystem that is wiped.
+
+        Render's free tier (and most container hosts) keep the container
+        filesystem only for the life of the instance. Detected by flag rather
+        than by platform sniffing so the warning can be forced in tests.
+        """
+        import os
+        return bool(
+            os.environ.get("RENDER")
+            or os.environ.get("DYNO")
+            or os.environ.get("STUDIO_EPHEMERAL_MEDIA")
+        )

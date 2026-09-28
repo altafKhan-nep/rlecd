@@ -1,0 +1,160 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} studio-dashboard{% endblock %}
+
+{% block userlinks %}{% endblock %}
+{% block usertools %}{{ block.super }}{% endblock %}
+
+{% block content %}
+<div id="content-main" class="studio-dashboard">
+
+  <div class="dash-head">
+    <div>
+      <h1 class="dash-title">Good to see you, {{ user.first_name|default:user.username }}</h1>
+      <p class="dash-sub">Here is where things stand across leads and content.</p>
+    </div>
+    <div class="dash-head-actions">
+      <a class="button" href="{% url 'admin:crm_lead_changelist' %}">{% translate "All leads" %}</a>
+      <a class="button addlink" href="{% url 'admin:crm_lead_add' %}">{% translate "New lead" %}</a>
+    </div>
+  </div>
+
+  {# --- headline numbers ------------------------------------------- #}
+  <div class="stat-grid">
+    {% for s in stats %}
+      <a class="stat-card {{ s.tone }}" href="{% url s.url %}{{ s.query }}">
+        <span class="stat-label">{{ s.label }}</span>
+        <span class="stat-value">{{ s.value }}</span>
+        <span class="stat-hint">{{ s.hint }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
+  <div class="dash-grid">
+
+    {# --- left column ------------------------------------------- #}
+    <div class="dash-col stack">
+
+      <section class="panel">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Recent leads" %}</h2>
+          <a class="panel-link" href="{% url 'admin:crm_lead_changelist' %}">{% translate "View all" %}</a>
+        </header>
+        {% if recent_leads %}
+          <table class="dash-table">
+            <thead>
+              <tr>
+                <th>{% translate "Lead" %}</th>
+                <th>{% translate "Service" %}</th>
+                <th>{% translate "Status" %}</th>
+                <th class="right">{% translate "Score" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lead in recent_leads %}
+                <tr onclick="window.location='{% url 'admin:crm_lead_change' lead.pk %}'" class="row-link">
+                  <td>
+                    <span class="lead-name">{{ lead.name }}</span>
+                    <span class="lead-sub">{{ lead.email }}</span>
+                  </td>
+                  <td>{{ lead.service|default:lead.service_raw|default:"—" }}</td>
+                  <td><span class="pill pill-{{ lead.status }}">{{ lead.get_status_display }}</span></td>
+                  <td class="right"><span class="score-chip">{{ lead.score }}</span></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">{% translate "No leads yet. Submissions from the website will land here." %}</p>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Open tasks" %}</h2>
+          <a class="panel-link" href="{% url 'admin:crm_task_changelist' %}">{% translate "View all" %}</a>
+        </header>
+        {% if upcoming_tasks %}
+          <table class="dash-table">
+            <thead>
+              <tr>
+                <th>{% translate "Task" %}</th>
+                <th>{% translate "Lead" %}</th>
+                <th>{% translate "Due" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for task in upcoming_tasks %}
+                <tr onclick="window.location='{% url 'admin:crm_task_change' task.pk %}'" class="row-link {{ task.is_overdue|yesno:'is-overdue,' }}">
+                  <td>{{ task.title }}</td>
+                  <td class="muted">{{ task.lead.name }}</td>
+                  <td>
+                    {% if task.due_at %}
+                      <span class="{% if task.is_overdue %}pill pill-urgent{% else %}muted{% endif %}">
+                        {{ task.due_at|date:"M j" }}
+                      </span>
+                    {% else %}
+                      <span class="muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">{% translate "Nothing outstanding. Add a task to a lead to track follow-ups." %}</p>
+        {% endif %}
+      </section>
+    </div>
+
+    {# --- right column ------------------------------------------ #}
+    <div class="dash-col stack">
+
+      <section class="panel">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Pipeline" %}</h2>
+        </header>
+        <ul class="pipe">
+          {% for row in pipeline %}
+            <li class="pipe-row{% if not row.is_open %} is-closed{% endif %}">
+              <a class="pipe-label" href="{% url 'admin:crm_lead_changelist' %}?status__exact={{ row.status }}">{{ row.label }}</a>
+              <span class="bar-track"><span class="bar-fill" style="width: {{ row.pct }}%"></span></span>
+              <span class="pipe-count">{{ row.total }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Content" %}</h2>
+        </header>
+        <div class="quick-links">
+          <a class="quick-link" href="{% url 'admin:content_page_changelist' %}">{% translate "Pages" %}</a>
+          <a class="quick-link" href="{% url 'admin:crm_service_changelist' %}">{% translate "Services" %}</a>
+          <a class="quick-link" href="{% url 'admin:content_mediaitem_changelist' %}">{% translate "Media" %}</a>
+          <a class="quick-link" href="{% url 'admin:content_sitesetting_changelist' %}">{% translate "Site settings" %}</a>
+        </div>
+      </section>
+
+      {% if top_services %}
+      <section class="panel">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Busiest services" %}</h2>
+        </header>
+        <ul class="pipe">
+          {% for s in top_services %}
+            <li class="pipe-row">
+              <a class="pipe-label" href="{% url 'admin:crm_service_change' s.pk %}">{{ s.name }}</a>
+              <span class="bar-track"><span class="bar-fill lead" style="width: {{ s.pct }}%"></span></span>
+              <span class="pipe-count">{{ s.lead_total }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

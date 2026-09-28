@@ -1,0 +1,93 @@
+{% extends "admin/base.html" %}
+{% load static i18n %}
+
+{# Branded shell: replaces Django's flat model index with a dashboard-first
+   layout and tabbed navigation. Everything still extends Django's own base, so
+   permissions, forms and the changelist machinery are untouched -- only the
+   frame around them changes. #}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:"Studio" }}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'admin/css/admin.css' %}">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} studio-admin{% endblock %}
+
+{# Django 5's sidebar lists every model; the tab bar replaces it. #}
+{% block nav-sidebar %}{% endblock %}
+{% block nav-global %}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{# Warning banner. MediaItemAdmin sets storage_is_ephemeral on its add form, so
+   the caveat lands on the one screen where an upload can lose data. It has to
+   live inside a block: text outside blocks in a child template is never
+   rendered. content_title is used because base.html renders it and
+   change_form.html does not override it, so the banner appears on the add form
+   without shadowing the page heading. Written without a literal opening tag
+   in this comment: the lexer tokenises those even inside comments. #}
+{% block content_title %}{{ block.super }}
+  {% if storage_is_ephemeral %}
+  <div class="storage-warning">
+    <strong>Uploads are not persistent on this host.</strong>
+    This service stores files on a temporary disk, so any image you upload now
+    will disappear on the next deploy. Keep source files backed up, and avoid
+    replacing a live image until durable storage is configured.
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block header %}
+<div id="header">
+  <div class="header-title">
+    <span class="brand-mark" aria-hidden="true">R</span>
+    <span class="header-title-text">
+      <a href="{% url 'admin:index' %}">{{ site_header }}</a>
+    </span>
+  </div>
+
+  {% block usertools %}
+  <div id="user-tools">
+    <a href="/">{% translate "View site" %}</a>
+    {% if user.is_active and user.is_staff %}
+      {% if user.is_superuser %}<a href="{% url 'admin:index' %}">{% translate "Dashboard" %}</a>{% endif %}
+      <a href="{% url 'admin:password_change' %}">{% translate "Change password" %}</a>
+    {% endif %}
+    <a href="{% url 'admin:logout' %}">{% translate "Log out" %}</a>
+  </div>
+  {% endblock %}
+</div>
+
+<nav class="brand-nav" aria-label="Sections">
+  <div class="brand-nav-inner">
+    <a class="brand-tab{% if request.resolver_match.url_name == 'index' %} is-active{% endif %}"
+       href="{% url 'admin:index' %}">{% translate "Overview" %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_lead_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:crm_lead_changelist' %}">{% translate "Leads" %}{% if tab_counts.new_leads %} <span class="tab-count">{{ tab_counts.new_leads }}</span>{% endif %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_task_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:crm_task_changelist' %}">{% translate "Tasks" %}{% if tab_counts.open_tasks %} <span class="tab-count">{{ tab_counts.open_tasks }}</span>{% endif %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_contact_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:crm_contact_changelist' %}">{% translate "Contacts" %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'content_page_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:content_page_changelist' %}">{% translate "Pages" %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'crm_service_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:crm_service_changelist' %}">{% translate "Services" %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'content_mediaitem_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:content_mediaitem_changelist' %}">{% translate "Media" %}</a>
+
+    <a class="brand-tab{% if request.resolver_match.url_name == 'content_sitesetting_changelist' %} is-active{% endif %}"
+       href="{% url 'admin:content_sitesetting_changelist' %}">{% translate "Settings" %}</a>
+  </div>
+</nav>
+{% endblock %}
