@@ -44,7 +44,7 @@ def _blank_to_default(name, default, cast):
     The cast is applied to the default as well as to a present value, because
     decouple casts its default too. Skipping that returns a default of the
     wrong type: a blank CSRF_TRUSTED_ORIGINS would yield the bare string
-    "https://rlecd.com" instead of a list, and Django then validates each
+    "https://example.com" instead of a list, and Django then validates each
     character of it as an origin.
     """
     raw = config(name, default="")
@@ -102,7 +102,13 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _bool_env('DEBUG', False)
 
-_ALLOWED_HOSTS_DEFAULT = 'homeimp.quantumcoresoftware.com,www.homeimp.quantumcoresoftware.com'
+# Hostnames this site answers to.
+#
+# No domain is required to deploy. The platform assigns a hostname that
+# nobody can predict ahead of time (Vercel mints one per deployment and per
+# preview; Render assigns one per service), so a first deploy works on the
+# platform subdomain alone and a real domain can be attached later.
+_ALLOWED_HOSTS_DEFAULT = 'localhost,127.0.0.1,[::1]'
 ALLOWED_HOSTS = _blank_to_default(
     'ALLOWED_HOSTS',
     _ALLOWED_HOSTS_DEFAULT,
@@ -111,26 +117,28 @@ ALLOWED_HOSTS = _blank_to_default(
 if not ALLOWED_HOSTS:
     raise ImproperlyConfigured(
         "ALLOWED_HOSTS resolved to an empty list. Set it to the hostname the "
-        "site is served from, e.g. ALLOWED_HOSTS=rlecd.com,www.rlecd.com — "
+        "site is served from, e.g. ALLOWED_HOSTS=example.com,www.example.com — "
         "without it every request returns 400."
     )
 
-# Vercel generates a new hostname per deployment and per preview, so an
-# exact-match ALLOWED_HOSTS is a trap: the build succeeds and then every
-# request 400s on a name nobody predicted. Django treats a leading dot as
-# "this domain and all subdomains", which covers the generated hosts.
-# A custom domain still has to be listed in ALLOWED_HOSTS, because
-# deliberately guessing an apex domain is how host-header tricks get in.
+# Django reads a leading dot as "this domain and all subdomains", which covers
+# every hostname these platforms generate. Kept platform-scoped rather than
+# a blanket wildcard because ALLOWED_HOSTS is also the host-header trust
+# boundary; a custom domain still has to be listed explicitly.
 if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
-    _PLATFORM_HOST = '.vercel.app'
-    if _PLATFORM_HOST not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(_PLATFORM_HOST)
+    if '.vercel.app' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('.vercel.app')
+if os.environ.get('RENDER'):
+    if '.onrender.com' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('.onrender.com')
 
-# Canonical site origin. Used for <link rel="canonical">, Open Graph URLs and
-# the sitemap. Falls back to the primary ALLOWED_HOSTS entry when unset.
-SITE_URL = _blank_to_default(
-    'SITE_URL', f"https://{ALLOWED_HOSTS[0]}", lambda v: v
-).rstrip('/')
+# Canonical site origin, used for <link rel="canonical">, Open Graph URLs and
+# the sitemap. Left empty by default so the templates fall back to the host of
+# the incoming request (see main.context_processors.site): that keeps canonical
+# and og: tags pointing at the address visitors actually used, instead of at a
+# hostname guessed at build time or hardcoded to a domain the operator may not
+# even own.
+SITE_URL = _blank_to_default('SITE_URL', '', lambda v: v).rstrip('/')
 
 
 # Application definition
@@ -169,16 +177,20 @@ SECURE_SSL_REDIRECT = _bool_env('SECURE_SSL_REDIRECT', not DEBUG)
 # scheme/cookie handling for hosts that are already allowed.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Origins permitted to submit CSRF-protected POSTs. Required on any new
-# deployment hostname: without the production origin listed here, every
-# admin form POST (and the lead form) fails with 403 "CSRF verification
-# failed", while GETs keep working — so the site looks healthy and only
-# writing breaks.
+# Origins permitted to submit CSRF-protected POSTs from a *different* origin
+# than the one serving the request -- e.g. the bare apex while the www host is
+# serving, or a custom domain alongside the platform subdomain.
+#
+# Left empty by default on purpose. Django already accepts a POST whose Origin
+# matches the host serving it, so a single-hostname deployment needs nothing
+# here. That matters for a first deploy, where the hostname is not known until
+# after the build: a hardcoded list cannot be right, and a wrong one makes
+# every form POST 403 while GETs keep working.
 def _origin(value):
     """Normalise an origin to scheme+host, without doubling the scheme.
 
-    SITE_URL already carries a scheme ("https://rlecd.com"), so naively
-    prefixing one produces "https://https://rlecd.com", which matches no real
+    SITE_URL already carries a scheme ("https://example.com"), so naively
+    prefixing one produces "https://https://example.com", which matches no real
     Origin header and silently 403s every form POST.
     """
     value = str(value).strip().rstrip('/')
@@ -189,11 +201,18 @@ def _origin(value):
     return value
 
 
-CSRF_TRUSTED_ORIGINS = _blank_to_default(
-    'CSRF_TRUSTED_ORIGINS',
-    _origin(SITE_URL),
-    lambda v: [o for o in (_origin(o) for o in str(v).split(',')) if o] or [_origin(SITE_URL)],
-)
+# The default is a plain string, not a pre-built list. The cast below splits a
+# string on commas, so handing it a list default would stringify the list and
+# then split the repr -- yielding a single bogus origin like
+# "['https://example.com']" that matches no Origin header.
+_CSRF_RAW = _blank_to_default('CSRF_TRUSTED_ORIGINS', '', lambda v: v)
+CSRF_TRUSTED_ORIGINS = [
+    origin
+    for origin in (_origin(part) for part in str(_CSRF_RAW).split(','))
+    if origin
+]
+if not CSRF_TRUSTED_ORIGINS and SITE_URL:
+    CSRF_TRUSTED_ORIGINS = [_origin(SITE_URL)]
 
 # Secure cookies. A "Secure" cookie is withheld by the browser over plain HTTP,
 # so leaving these on would make every form POST fail with 403 during local dev

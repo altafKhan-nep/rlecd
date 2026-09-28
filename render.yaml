@@ -36,13 +36,13 @@ services:
         value: "false"
       - key: SECRET_KEY
         generateValue: true
+      # The only value a deployer has to supply. No domain is required: the
+      # service answers on its generated *.onrender.com hostname, which
+      # settings.py allows automatically, and canonical/Open Graph tags are
+      # derived from the incoming request. A custom domain can be attached
+      # later, at which point ALLOWED_HOSTS and SITE_URL become the two
+      # values worth setting.
       - key: DATABASE_URL
-        sync: false
-      - key: ALLOWED_HOSTS
-        sync: false
-      - key: SITE_URL
-        sync: false
-      - key: CSRF_TRUSTED_ORIGINS
         sync: false
       - key: SESSION_COOKIE_SECURE
         value: "true"

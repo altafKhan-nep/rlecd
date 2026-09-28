@@ -867,20 +867,27 @@ print(json.dumps({{k: getattr(settings, k) for k in keys}}))
         self.assertIs(cfg["SECURE_HSTS_INCLUDE_SUBDOMAINS"], False)
         self.assertIs(cfg["EMAIL_USE_TLS"], False)
 
-    def test_csrf_origins_always_a_nonempty_list(self):
-        """Regression: a blank value once returned a bare string.
+    def test_csrf_origins_is_a_flat_list_of_uris(self):
+        """Every entry must be a bare scheme+host string.
 
-        Django iterates CSRF_TRUSTED_ORIGINS, so a string made it validate each
-        character as an origin and `manage.py check` failed with 17 errors.
+        Two ways this went wrong: a blank value used to return the bare
+        string, which Django then iterated character by character; and a
+        list-shaped default got stringified and re-split, yielding one bogus
+        origin like "['https://example.com']" that matches no Origin header.
+        An empty list is valid and expected when nothing is configured --
+        Django accepts same-origin POSTs without any entry.
         """
         for value in ("", "  ", ","):
             with self.subTest(value=value):
                 cfg = self.load({**self.MINIMAL, "CSRF_TRUSTED_ORIGINS": value})
                 origins = cfg["CSRF_TRUSTED_ORIGINS"]
                 self.assertIsInstance(origins, list)
-                self.assertTrue(origins)
                 for origin in origins:
-                    self.assertTrue(origin.startswith(("http://", "https://")))
+                    self.assertIsInstance(origin, str)
+                    self.assertTrue(
+                        origin.startswith(("http://", "https://")),
+                        f"{origin!r} is not a bare origin",
+                    )
 
     def test_allowed_hosts_blank_falls_back_and_never_empty(self):
         cfg = self.load({**self.MINIMAL, "ALLOWED_HOSTS": ""})
@@ -942,3 +949,60 @@ class VercelHostTests(SimpleTestCase):
             mod = importlib.reload(mod)
             self.addCleanup(importlib.reload, mod)
             self.assertNotIn(".vercel.app", mod.ALLOWED_HOSTS)
+
+
+class NoConfiguredDomainTests(TestCase):
+    """A first deploy must work on the platform hostname with zero domain config.
+
+    The operator may not own any domain yet, so ALLOWED_HOSTS, SITE_URL and
+    CSRF_TRUSTED_ORIGINS all have to be optional without a 400 or a 403.
+    """
+
+    def _load(self, **overrides):
+        mod = importlib.import_module("home_improvement.settings")
+        env = {
+            "VERCEL": "1", "VERCEL_ENV": "production", "DEBUG": "False",
+            "ALLOWED_HOSTS": "", "SITE_URL": "", "CSRF_TRUSTED_ORIGINS": "",
+        }
+        env.update(overrides)
+        with mock.patch.dict(os.environ, env, clear=False):
+            mod = importlib.reload(mod)
+            self.addCleanup(importlib.reload, mod)
+            return mod
+
+    def test_no_domain_anywhere_yields_no_stray_uris(self):
+        """Nothing may invent a hostname the operator never configured."""
+        mod = self._load()
+        self.assertEqual(mod.SITE_URL, "")
+        self.assertEqual(mod.CSRF_TRUSTED_ORIGINS, [])
+        self.assertNotIn("rlecd.com", str(mod.ALLOWED_HOSTS))
+        self.assertNotIn("quantumcoresoftware.com", str(mod.ALLOWED_HOSTS))
+
+    def test_generated_hostnames_allowed_on_both_platforms(self):
+        self.assertIn(".vercel.app", self._load().ALLOWED_HOSTS)
+        self.assertIn(".onrender.com", self._load(VERCEL="", VERCEL_ENV="", RENDER="1").ALLOWED_HOSTS)
+
+    def test_canonical_and_og_follow_the_request_host(self):
+        """Tags must point at the address visitors used, not a hardcoded domain."""
+        with mock.patch.dict(os.environ, {"SITE_URL": ""}, clear=False):
+            response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        head = body[: body.index("</head>")]
+        self.assertIn('<link rel="canonical" href="http://testserver/">', head)
+        self.assertIn('property="og:url" content="http://testserver/"', head)
+        # No config-derived tag may name a domain the operator never set. The
+        # business's own contact email in the body is content, left alone.
+        self.assertNotIn("rlecd.com", head)
+
+    def test_same_origin_post_works_without_csrf_trusted_origins(self):
+        """Django accepts same-origin POSTs, so lead forms work on first deploy."""
+        from crm.models import Lead
+        with mock.patch.dict(os.environ, {"SITE_URL": ""}, clear=False):
+            response = self.client.post(
+                "/contact/",
+                {"name": "A", "email": "a@b.c", "phone": "4105551234",
+                 "service": "Kitchen", "message": "hi", "website": ""},
+            )
+        self.assertNotEqual(response.status_code, 403)
+        self.assertTrue(Lead.objects.filter(email="a@b.c").exists())
