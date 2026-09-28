@@ -1,0 +1,58 @@
+# Render blueprint for the RLECD site.
+#
+# Why not Vercel: psycopg-binary ships a prebuilt libpq as a compiled C
+# extension. Vercel's Python builder does not carry .so files into the
+# package directory it executes from, so `import psycopg` fails there with
+# "no pq wrapper available" even though the correct cp312 manylinux x86_64
+# wheel is installed. Django loads the database backend while populating the
+# app registry, so the first command that touches the database -- migrate, or
+# any request -- dies. No repository-side change can work around a builder
+# that drops the extension. Render runs a normal Linux image with standard
+# pip, where the same wheel imports fine.
+services:
+  - type: web
+    name: rlecd
+    runtime: python
+    plan: free
+    # Standard pip against a real Linux image, so compiled wheels install and
+    # import normally. collectstatic also proves the settings module and the
+    # template/static paths are wired correctly before the service goes live.
+    buildCommand: pip install -r requirements.txt && python backend/manage.py collectstatic --noinput
+    # Migrations run on every start. This is safe for a single instance, which
+    # is what the free plan gives us; a multi-instance deploy would want
+    # preDeployCommand instead so it runs once before traffic arrives.
+    startCommand: python backend/manage.py migrate --noinput && gunicorn home_improvement.wsgi:application --chdir backend --workers 2 --timeout 120
+    healthCheckPath: /admin/login/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.14"
+      - key: DEBUG
+        value: "False"
+      # Left false on purpose: Render's build step runs collectstatic only, so
+      # it does not need the database. Migrations happen in startCommand, where
+      # a failing psycopg install surfaces as a deploy failure with a readable
+      # log instead of a traceback during the build.
+      - key: RUN_MIGRATIONS_ON_BUILD
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: SITE_URL
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: CSRF_COOKIE_SECURE
+        value: "true"
+      - key: SECURE_SSL_REDIRECT
+        value: "true"
+      - key: SECURE_HSTS_SECONDS
+        value: "31536000"
+      - key: SECURE_HSTS_INCLUDE_SUBDOMAINS
+        value: "true"
+      - key: SECURE_HSTS_PRELOAD
+        value: "false"
