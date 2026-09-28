@@ -14,6 +14,10 @@ typing_extensions==4.15.0
 psycopg[binary]==3.3.6
 whitenoise==6.12.0
 
+# WSGI server for hosts that run a real process (Render, Railway, a VPS).
+# Not used by Vercel, which imports api/index.py directly.
+gunicorn==26.2.0
+
 # Enables Brotli pre-compression of static assets. WhiteNoise detects it
 # automatically and serves the smaller of gzip/brotli per request. Worth the
 # one dependency given the static payload is ~55MB gzipped.

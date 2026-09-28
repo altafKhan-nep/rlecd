@@ -14,7 +14,7 @@ import os
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
-from django.test import Client, TestCase
+from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
@@ -535,3 +535,77 @@ class DeploymentSettingsTests(TestCase):
 
     def test_whitenoise_middleware_is_installed(self):
         self.assertIn("whitenoise.middleware.WhiteNoiseMiddleware", settings.MIDDLEWARE)
+
+
+class DatabaseUrlParsingTests(SimpleTestCase):
+    """DATABASE_URL handling.
+
+    The first version of this parsed the query string against a hand-written
+    allowlist, which silently dropped anything it did not recognise --
+    including `channel_binding=require`, a security setting that must never
+    disappear quietly. These tests pin the behaviour that replaced it.
+    """
+
+    def parse(self, url):
+        from home_improvement.settings import _postgres_from_url
+
+        return _postgres_from_url(url)
+
+    def test_preserves_channel_binding(self):
+        # Regression: this was dropped by the allowlist, silently disabling
+        # SCRAM channel binding.
+        db = self.parse(
+            "postgresql://u:pw@host/db?sslmode=require&channel_binding=require"
+        )
+        self.assertEqual(db["OPTIONS"]["channel_binding"], "require")
+        self.assertEqual(db["OPTIONS"]["sslmode"], "require")
+
+    def test_forwards_arbitrary_libpq_parameters(self):
+        db = self.parse("postgresql://u:pw@host/db?application_name=rlecd&target_session_attrs=read-write")
+        self.assertEqual(db["OPTIONS"]["application_name"], "rlecd")
+        self.assertEqual(db["OPTIONS"]["target_session_attrs"], "read-write")
+
+    def test_typo_in_parameter_raises_instead_of_being_dropped(self):
+        from psycopg import ProgrammingError
+
+        with self.assertRaises(ProgrammingError):
+            self.parse("postgresql://u:pw@host/db?totally_bogus=1")
+
+    def test_unknown_scheme_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.parse("mysql://u:pw@host/db")
+
+    def test_conn_max_age_is_django_level_not_libpq(self):
+        # libpq rejects conn_max_age as an unknown connection option, so it
+        # must be stripped before the URI is validated and applied by Django.
+        db = self.parse("postgresql://u:pw@host/db?conn_max_age=120")
+        self.assertEqual(db["CONN_MAX_AGE"], 120)
+        self.assertNotIn("conn_max_age", db["OPTIONS"])
+
+    def test_default_connection_pooling_and_timeout(self):
+        db = self.parse("postgresql://u:pw@host/db")
+        self.assertEqual(db["CONN_MAX_AGE"], 60)
+        self.assertEqual(db["OPTIONS"]["connect_timeout"], 10)
+
+    def test_percent_encoded_password_is_decoded(self):
+        db = self.parse("postgresql://u:p%40ss%3Aword@host:5432/db")
+        self.assertEqual(db["PASSWORD"], "p@ss:word")
+        self.assertEqual(db["PORT"], "5432")
+        self.assertEqual(db["NAME"], "db")
+        self.assertEqual(db["HOST"], "host")
+
+    def test_neon_pooled_url_shape(self):
+        # The shape Neon actually issues: pooled hostname, no explicit port.
+        db = self.parse(
+            "postgresql://neondb_owner:secret@ep-abc-123-pooler.us-east-2.aws.neon.tech"
+            "/neondb?sslmode=require&channel_binding=require"
+        )
+        self.assertEqual(db["NAME"], "neondb")
+        self.assertEqual(db["USER"], "neondb_owner")
+        self.assertIn("-pooler", db["HOST"])
+        self.assertEqual(db["PORT"], "")
+
+    def test_database_identifier_keys_are_not_duplicated_into_options(self):
+        db = self.parse("postgresql://u:pw@host:5432/db?sslmode=require")
+        for key in ("dbname", "user", "password", "host", "port"):
+            self.assertNotIn(key, db["OPTIONS"])

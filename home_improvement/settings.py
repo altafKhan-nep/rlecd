@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, urlencode, urlunparse
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -203,40 +203,52 @@ DATABASE_URL = config('DATABASE_URL', default='')
 def _postgres_from_url(url):
     """Build a postgres DATABASES entry from a connection URI.
 
-    Hand-parsed rather than pulling in dj-database-url to keep the deploy
-    dependency list short; this is a fraction of the line count of the package
-    and the whole surface actually used here.
+    The query string is handed to libpq's own parser (psycopg.conninfo)
+    rather than being decoded here. An earlier hand-rolled allowlist silently
+    dropped any parameter it did not recognise -- including
+    `channel_binding=require`, which is exactly the kind of security setting
+    that must not disappear without a word. Delegating means every parameter
+    libpq understands is honoured, and a typo'd one raises at import time
+    instead of quietly falling back to an insecure default.
     """
+    from psycopg.conninfo import conninfo_to_dict
+
     parsed = urlparse(url)
     if parsed.scheme not in ('postgres', 'postgresql', 'psql', 'pgsql'):
         raise ValueError(
             f"Unsupported DATABASE_URL scheme {parsed.scheme!r}; expected "
             "postgres:// or postgresql://"
         )
+
     query = parse_qs(parsed.query)
-    # Managed Postgres providers (Neon, Supabase, Heroku, Railway) append
-    # sslmode=require and friends as query params. libpq has dedicated
-    # options for some of these but no Django setting, so they belong in
-    # OPTIONS. conn_max_age is deliberately NOT put here: it is a Django-level
-    # pooling setting, and libpq rejects it as an unknown connection option.
-    options = {}
-    if 'sslmode' in query:
-        options['sslmode'] = query['sslmode'][0]
-    if 'connect_timeout' in query:
-        options['connect_timeout'] = int(query['connect_timeout'][0])
-    else:
-        # Serverless invocations are short-lived and often bursty. Holding a
-        # pooled connection open for the function's lifetime keeps Postgres
-        # from being saturated by cold-start traffic, so 60s rather than 0.
-        options['connect_timeout'] = 10
+    # conn_max_age is a Django-level pooling knob, not a libpq option, so it
+    # must be removed before libpq validates the URI. It is the one parameter
+    # this project accepts beyond the libpq set.
     conn_max_age = int(query.get('conn_max_age', ['60'])[0])
+    libpq_query = {k: v for k, v in query.items() if k != 'conn_max_age'}
+    libpq_url = urlunparse(parsed._replace(query=urlencode(libpq_query, doseq=True)))
+
+    # libpq validates the URI, expands the percent-encoded password and
+    # returns every connection keyword it recognises, including sslmode,
+    # channel_binding, connect_timeout and any provider-specific extras.
+    params = conninfo_to_dict(libpq_url)
+
+    options = {
+        key: value
+        for key, value in params.items()
+        if key not in ('dbname', 'user', 'password', 'host', 'port')
+    }
+    # Bound how long a connection attempt may block. A serverless request has
+    # a hard wall-clock limit and cannot afford to wait on a dead host.
+    options.setdefault('connect_timeout', 10)
+
     return {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': unquote(parsed.path.lstrip('/')),
-        'USER': unquote(parsed.username or ''),
-        'PASSWORD': unquote(parsed.password or ''),
-        'HOST': parsed.hostname or '',
-        'PORT': str(parsed.port or ''),
+        'NAME': params.get('dbname', ''),
+        'USER': params.get('user', ''),
+        'PASSWORD': params.get('password', ''),
+        'HOST': params.get('host', ''),
+        'PORT': str(params.get('port', '') or ''),
         'OPTIONS': options,
         'CONN_MAX_AGE': conn_max_age,
         'ATOMIC_REQUESTS': False,
