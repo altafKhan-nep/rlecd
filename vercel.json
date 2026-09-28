@@ -9,7 +9,6 @@
     }
   },
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/api/index" }
-  ],
-  "PYTHON_VERSION": "3.12"
+    { "source": "/(.*)", "destination": "/api/index" }
+  ]
 }
