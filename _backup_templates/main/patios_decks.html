@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Patios & Decks Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Natural & Airy */
+    .hero-outdoor {
+        background: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), 
+                    url('{% static "img/deck-hero.jpg" %}') center/cover no-repeat;
+        padding: 180px 0 120px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(3rem, 7vw, 5rem);
+        margin-bottom: 15px;
+        letter-spacing: -1px;
+    }
+
+    /* Comparison / Feature Section */
+    .outdoor-features {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .feature-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+        margin-top: 50px;
+    }
+
+    .outdoor-card {
+        position: relative;
+        height: 450px;
+        border-radius: 20px;
+        overflow: hidden;
+        display: flex;
+        align-items: flex-end;
+        padding: 40px;
+        color: var(--white);
+        text-decoration: none;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+
+    .outdoor-card img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        z-index: 1;
+        transition: var(--transition);
+    }
+
+    .outdoor-card:hover img { transform: scale(1.1); }
+
+    .card-overlay {
+        position: relative;
+        z-index: 2;
+        background: rgba(27, 48, 34, 0.85);
+        backdrop-filter: blur(5px);
+        padding: 25px;
+        border-radius: 12px;
+        width: 100%;
+        border-left: 4px solid var(--accent);
+    }
+
+    /* Masonry Gallery Upgrades */
+    .outdoor-gallery {
+        padding: 100px 0;
+        background: var(--light);
+    }
+
+    .masonry-layout {
+        columns: 3 350px;
+        column-gap: 25px;
+    }
+
+    .masonry-box {
+        break-inside: avoid;
+        margin-bottom: 25px;
+        border-radius: 15px;
+        overflow: hidden;
+        position: relative;
+        background: var(--white);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    }
+
+    .masonry-box img {
+        width: 100%;
+        display: block;
+        transition: var(--transition);
+    }
+
+    .caption {
+        padding: 20px;
+        background: var(--white);
+    }
+
+    .caption h4 { font-family: var(--font-heading); margin-bottom: 5px; color: var(--primary); }
+    .caption p { font-size: 0.85rem; color: #777; margin: 0; }
+
+    @media (max-width: 992px) {
+        .feature-split { grid-template-columns: 1fr; }
+        .outdoor-card { height: 350px; }
+    }
+</style>
+
+<main class="outdoor-living">
+    <!-- Hero Section -->
+    <section class="hero-outdoor">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--accent); font-weight: 700; letter-spacing: 4px; text-transform: uppercase;">Outdoor Living</span>
+                <h1>Patios & Decks</h1>
+                <p>Extend your home’s beauty beyond its walls.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Services Section -->
+    <section class="outdoor-features">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Two Ways to Relax</h2>
+                <div style="width: 60px; height: 3px; background: var(--accent); margin: 20px auto;"></div>
+            </div>
+
+            <div class="feature-split">
+                <!-- Patios -->
+                <div class="outdoor-card">
+                    <img src="{% static 'img/patio-feature.jpg' %}" alt="Custom Patios">
+                    <div class="card-overlay">
+                        <h3>Custom Patios</h3>
+                        <p>Pavers, flagstone, and stamped concrete solutions designed for durability and hosting.</p>
+                    </div>
+                </div>
+
+                <!-- Decks -->
+                <div class="outdoor-card">
+                    <img src="{% static 'img/deck-feature.jpg' %}" alt="Custom Decks">
+                    <div class="card-overlay">
+                        <h3>Hardwood & Composite Decks</h3>
+                        <p>Multi-level entertainment decks featuring Trex® and premium cedar finishes.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Gallery Section -->
+    <section class="outdoor-gallery">
+        <div class="container">
+            <div class="section-header" style="margin-bottom: 50px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Project Showcase</h2>
+                <p>A closer look at our precision joinery and stonework.</p>
+            </div>
+
+            <div class="masonry-layout">
+                <div class="masonry-box">
+                    <img src="{% static 'img/d1.jpg' %}" alt="Multi-level Deck">
+                    <div class="caption">
+                        <h4>Multi-Level Entertainment</h4>
+                        <p>Composite decking with integrated LED lighting.</p>
+                    </div>
+                </div>
+
+                <div class="masonry-box">
+                    <img src="{% static 'img/d2.jpg' %}" alt="Stone Patio">
+                    <div class="caption">
+                        <h4>Flagstone Retreat</h4>
+                        <p>Natural stone patio with a built-in fire pit.</p>
+                    </div>
+                </div>
+
+                <div class="masonry-box">
+                    <img src="{% static 'img/d3.jpg' %}" alt="Pergola Design">
+                    <div class="caption">
+                        <h4>Custom Cedar Pergola</h4>
+                        <p>Adding architectural shade to a poolside deck.</p>
+                    </div>
+                </div>
+
+                <div class="masonry-box">
+                    <img src="{% static 'img/d4.jpg' %}" alt="Modern Pavers">
+                    <div class="caption">
+                        <h4>Modern Paver System</h4>
+                        <p>Clean lines and geometric drainage solutions.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+{% endblock %}

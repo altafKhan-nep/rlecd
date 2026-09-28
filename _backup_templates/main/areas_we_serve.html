@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Service Areas | Maryland Home Remodeling | REAL LIFE EXPERIENCE LLC{% endblock %}
+
+{% block content %}
+<main class="areas-page">
+    <!-- Hero Section -->
+    <header class="areas-hero">
+        <div class="container">
+            <span class="eyebrow-accent">Local Expertise</span>
+            <h1 class="display-heading">Serving the Heart of <br><span>Greater Maryland & Beyond</span></h1>
+            <p class="hero-subtext">Providing premium home transformations across Maryland for over 18 years.</p>
+        </div>
+    </header>
+
+    <!-- Map & List Section -->
+    <section class="service-interface">
+    <div class="container">
+        <div class="interface-grid">
+            
+            <!-- Interactive Visual Column -->
+            <div class="visual-column">
+                <div class="map-wrapper shadow-xl">
+                    <div class="map-badge">
+                        <i class="fas fa-shipping-fast"></i>
+                        <span>Daily Service Radius</span>
+                    </div>
+                    <!-- Updated to Reisterstown, MD Coordinates -->
+                    <iframe 
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d98592.5443314959!2d-76.92080516584286!3d39.44634027402636!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c8163f53835075%3A0xc621b5c4641c8888!2sReisterstown%2C%20MD%2021136!5e0!3m2!1sen!2sus!4v1714820000000!5m2!1sen!2sus" 
+                        width="100%" height="600" class="map-iframe-styled" style="border:0;" allowfullscreen="" loading="lazy">
+                    </iframe>
+                </div>
+            </div>
+
+            <!-- Strategic Location List -->
+            <div class="list-column">
+                <div class="section-intro">
+                    <h2 class="serif-title">Where We Work</h2>
+                    <p>We provide full-service remodeling within a 40-mile radius of Reisterstown. Check the list below to see if your neighborhood is covered.</p>
+                </div>
+
+                <div class="location-masonry">
+                    <!-- Local Core -->
+                    <div class="location-group">
+                        <h4><i class="fas fa-map-marker-alt"></i> Local Core</h4>
+                        <ul>
+                            <li>Reisterstown</li>
+                            <li>Owings Mills</li>
+                            <li>Glyndon</li>
+                            <li>Finksburg</li>
+                            <li>Pikesville</li>
+                        </ul>
+                    </div>
+
+                    <!-- North & Carroll County -->
+                    <div class="location-group">
+                        <h4><i class="fas fa-compass"></i> North & Carroll Co.</h4>
+                        <ul>
+                            <li>Westminster</li>
+                            <li>Hampstead</li>
+                            <li>Manchester</li>
+                            <li>Taneytown</li>
+                            <li>Mount Airy</li>
+                        </ul>
+                    </div>
+
+                    <!-- East & Baltimore County -->
+                    <div class="location-group">
+                        <h4><i class="fas fa-shuttle-van"></i> East & Baltimore Co.</h4>
+                        <ul>
+                            <li>Towson</li>
+                            <li>Hunt Valley</li>
+                            <li>Lutherville-Timonium</li>
+                            <li>Cockeysville</li>
+                            <li>White Marsh</li>
+                        </ul>
+                    </div>
+
+                    <!-- South & Howard County -->
+                    <div class="location-group">
+                        <h4><i class="fas fa-road"></i> South & Howard Co.</h4>
+                        <ul>
+                            <li>Ellicott City</li>
+                            <li>Columbia</li>
+                            <li>Catonsville</li>
+                            <li>Sykesville</li>
+                            <li>Clarksville</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="out-of-range-cta">
+                    <h5>Don't see your town?</h5>
+                    <p>We often travel further for specialized architectural millwork or large-scale renovations. <a href="{% url 'contact' %}">Ask about your project.</a></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+    <!-- Trust Stats -->
+    <section class="local-stats">
+        <div class="container">
+            <div class="stats-row">
+                <div class="stat-item">
+                    <i class="fas fa-home"></i>
+                    <h3>300+</h3>
+                    <p>Maryland Homes Transformed</p>
+                </div>
+                <div class="stat-item">
+                    <i class="fas fa-tools"></i>
+                    <h3>18+</h3>
+                    <p>Years in Maryland Construction</p>
+                </div>
+                <div class="stat-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <h3>100%</h3>
+                    <p>Local Building Code Compliance</p>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}

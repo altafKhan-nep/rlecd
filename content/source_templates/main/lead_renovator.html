@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>EPA Certified Lead Renovator Reisterstown MD | REAL LIFE EXPERIENCE LLC</title>
+    <meta name="description" content="Looking for a certified lead renovator in Maryland? REAL LIFE EXPERIENCE LLC provides safe, EPA-compliant home remodeling and repairs for pre-1978 homes. Keep your project hazard-free and legal.">
+    <meta name="keywords" content="EPA lead certified renovator Maryland, lead safe remodeling Reisterstown MD, RRP compliant contractor Baltimore County, home renovations lead safety MD, REAL LIFE EXPERIENCE LLC">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link class="canonical" href="https://rlecd.com/lead-renovator/">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="EPA Lead-Safe Certified Renovators | REAL LIFE EXPERIENCE LLC">
+    <meta property="og:description" content="Providing risk-free, compliant home improvements on historic and pre-1978 residential properties across Maryland.">
+    <meta property="og:image" content="{% static 'img/rlecd_maryland_logo.png' %}">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="REAL LIFE EXPERIENCE LLC | Lead Safe Renovations">
+    <meta name="twitter:description" content="Certified RRP renovations protecting Maryland families during modern home remodeling.">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "{% static 'img/rlecd_maryland_logo.png' %}",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "sameAs": [
+        "https://www.facebook.com/reallifeexperiencellc",
+        "https://www.instagram.com/reallifeexperiencellc"
+      ],
+      "areaServed": [
+        "Maryland",
+        "Reisterstown",
+        "Baltimore County"
+      ]
+    }
+    </script>
+
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+{% endblock %}
+
+{% block post_body %}{% include "partials/_post_2.html" %}{% endblock %}
+
+{% block content %}
+<style>
+    /* --- Lead Renovator Specifics --- */
+    :root {
+        --rp-blue: #1e3a8a; /* Authority Blue */
+        --rp-gold: #f59e0b; /* Alert/Badge Gold */
+        --transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    /* Hero Section - Clean & Trustworthy */
+    .hero-renovator {
+        background: linear-gradient(rgba(30, 58, 138, 0.85), rgba(30, 58, 138, 0.85)), 
+                    url('{% static 'img/renovator-hero.jpg' %}') center/cover no-repeat;
+        padding: 160px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.5rem, 6vw, 4rem);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* RRP Compliance Grid */
+    .rrp-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .compliance-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 30px;
+        margin-top: 50px;
+    }
+
+    .compliance-card {
+        padding: 40px;
+        background: var(--light);
+        border-radius: 4px;
+        border-left: 6px solid var(--rp-blue);
+        transition: var(--transition);
+    }
+
+    .compliance-card:hover {
+        background: var(--white);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+        transform: translateY(-5px);
+    }
+
+    .compliance-card i {
+        font-size: 2rem;
+        color: var(--rp-gold);
+        margin-bottom: 20px;
+    }
+
+    /* Certification Callout */
+    .cert-banner {
+        background: var(--rp-blue);
+        color: var(--white);
+        padding: 60px 0;
+        text-align: center;
+    }
+
+    .badge-wrap {
+        display: inline-block;
+        padding: 20px 40px;
+        border: 2px solid var(--rp-gold);
+        border-radius: 8px;
+        margin-top: 20px;
+    }
+
+    /* Why it Matters Section */
+    .danger-section {
+        padding: 100px 0;
+        background: #fdf2f2; /* Subtle warning-red tint */
+    }
+
+    .danger-flex {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+    }
+
+    .danger-item {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 25px;
+    }
+
+    .danger-item i {
+        margin-top: 5px;
+        margin-right: 15px;
+        color: #dc2626;
+    }
+
+    @media (max-width: 992px) {
+        .danger-flex { grid-template-columns: 1fr; }
+    }
+</style>
+
+<main class="lead-renovator-page">
+    <section class="hero-renovator">
+        <div class="container">
+            <div class="hero-content">
+                <span style="color: var(--rp-gold); font-weight: 800; letter-spacing: 3px; text-transform: uppercase;">Safety First</span>
+                <h1>EPA Certified Lead Renovator</h1>
+                <p style="max-width: 700px; margin: 20px auto;">Specializing in the safe renovation of pre-1978 homes while adhering to strict federal RRP standards.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="cert-banner">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading);">Legally Required. Professional Guaranteed.</h2>
+            <p>Under the EPA RRP Rule, all contractors performing renovation, repair, and painting projects that disturb lead-based paint in pre-1978 homes must be certified.</p>
+            <div class="badge-wrap">
+                <h3 style="color: var(--rp-gold); margin-bottom: 0;">OFFICIAL RRP CERTIFIED FIRM</h3>
+            </div>
+        </div>
+    </section>
+
+    <section class="rrp-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Our Safe-Work Standards</h2>
+                <div class="divider" style="background: var(--rp-gold); width: 60px; margin: 20px auto;"></div>
+            </div>
+
+            <div class="compliance-grid">
+                <div class="compliance-card">
+                    <i class="fas fa-user-shield"></i>
+                    <h3>Certified Supervisor</h3>
+                    <p>Every project involving lead-based paint is overseen by an EPA-certified Lead Renovator on-site.</p>
+                </div>
+                <div class="compliance-card">
+                    <i class="fas fa-biohazard"></i>
+                    <h3>Dust Containment</h3>
+                    <p>We utilize specialized containment barriers to prevent the spread of lead-contaminated dust to non-work areas.</p>
+                </div>
+                <div class="compliance-card">
+                    <i class="fas fa-broom"></i>
+                    <h3>Specialized Cleanup</h3>
+                    <p>Rigorous HEPA-vacuuming and wet-wiping protocols are followed to ensure the space is safe for your family.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="danger-section">
+        <div class="container">
+            <div class="danger-flex">
+                <div class="danger-text">
+                    <h2 style="font-family: var(--font-heading); font-size: 2.3rem; color: #991b1b;">Protect Your Family</h2>
+                    <p style="margin: 20px 0;">Renovating older homes without lead-safe practices can create a permanent hazard for children and pets. We treat your home with the care it deserves.</p>
+                    
+                    <div class="danger-item">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Health Risks:</strong> Lead exposure can cause irreversible developmental and neurological issues.</p>
+                    </div>
+                    <div class="danger-item">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Hidden Dust:</strong> Standard vacuums actually spread lead dust rather than capturing it.</p>
+                    </div>
+                    <div class="danger-item">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Legal Compliance:</strong> Hiring a non-certified contractor for pre-1978 work can lead to liability and safety failures.</p>
+                    </div>
+                </div>
+                <div class="danger-image">
+                    <img src="{% static 'img/renovator-safe.jpg' %}" alt="Safety Protocol" style="width: 100%; border-radius: 8px; box-shadow: 20px 20px 0 rgba(30, 58, 138, 0.1);">
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}

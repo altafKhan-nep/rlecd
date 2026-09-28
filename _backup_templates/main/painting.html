@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Painting Page Specifics --- */
+    :root {
+        --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Using a lighter, cleaner feel */
+    .hero-painting {
+        background: linear-gradient(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.8)), 
+                    url('{% static "img/painting-hero-bg.jpg" %}') center/cover no-repeat;
+        padding: 140px 0 100px;
+        color: var(--dark);
+        text-align: center;
+        border-bottom: 1px solid #eee;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin-bottom: 20px;
+        color: var(--primary);
+    }
+
+    /* Color Palette Showcase */
+    .palette-section {
+        padding: 80px 0;
+        background: var(--white);
+    }
+
+    .palette-grid {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin-top: 30px;
+        flex-wrap: wrap;
+    }
+
+    .color-swatch {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        transition: var(--transition);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: transparent;
+    }
+
+    .color-swatch:hover {
+        transform: scale(1.1) rotate(5deg);
+        color: rgba(255,255,255,0.8);
+    }
+
+    /* Precision Gallery */
+    .painting-gallery {
+        padding: 100px 0;
+        background-color: var(--light);
+    }
+
+    .precision-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 30px;
+    }
+
+    .precision-card {
+        background: var(--white);
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.05);
+        transition: var(--transition);
+    }
+
+    .precision-card:hover {
+        transform: translateY(-10px);
+    }
+
+    .card-image {
+        height: 300px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .card-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .tag {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: var(--accent);
+        color: var(--white);
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .card-content {
+        padding: 30px;
+    }
+
+    .card-content h3 {
+        font-family: var(--font-heading);
+        margin-bottom: 10px;
+        color: var(--primary);
+    }
+
+    /* Process Icons */
+    .process-bar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        background: var(--primary);
+        color: var(--white);
+        padding: 60px 0;
+        margin-top: -50px;
+        border-radius: 15px;
+        position: relative;
+        z-index: 10;
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+        .process-bar { grid-template-columns: 1fr 1fr; margin: -50px 20px 0; }
+    }
+</style>
+
+<main class="painting-page">
+    <!-- Hero Section -->
+    <section class="hero-painting">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle" style="color: var(--accent);">Flawless Finishes</span>
+                <h1>Professional Painting</h1>
+                <p>Interior and exterior transformations with an eye for absolute precision.</p>
+                <div class="palette-grid">
+                    <div class="color-swatch" style="background: #2D4059;">Navy</div>
+                    <div class="color-swatch" style="background: #E27D60;">Accent</div>
+                    <div class="color-swatch" style="background: #8E8D8A;">Stone</div>
+                    <div class="color-swatch" style="background: #C38D9E;">Dusty</div>
+                    <div class="color-swatch" style="background: #E8A87C;">Sand</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Process Bar -->
+    <div class="container">
+        <div class="process-bar">
+            <div class="step">
+                <i class="fas fa-layer-group" style="font-size: 1.5rem; margin-bottom: 10px;"></i>
+                <p style="font-size: 0.8rem; font-weight: 600;">Surface Prep</p>
+            </div>
+            <div class="step">
+                <i class="fas fa-paint-roller" style="font-size: 1.5rem; margin-bottom: 10px;"></i>
+                <p style="font-size: 0.8rem; font-weight: 600;">Primer Coat</p>
+            </div>
+            <div class="step">
+                <i class="fas fa-brush" style="font-size: 1.5rem; margin-bottom: 10px;"></i>
+                <p style="font-size: 0.8rem; font-weight: 600;">Precision Trim</p>
+            </div>
+            <div class="step">
+                <i class="fas fa-check-circle" style="font-size: 1.5rem; margin-bottom: 10px;"></i>
+                <p style="font-size: 0.8rem; font-weight: 600;">Final Polish</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Painting Gallery -->
+    <section class="painting-gallery">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Recent Work</h2>
+                <p>From residential interiors to durable exterior coatings.</p>
+            </div>
+
+            <div class="precision-grid">
+                <!-- Interior Project -->
+                <div class="precision-card">
+                    <div class="card-image">
+                        <span class="tag">Interior</span>
+                        <img src="{% static 'img/paint1.jpg' %}" alt="Living Room Painting">
+                    </div>
+                    <div class="card-content">
+                        <h3>Living Room Refresh</h3>
+                        <p>Matte finishes with custom accent walls to create depth and warmth.</p>
+                    </div>
+                </div>
+
+                <!-- Cabinetry Project -->
+                <div class="precision-card">
+                    <div class="card-image">
+                        <span class="tag">Cabinetry</span>
+                        <img src="{% static 'img/paint2.jpg' %}" alt="Kitchen Cabinet Painting">
+                    </div>
+                    <div class="card-content">
+                        <h3>Cabinet Resurfacing</h3>
+                        <p>High-durability factory-grade finishes for a modern kitchen look.</p>
+                    </div>
+                </div>
+
+                <!-- Exterior Project -->
+                <div class="precision-card">
+                    <div class="card-image">
+                        <span class="tag">Exterior</span>
+                        <img src="{% static 'img/paint3.jpg' %}" alt="Exterior Home Painting">
+                    </div>
+                    <div class="card-content">
+                        <h3>Modern Exterior</h3>
+                        <p>Weather-resistant coatings that protect and beautify your investment.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Call to Action -->
+    <section style="padding: 100px 0; text-align: center; background: var(--white);">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading); margin-bottom: 20px;">Transform Your Space with Color</h2>
+            <p style="max-width: 600px; margin: 0 auto 30px;">Let our experts help you choose the perfect palette and finish for your next project.</p>
+            <a href="/contact/" class="btn-accent">Get Your Free Estimate</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

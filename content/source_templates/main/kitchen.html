@@ -1,0 +1,313 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>Luxury Kitchen Remodeling Reisterstown MD | REAL LIFE EXPERIENCE LLC</title>
+    <meta name="description" content="Transform your culinary space with REAL LIFE EXPERIENCE LLC. We provide premium kitchen remodeling, custom cabinetry, and expert renovations in Reisterstown and Greater Maryland. Schedule your free estimate!">
+    <meta name="keywords" content="kitchen remodeling Reisterstown MD, Maryland kitchen renovators, custom kitchen design Baltimore County, kitchen contractor Maryland, REAL LIFE EXPERIENCE LLC">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link rel="canonical" href="{{ SITE_URL }}{{ request.path }}">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="Expert Kitchen Remodeling | REAL LIFE EXPERIENCE LLC Maryland">
+    <meta property="og:description" content="Stunning custom kitchen transformations in Maryland. Professional engineering, premium custom cabinets, and elite craftsmanship.">
+    <meta property="og:image" content="{% static 'img/remodel-mains.jpg' %}">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="REAL LIFE EXPERIENCE LLC | Kitchen Remodeling MD">
+    <meta name="twitter:description" content="Turning your Maryland custom kitchen vision into reality with elite precision.">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "{% static 'img/rlecd_maryland_logo.png' %}",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "sameAs": [
+        "https://www.facebook.com/reallifeexperiencellc",
+        "https://www.instagram.com/reallifeexperiencellc"
+      ],
+      "areaServed": [
+        "Maryland",
+        "Reisterstown",
+        "Baltimore County"
+      ]
+    }
+    </script>
+
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+{% endblock %}
+
+{% block post_body %}{% include "partials/_post_2.html" %}{% endblock %}
+
+{% block content %}
+<style>
+    /* --- Kitchen Page Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling with subtle parallax feel */
+    .hero-kitchen {
+        background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
+                    url('{% static 'img/kitchen-hero.jpg' %}') center/cover no-repeat fixed;
+        padding: 160px 0 120px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(3rem, 7vw, 5rem);
+        margin-bottom: 15px;
+        letter-spacing: -1px;
+    }
+
+    .subtitle-gold {
+        text-transform: uppercase;
+        letter-spacing: 6px;
+        font-size: 0.9rem;
+        color: var(--accent);
+        display: block;
+        margin-bottom: 20px;
+        font-weight: 700;
+    }
+
+    /* Showcase Section */
+    .kitchen-intro {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .grid-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+    }
+
+    .intro-image {
+        position: relative;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 20px 20px 0px var(--light);
+    }
+
+    /* Masonry Gallery Grid */
+    .gallery-section {
+        padding: 80px 0 120px;
+        background-color: var(--light);
+    }
+
+    .masonry-grid {
+        columns: 3 300px;
+        column-gap: 20px;
+    }
+
+    .masonry-item {
+        display: inline-block;
+        width: 100%;
+        margin-bottom: 20px;
+        position: relative;
+        border-radius: 15px;
+        overflow: hidden;
+        transition: var(--transition);
+        cursor: pointer;
+    }
+
+    .masonry-item img {
+        width: 100%;
+        display: block;
+        transition: var(--transition);
+    }
+
+    .masonry-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(10px);
+        padding: 20px;
+        transform: translateY(100%);
+        transition: var(--transition);
+        border-top: 3px solid var(--accent);
+    }
+
+    .masonry-item:hover .masonry-overlay {
+        transform: translateY(0);
+    }
+
+    .masonry-item:hover img {
+        transform: scale(1.05);
+    }
+
+    .masonry-overlay h4 {
+        margin: 0;
+        font-family: var(--font-heading);
+        color: var(--primary);
+    }
+
+    /* CTA Section */
+    .cta-banner {
+        background: var(--primary);
+        color: var(--white);
+        padding: 80px 0;
+        text-align: center;
+        border-radius: 30px;
+        margin: 0 20px 80px;
+    }
+
+    @media (max-width: 992px) {
+        .grid-split { grid-template-columns: 1fr; gap: 40px; }
+        .intro-image { order: 2; }
+    }
+</style>
+
+<main class="kitchen-remodel">
+    
+    <section class="hero-kitchen">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold">Culinary Excellence</span>
+                <h1>Kitchen Masterpieces</h1>
+                <p>Where functionality meets high-end architectural design.</p>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="kitchen-intro">
+        <div class="container">
+            <div class="grid-split">
+                <div class="intro-image">
+                    <img src="{% static 'img/kitchen-featured.jpg' %}" alt="Featured Kitchen" style="width: 100%;">
+                </div>
+                <div class="intro-text">
+                    <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">The Heart of the Home</h2>
+                    <div style="width: 50px; height: 3px; background: var(--accent); margin: 20px 0;"></div>
+                    <p>We specialize in creating bespoke kitchen environments that balance workflow efficiency with luxurious aesthetics. From custom cabinetry to smart-home integration, our designs are built to last a lifetime.</p>
+                    <ul style="list-style: none; padding: 0; margin-top: 25px;">
+                        <li style="margin-bottom: 10px;"><i class="fas fa-check" style="color: var(--accent); margin-right: 10px;"></i> Custom Quartz & Marble Countertops</li>
+                        <li style="margin-bottom: 10px;"><i class="fas fa-check" style="color: var(--accent); margin-right: 10px;"></i> Premium Hardwood Cabinetry</li>
+                        <li style="margin-bottom: 10px;"><i class="fas fa-check" style="color: var(--accent); margin-right: 10px;"></i> Designer Lighting Solutions</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="gallery-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.8rem;">Project Portfolio</h2>
+                <p>A collection of our recent kitchen transformations</p>
+            </div>
+
+            <div class="masonry-grid">
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k1.jpg' %}" alt="Modern Minimalist">
+                    <div class="masonry-overlay">
+                        <h4>Modern Minimalist</h4>
+                        <small>Open Concept Design</small>
+                    </div>
+                </div>
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k2.jpg' %}" alt="Classic Heritage">
+                    <div class="masonry-overlay">
+                        <h4>Classic Heritage</h4>
+                        <small>Custom Woodwork</small>
+                    </div>
+                </div>
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k3.jpg' %}" alt="Industrial Chic">
+                    <div class="masonry-overlay">
+                        <h4>Industrial Chic</h4>
+                        <small>Concrete & Steel</small>
+                    </div>
+                </div>
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k4.jpg' %}" alt="The Chef's Suite">
+                    <div class="masonry-overlay">
+                        <h4>The Chef's Suite</h4>
+                        <small>Professional Grade</small>
+                    </div>
+                </div>
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k5.jpg' %}" alt="Coastal Morning">
+                    <div class="masonry-overlay">
+                        <h4>Coastal Morning</h4>
+                        <small>Bright & Airy</small>
+                    </div>
+                </div>
+                
+                <div class="masonry-item">
+                    <img src="{% static 'img/k6.jpg' %}" alt="Midnight Emerald">
+                    <div class="masonry-overlay">
+                        <h4>Midnight Emerald</h4>
+                        <small>Bold Colors</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    
+    <div class="container">
+        <section class="cta-banner">
+            <h2 style="font-family: var(--font-heading); font-size: 2.2rem; margin-bottom: 15px;">Ready to Design Your Dream Kitchen?</h2>
+            <p style="margin-bottom: 30px; opacity: 0.9;">Schedule a consultation with our design experts today.</p>
+            <a href="{% url 'contact' %}" class="btn-accent">Request a Quote</a>
+        </section>
+    </div>
+</main>
+{% endblock %}

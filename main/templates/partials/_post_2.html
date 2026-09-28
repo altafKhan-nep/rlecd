@@ -1,0 +1,24 @@
+{% load static %}
+<script>
+    const menu = document.getElementById('mobile-menu');
+    const toggle = document.getElementById('mobile-toggle');
+    const close = document.getElementById('mobile-close');
+
+    // Open Menu
+    toggle.addEventListener('click', () => {
+        menu.classList.add('active');
+    });
+
+    // Close Menu
+    close.addEventListener('click', () => {
+        menu.classList.remove('active');
+    });
+
+    // Close menu if clicking outside
+    document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !toggle.contains(e.target)) {
+            menu.classList.remove('active');
+        }
+    });
+</script>
+    <script src="{% static 'js/script.js' %}"></script>

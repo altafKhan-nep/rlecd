@@ -1,0 +1,264 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>Custom Home Additions & Framing | Reisterstown, MD | REAL LIFE EXPERIENCE LLC</title>
+    <meta name="description" content="Expand your living space with custom home additions by REAL LIFE EXPERIENCE LLC. Specializing in second-story extensions, sunrooms, and in-law suites in Reisterstown & Greater Maryland.">
+    <meta name="keywords" content="home additions Maryland, custom home extensions Reisterstown MD, room addition contractors, house expansion Baltimore County, structural framing additions">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link rel="canonical" href="{{ SITE_URL }}{{ request.path }}">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="Custom Home Additions & Extensions | REAL LIFE EXPERIENCE LLC">
+    <meta property="og:description" content="Need more room? From master suite extensions to complete multi-story additions, trust Maryland's choice contractors for flawless structural execution.">
+    <meta property="og:image" content="{% static 'img/rlecd_maryland_logo.png' %}">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Maryland Home Additions | REAL LIFE EXPERIENCE LLC">
+    <meta name="twitter:description" content="Turning your home expansion dreams into structural reality with licensed precision.">
+    <meta name="twitter:image" content="{% static 'img/rlecd_maryland_logo.png' %}">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "{% static 'img/rlecd_maryland_logo.png' %}",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "sameAs": [
+        "https://www.facebook.com/reallifeexperiencellc",
+        "https://www.instagram.com/reallifeexperiencellc"
+      ],
+      "areaServed": [
+        "Maryland",
+        "Reisterstown",
+        "Baltimore County"
+      ]
+    }
+    </script>
+
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+{% endblock %}
+
+{% block footer %}{% include "partials/_foot_2.html" %}{% endblock %}
+
+{% block post_body %}{% include "partials/_post_3.html" %}{% endblock %}
+
+{% block main_attrs %} class="home-additions-page"{% endblock %}
+
+{% block content %}
+<style>
+        :root {
+            --addition-slate: #27272a;
+            --addition-gold: #c5a880;
+            --transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .hero-addition {
+            background: linear-gradient(rgba(24, 24, 27, 0.75), rgba(24, 24, 27, 0.75)), 
+                        url('{% static 'img/addition-hero.jpg' %}') center/cover no-repeat;
+            padding: 180px 0 120px;
+            color: var(--white);
+            text-align: center;
+        }
+
+        .hero-content h1 {
+            font-family: var(--font-heading);
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            letter-spacing: -1px;
+        }
+
+        .addition-specs {
+            padding: 100px 0;
+            background: var(--white);
+        }
+
+        .addition-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+        }
+
+        .addition-card {
+            padding: 40px 30px;
+            background: var(--light);
+            border-radius: 4px;
+            transition: var(--transition);
+            border-bottom: 3px solid transparent;
+        }
+
+        .addition-card:hover {
+            background: var(--white);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+            border-bottom-color: var(--addition-gold);
+            transform: translateY(-10px);
+        }
+
+        .addition-card i {
+            font-size: 2rem;
+            color: var(--addition-slate);
+            margin-bottom: 20px;
+        }
+
+        .transformation-section {
+            padding: 100px 0;
+            background: var(--addition-slate);
+            color: var(--white);
+        }
+
+        .transform-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-top: 50px;
+        }
+
+        .transform-item {
+            position: relative;
+            overflow: hidden;
+            border-radius: 6px;
+        }
+
+        .transform-item img {
+            width: 100%;
+            height: 500px;
+            object-fit: cover;
+            transition: var(--transition);
+        }
+
+        .transform-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 30px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.85));
+        }
+
+        .approval-bar {
+            background: var(--addition-gold);
+            color: #18181b;
+            padding: 30px 0;
+            text-align: center;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 992px) {
+            .addition-grid, .transform-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+
+    
+    <section class="hero-addition">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--addition-gold); font-weight: 700; letter-spacing: 5px;">Flawless Extensions</span>
+                <h1>Custom Home Additions</h1>
+                <p>Premium structural layout additions and square-foot expansions customized for Maryland homes.</p>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="approval-bar">
+        <div class="container">
+            <i class="fas fa-file-contract"></i> Licensed, Insured & Fully Compliant With Maryland Building Codes & Zoning Permits
+        </div>
+    </section>
+
+    
+    <section class="addition-specs">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.8rem;">Expand Your Living Footprint</h2>
+                <p style="max-width: 700px; margin: 20px auto;">Don't move out—expand up or out. We specialize in seamless design-build additions that look like they belonged to your original floor plan.</p>
+            </div>
+
+            <div class="addition-grid">
+                <div class="addition-card">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Multi-Story Extensions</h3>
+                    <p>Add completely brand new vertical square-footage with bedrooms, game rooms, or custom master suites engineered structurally sound from foundation to roof lines.</p>
+                </div>
+                <div class="addition-card">
+                    <i class="fas fa-users"></i>
+                    <h3>In-Law Suites</h3>
+                    <p>Build fully independent ground-level living dynamic layouts featuring custom separate kitchen spaces, bathrooms, and private architectural entries.</p>
+                </div>
+                <div class="addition-card">
+                    <i class="fas fa-cloud-sun"></i>
+                    <h3>Sunrooms & Bump-Outs</h3>
+                    <p>Micro-expand targeted rooms like extended luxury kitchens, dining centers, or light-flooded four-season sunroom spaces.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="transformation-section">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading); text-align: center;">Recent Additions Portfolio</h2>
+            
+            <div class="transform-grid">
+                <div class="transform-item">
+                    <img src="{% static 'img/addition1.jpg' %}" alt="Luxury Master Suite Home Addition">
+                    <div class="transform-caption">
+                        <h4>Master Wing Expansion</h4>
+                        <p>Complete structural extension featuring elevated cathedral ceilings and dedicated walk-in closets.</p>
+                    </div>
+                </div>
+                <div class="transform-item">
+                    <img src="{% static 'img/addition2.jpg' %}" alt="Four Season Sunroom Addition">
+                    <div class="transform-caption">
+                        <h4>Architectural Sunroom Addition</h4>
+                        <p>Energy-efficient insulated glass structural design built flawlessly into existing residential patio footprints.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}

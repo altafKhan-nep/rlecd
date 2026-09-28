@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>Contact Us | REAL LIFE EXPERIENCE LLC | Maryland Remodeling</title>
+    <meta name="description" content="Contact REAL LIFE EXPERIENCE LLC for premium home remodeling and custom cabinetry in Reisterstown and across Maryland. Get a free renovation consultation today!">
+    <meta name="keywords" content="contact contractor Maryland, home remodeling Reisterstown MD, kitchen bathroom renovator Maryland, REAL LIFE EXPERIENCE LLC">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link rel="canonical" href="{{ SITE_URL }}{{ request.path }}">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="Contact REAL LIFE EXPERIENCE LLC | Maryland's Home Remodeling Experts">
+    <meta property="og:description" content="Ready to transform your home? Get in touch with our expert team for licensed home improvement services across Maryland.">
+    <meta property="og:image" content="{% static 'img/rlecd_maryland_logo.png' %}">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Contact REAL LIFE EXPERIENCE LLC | Maryland Renovations">
+    <meta name="twitter:description" content="Turning your Maryland home vision into reality with expert precision.">
+    <meta name="twitter:image" content="{% static 'img/rlecd_maryland_logo.png' %}">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "{% static 'img/rlecd_maryland_logo.png' %}",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "sameAs": [
+        "https://www.facebook.com/reallifeexperiencellc",
+        "https://www.instagram.com/reallifeexperiencellc"
+      ],
+      "areaServed": [
+        "Maryland",
+        "Reisterstown",
+        "Baltimore County"
+      ]
+    }
+    </script>
+
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+{% endblock %}
+
+{% block footer %}{% include "partials/_foot_2.html" %}{% endblock %}
+
+{% block post_body %}{% include "partials/_post_3.html" %}{% endblock %}
+
+{% block main_attrs %} class="contact-page"{% endblock %}
+
+{% block content %}
+
+    <header class="hero-minimal">
+        <div class="container">
+            <div class="hero-grid">
+                <div class="hero-text">
+                    <span class="eyebrow-accent">Let's Connect</span>
+                    <h1 class="display-title">Ready to elevate <br>your <span>living space?</span></h1>
+                </div>
+                <div class="hero-sub">
+                    <p>Whether you have a specific project in mind or just need some professional advice, our team is ready to help you navigate your home transformation.</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <style>
+        .alert { padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+
+    <section class="interface-section">
+        <div class="container">
+            <div class="main-interface-grid">
+                
+                <aside class="sidebar-contact">
+                    <div class="contact-card-glass">
+                        <div class="contact-method">
+                            <h6>Call Us</h6>
+                            <a href="tel:(443) 898-3143">(443) 898-3143</a>
+                            <p>Mon — Fri, 8am – 6pm</p>
+                        </div>
+                        
+                        <div class="contact-method">
+                            <h6>Email Us</h6>
+                            <a href="mailto:agm@rlecd.com">agm@rlecd.com</a>
+                        </div>
+
+                        <div class="contact-method">
+                            <h6>Location</h6>
+                            <p>Serving Reisterstown, MD <br>& Greater Maryland Areas</p>
+                        </div>
+                        
+                        <hr class="card-divider">
+                        
+                        <div class="trust-pills">
+                            <span><i class="fas fa-check-circle"></i> Licensed & Insured</span>
+                            <span><i class="fas fa-history"></i> 20+ Years Excellence</span>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="form-container">
+                    <form action="{% url 'contact' %}" method="POST" class="modern-form">{% csrf_token %}
+                        <div class="form-row">
+                            <div class="field-group">
+                                <label>What is your name?</label>
+                                <input type="text" name="name" placeholder="Full Name" required>
+                            </div>
+                            <div class="field-group">
+                                <label>Email address</label>
+                                <input type="email" name="email" placeholder="email@address.com" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="field-group">
+                                <label>Phone number</label>
+                                <input type="tel" name="phone" placeholder="(443) 898-3143">
+                            </div>
+                            <div class="field-group">
+                                <label>Select service</label>
+                                <select name="service" required>
+                                    <option value="" disabled selected>How can we help?</option>
+                                    <option value="kitchen">Kitchen Remodel</option>
+                                    <option value="bath">Bathroom Remodel</option>
+                                    <option value="basement">Basement Finishing</option>
+                                    <option value="cabinets">Custom Cabinetry</option>
+                                    <option value="other">General Inquiry</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label>Tell us about your project</label>
+                            <textarea name="message" rows="5" placeholder="Share your vision or questions here..." required></textarea>
+                        </div>
+
+                        <button type="submit" class="btn-submit">
+                            Send Inquiry <i class="fas fa-long-arrow-alt-right"></i>
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="map-section-clean">
+        <div class="container">
+            <div class="map-frame">
+                <iframe 
+                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d98592.5443314959!2d-76.92080516584286!3d39.44634027402636!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c8163f53835075%3A0xc621b5c4641c8888!2sReisterstown%2C%20MD%2021136!5e0!3m2!1sen!2sus!4v1714820000000!5m2!1sen!2sus" 
+                    width="100%" height="500" class="clean-map-filter" style="border:0;" allowfullscreen="" loading="lazy">
+                </iframe>
+            </div>
+        </div>
+    </section>
+{% endblock %}

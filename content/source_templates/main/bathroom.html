@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>Bathroom Remodeling & Renovations | Maryland | REAL LIFE EXPERIENCE LLC</title>
+    <meta name="description" content="Elevate your home with custom bathroom remodeling from REAL LIFE EXPERIENCE LLC. Specializing in luxury master baths, modern powder rooms, and tub-to-shower conversions across Maryland. Schedule your free consultation.">
+    <meta name="keywords" content="bathroom remodeling Maryland, bathroom renovator MD, luxury shower remodel, master bath renovation Reisterstown, bathroom design build, REAL LIFE EXPERIENCE LLC">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link rel="canonical" href="{{ SITE_URL }}{{ request.path }}">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="Bathroom Remodeling & Renovations | REAL LIFE EXPERIENCE LLC">
+    <meta property="og:description" content="Turn your bathroom into a private oasis. High-end craftsmanship, custom tile work, and luxury bath updates across Maryland.">
+    <meta property="og:image" content="https://rlecd.com/static/img/rlecd_maryland_logo.png">
+    <meta property="og:site_name" content="REAL LIFE EXPERIENCE LLC">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Bathroom Remodeling & Renovations | REAL LIFE EXPERIENCE LLC">
+    <meta name="twitter:description" content="Turning your Maryland home vision into reality with expert, by-the-book construction precision.">
+    <meta name="twitter:image" content="https://rlecd.com/static/img/rlecd_maryland_logo.png">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "https://rlecd.com/static/img/rlecd_maryland_logo.png",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "sameAs": [
+        "https://www.facebook.com/reallifeexperiencellc",
+        "https://www.instagram.com/reallifeexperiencellc"
+      ],
+      "areaServed": [
+        "Maryland", 
+        "Allegany County", 
+        "Washington County", 
+        "Frederick County", 
+        "Montgomery County", 
+        "Prince George's County", 
+        "Anne Arundel County", 
+        "Baltimore City",
+        "Baltimore County"
+      ],
+      "description": "REAL LIFE EXPERIENCE LLC provides premier design-build bathroom remodeling and luxury renovation services across Maryland."
+    }
+    </script>
+
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+{% endblock %}
+
+{% block post_body %}{% include "partials/_post_2.html" %}{% endblock %}
+
+{% block content %}
+<style>
+    /* --- Bathroom Page Specifics --- */
+    :root {
+        --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling */
+    .hero-sub {
+        background: linear-gradient(rgba(27, 48, 34, 0.85), rgba(27, 48, 34, 0.85)), 
+                    url('{% static 'img/bathroom-hero-bg.jpg' %}') center/cover no-repeat;
+        padding: 140px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin-bottom: 20px;
+    }
+
+    .subtitle {
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        font-size: 0.85rem;
+        color: var(--accent);
+        display: block;
+        margin-bottom: 15px;
+        font-weight: 700;
+    }
+
+    /* Gallery Styling */
+    .gallery-section {
+        padding: 100px 0;
+        background-color: var(--white);
+    }
+
+    .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 25px;
+        margin-top: 50px;
+    }
+
+    .gallery-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        height: 350px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        background: var(--light); /* Placeholder color while loading */
+    }
+
+    .gallery-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .gallery-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(27, 48, 34, 0.8);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: var(--transition);
+        color: var(--white);
+    }
+
+    .gallery-item:hover img { transform: scale(1.1); }
+    .gallery-item:hover .gallery-overlay { opacity: 1; }
+
+    .gallery-overlay i { font-size: 1.5rem; margin-bottom: 10px; }
+    .gallery-overlay span { font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; }
+
+    /* Layout Components */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; padding: 100px 0; }
+    .btn-accent { display: inline-block; background-color: var(--accent); color: var(--white); padding: 18px 40px; text-decoration: none; font-weight: 600; border-radius: 4px; transition: var(--transition); }
+    .divider { width: 80px; height: 4px; background: var(--accent); margin: 20px auto; }
+    .section-header { text-align: center; margin-bottom: 40px; }
+
+    @media (max-width: 992px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+
+<main class="remodel-page">
+    <section class="hero-sub">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle">Luxury & Comfort</span>
+                <h1>Bathroom Portfolio</h1>
+                <p>Browse 20 of our most recent luxury bathroom transformations.</p>
+                <a href="{% url 'contact' %}" class="btn-accent">Start Your Transformation</a>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="gallery-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Our Work Gallery</h2>
+                <div class="divider"></div>
+            </div>
+
+            <div class="gallery-grid">
+                
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath1.jpg' %}" alt="Modern Master Bath">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath2.jpg' %}" alt="Spa Style Shower">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath3.jpg' %}" alt="Luxury Vanity">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath4.jpg' %}" alt="Tile Detail">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath5.jpg' %}" alt="Small Bathroom Idea">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath6.jpg' %}" alt="Soaking Tub">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath7.jpg' %}" alt="Modern Lighting">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath8.jpg' %}" alt="Custom Cabinetry">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath9.jpg' %}" alt="Floating Vanity">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath10.jpg' %}" alt="Marble Finish">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath11.jpg' %}" alt="Guest Bath">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath12.jpg' %}" alt="Glass Shower">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath13.jpg' %}" alt="Brass Fixtures">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath14.jpg' %}" alt="Hexagon Tile">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath15.jpg' %}" alt="Walk-in Closet Combo">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath16.jpg' %}" alt="Contemporary Design">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath15.jpg' %}" alt="Rustic Bathroom">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath16.jpg' %}" alt="Industrial Style">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath14.jpg' %}" alt="Accent Wall">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath2.jpg' %}" alt="Wet Room">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    
+    <section class="bottom-cta" style="text-align: center; padding: 80px 0;">
+        <div class="container">
+            <h2>Like what you see?</h2>
+            <p>Let's discuss how we can bring this level of quality to your home.</p>
+            <a href="{% url 'contact' %}" class="btn-accent" style="margin-top: 20px;">Get a Free Quote</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

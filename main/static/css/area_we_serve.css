@@ -1,0 +1,176 @@
+/* Using variables defined in style.css */
+
+.areas-page { background-color: var(--white); overflow-x: hidden; }
+
+/* --- Hero (Dark Forest Theme) --- */
+.areas-hero {
+    background-color: #1B3022; 
+    color: var(--white);
+    padding: 120px 0 100px;
+    text-align: center;
+}
+
+.eyebrow-accent {
+    color: var(--accent);
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 3px;
+    font-size: 0.8rem;
+    display: block;
+    margin-bottom: 20px;
+}
+
+.display-heading {
+    font-family: var(--font-heading);
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    line-height: 1.1;
+    margin-bottom: 25px;
+}
+
+.display-heading span { color: var(--accent); }
+
+.hero-subtext {
+    font-size: 1.25rem;
+    color: var(--light);
+    max-width: 700px;
+    margin: 0 auto;
+    opacity: 0.9;
+}
+
+/* --- Layout Grid --- */
+.service-interface { padding: 100px 0; }
+
+.interface-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 80px;
+    align-items: flex-start;
+}
+
+/* --- Map Styling --- */
+.map-wrapper {
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 40px 80px rgba(27, 48, 34, 0.15);
+    border: 1px solid #eee;
+}
+
+.map-badge {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: var(--white);
+    padding: 12px 20px;
+    border-radius: 50px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.map-badge i { color: var(--accent); }
+
+.map-iframe-styled {
+    filter: grayscale(1) contrast(1.1) brightness(1.05); /* Modern desaturated map */
+    transition: filter 0.5s ease;
+}
+
+.map-wrapper:hover .map-iframe-styled {
+    filter: grayscale(0.2) contrast(1) brightness(1);
+}
+
+/* --- Location List (SEO Optimized) --- */
+.serif-title {
+    font-family: var(--font-heading);
+    font-size: 2.5rem;
+    color: var(--primary);
+    margin-bottom: 15px;
+}
+
+.section-intro p {
+    color: var(--dark);
+    opacity: 0.8;
+    margin-bottom: 40px;
+    line-height: 1.6;
+}
+
+.location-masonry {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+}
+
+.location-group h4 {
+    color: var(--primary);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 15px;
+    border-bottom: 2px solid var(--light);
+    padding-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.location-group h4 i { color: var(--accent); }
+
+.location-group ul { list-style: none; padding: 0; margin: 0; }
+
+.location-group li {
+    padding: 6px 0;
+    color: #555;
+    font-size: 1.05rem;
+    transition: 0.3s;
+}
+
+.location-group li:hover {
+    color: var(--accent);
+    padding-left: 5px;
+}
+
+/* --- Out of Range Box --- */
+.out-of-range-cta {
+    margin-top: 50px;
+    background: var(--light);
+    padding: 30px;
+    border-radius: 12px;
+    border-left: 4px solid var(--accent);
+}
+
+.out-of-range-cta h5 { color: var(--primary); margin-bottom: 10px; font-weight: 700; }
+.out-of-range-cta a { color: var(--accent); font-weight: 700; text-decoration: none; border-bottom: 1px solid var(--accent); }
+
+/* --- Stats Row --- */
+.local-stats {
+    background: var(--bg-alt);
+    padding: 80px 0;
+    border-top: 1px solid #eee;
+}
+
+.stats-row {
+    display: flex;
+    justify-content: space-around;
+    text-align: center;
+}
+
+.stat-item i { font-size: 2.5rem; color: var(--accent); margin-bottom: 15px; }
+.stat-item h3 { font-family: var(--font-heading); font-size: 3rem; color: var(--primary); margin: 0; }
+.stat-item p { font-weight: 600; color: #777; margin-top: 5px; }
+
+/* --- Responsive --- */
+@media (max-width: 1100px) {
+    .interface-grid { grid-template-columns: 1fr; gap: 60px; }
+    .visual-column { order: 2; }
+    .list-column { order: 1; }
+}
+
+@media (max-width: 600px) {
+    .location-masonry { grid-template-columns: 1fr; }
+    .stats-row { flex-direction: column; gap: 40px; }
+    .display-heading { font-size: 2.2rem; }
+}

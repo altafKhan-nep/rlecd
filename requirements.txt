@@ -1,0 +1,20 @@
+asgiref==3.11.1
+Django==5.2.13
+django-extensions==4.1
+python-decouple==3.8
+sqlparse==0.5.5
+typing_extensions==4.15.0
+
+# Deployment-only. Both are safe to import locally:
+#   - psycopg  : Postgres driver, used whenever DATABASE_URL is set.
+#                The [binary] extra ships prebuilt wheels, so Vercel needs no
+#                libpq build toolchain.
+#   - whitenoise: serves /static from the app bundle, since a serverless
+#                function has no separate web server for static assets.
+psycopg[binary]==3.3.6
+whitenoise==6.12.0
+
+# Enables Brotli pre-compression of static assets. WhiteNoise detects it
+# automatically and serves the smaller of gzip/brotli per request. Worth the
+# one dependency given the static payload is ~55MB gzipped.
+Brotli==1.2.0

@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Basement Page Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling */
+    .hero-basement {
+        background: linear-gradient(rgba(10, 20, 15, 0.7), rgba(10, 20, 15, 0.7)), 
+                    url('{% static "img/basement-hero.jpg" %}') center/cover no-repeat;
+        padding: 160px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin-bottom: 20px;
+        text-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+    }
+
+    /* Feature Cards */
+    .feature-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 30px;
+        margin-top: 50px;
+    }
+
+    .feature-card {
+        padding: 40px;
+        background: var(--light);
+        border-radius: 15px;
+        transition: var(--transition);
+        border-bottom: 4px solid transparent;
+        text-align: center;
+    }
+
+    .feature-card:hover {
+        transform: translateY(-10px);
+        background: var(--white);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+        border-bottom: 4px solid var(--accent);
+    }
+
+    .feature-card i {
+        font-size: 2.5rem;
+        color: var(--primary);
+        margin-bottom: 20px;
+    }
+
+    /* Modern Portfolio Grid */
+    .basement-gallery {
+        padding: 100px 0;
+        background: var(--primary); /* Dark background for a "cinema/lounge" feel */
+        color: var(--white);
+    }
+
+    .portfolio-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 20px;
+        margin-top: 50px;
+    }
+
+    .portfolio-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        height: 400px;
+    }
+
+    /* Custom sizing for a "Magazine" layout */
+    .item-large { grid-column: span 8; }
+    .item-small { grid-column: span 4; }
+    .item-full { grid-column: span 12; height: 500px; }
+
+    .portfolio-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .portfolio-content {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding: 30px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.9));
+        opacity: 0;
+        transform: translateY(20px);
+        transition: var(--transition);
+    }
+
+    .portfolio-item:hover .portfolio-content {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .portfolio-item:hover img {
+        transform: scale(1.1);
+    }
+
+    @media (max-width: 992px) {
+        .item-large, .item-small, .item-full { grid-column: span 12; height: 350px; }
+    }
+</style>
+
+<main class="basement-remodel">
+    <!-- Hero Section -->
+    <section class="hero-basement">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle" style="color: var(--accent); font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Subterranean Luxury</span>
+                <h1>Basement Conversions</h1>
+                <p>Unlock the hidden potential beneath your feet with custom entertainment and living spaces.</p>
+                <a href="/contact/" class="btn-accent" style="margin-top: 30px;">Request a Site Visit</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Capabilities Section -->
+    <section class="feature-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">The Possibilities are Endless</h2>
+                <div style="width: 60px; height: 3px; background: var(--accent); margin: 20px auto;"></div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <i class="fas fa-film"></i>
+                    <h3>Home Cinemas</h3>
+                    <p>Professional grade acoustic treatments and custom seating for the ultimate movie experience.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-glass-cheers"></i>
+                    <h3>Wet Bars & Lounges</h3>
+                    <p>Custom cabinetry, mood lighting, and high-end finishes for your private entertaining hub.</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-dumbbell"></i>
+                    <h3>Fitness Studios</h3>
+                    <p>Rubberized flooring, wall-to-wall mirrors, and reinforced structures for home gyms.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dark Gallery Section -->
+    <section class="basement-gallery">
+        <div class="container">
+            <div class="section-header">
+                <h2>Featured Basement Projects</h2>
+                <p style="opacity: 0.7;">Explore our recent walk-outs, daylight basements, and full conversions.</p>
+            </div>
+
+            <div class="portfolio-grid">
+                <!-- Row 1 -->
+                <div class="portfolio-item item-large">
+                    <img src="{% static 'img/base1.jpg' %}" alt="Entertainment Hub">
+                    <div class="portfolio-content">
+                        <h3>The Ultimate Lounge</h3>
+                        <p>Complete with wet bar and billiards area.</p>
+                    </div>
+                </div>
+                <div class="portfolio-item item-small">
+                    <img src="{% static 'img/base2.jpg' %}" alt="Guest Suite">
+                    <div class="portfolio-content">
+                        <h3>Private Guest Suite</h3>
+                        <p>Functional and cozy living space.</p>
+                    </div>
+                </div>
+
+                <!-- Row 2 -->
+                <div class="portfolio-item item-full">
+                    <img src="{% static 'img/base3.jpg' %}" alt="Home Theater">
+                    <div class="portfolio-content">
+                        <h3>Grand Theater Room</h3>
+                        <p>Tiered seating and integrated surround sound.</p>
+                    </div>
+                </div>
+
+                <!-- Row 3 -->
+                <div class="portfolio-item item-small">
+                    <img src="{% static 'img/base4.jpg' %}" alt="Home Office">
+                    <div class="portfolio-content">
+                        <h3>Modern Home Office</h3>
+                        <p>Quiet, soundproofed workspace.</p>
+                    </div>
+                </div>
+                <div class="portfolio-item item-large">
+                    <img src="{% static 'img/base5.jpg' %}" alt="Kids Play Area">
+                    <div class="portfolio-content">
+                        <h3>Interactive Play Zone</h3>
+                        <p>Built-in storage and durable finishes.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Professional Trust Section -->
+    <section style="padding: 100px 0; background: var(--white); text-align: center;">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading);">Engineered for Comfort</h2>
+            <p style="max-width: 700px; margin: 20px auto;">We don't just make it look pretty. We handle the critical structural work—from waterproof egress windows to sub-floor insulation and mold-resistant framing.</p>
+            <div class="divider" style="margin: 30px auto;"></div>
+            <a href="/contact/" class="btn-accent">Discuss Your Layout</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

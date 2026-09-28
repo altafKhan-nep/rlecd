@@ -1,0 +1,240 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Hardscaping Page Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Rugged & Sophisticated */
+    .hero-hardscape {
+        background: linear-gradient(rgba(10, 15, 12, 0.6), rgba(10, 15, 12, 0.6)), 
+                    url('{% static "img/hardscape-hero.jpg" %}') center/cover no-repeat;
+        padding: 160px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(3rem, 7vw, 5rem);
+        margin-bottom: 20px;
+        letter-spacing: -1px;
+    }
+
+    /* Engineering Section */
+    .engineering-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .eng-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 30px;
+        margin-top: 50px;
+    }
+
+    .eng-card {
+        border-left: 5px solid var(--accent);
+        padding: 30px;
+        background: var(--light);
+        transition: var(--transition);
+    }
+
+    .eng-card:hover {
+        background: var(--white);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.08);
+        transform: translateX(10px);
+    }
+
+    .eng-card h3 {
+        font-family: var(--font-heading);
+        color: var(--primary);
+        margin-bottom: 10px;
+    }
+
+    /* Masonry Portfolio - Structural Focus */
+    .hardscape-gallery {
+        padding: 100px 0;
+        background-color: var(--primary);
+        color: var(--white);
+    }
+
+    .hardscape-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 20px;
+        margin-top: 60px;
+    }
+
+    .hs-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 8px;
+        height: 400px;
+    }
+
+    .hs-wide { grid-column: span 8; }
+    .hs-tall { grid-column: span 4; }
+    .hs-full { grid-column: span 12; height: 500px; }
+
+    .hs-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+        filter: grayscale(20%);
+    }
+
+    .hs-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(226, 125, 96, 0.9); /* Accent color overlay */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 40px;
+        opacity: 0;
+        transition: var(--transition);
+        text-align: center;
+    }
+
+    .hs-item:hover img { transform: scale(1.1); filter: grayscale(0%); }
+    .hs-item:hover .hs-overlay { opacity: 1; }
+
+    /* Material Icons */
+    .material-bar {
+        background: var(--white);
+        padding: 60px 0;
+        border-bottom: 1px solid #eee;
+    }
+
+    .material-flex {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 30px;
+    }
+
+    .material-item {
+        text-align: center;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 2px;
+        color: #999;
+    }
+
+    @media (max-width: 992px) {
+        .hs-wide, .hs-tall { grid-column: span 12; height: 350px; }
+    }
+</style>
+
+<main class="hardscaping-portfolio">
+    <!-- Hero Section -->
+    <section class="hero-hardscape">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--accent); font-weight: 700; letter-spacing: 4px;">Structural Artistry</span>
+                <h1>Hardscaping & Masonry</h1>
+                <p>Building the foundation of your outdoor environment with natural stone and pavers.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Materials Bar -->
+    <section class="material-bar">
+        <div class="container">
+            <div class="material-flex">
+                <div class="material-item">Natural Stone</div>
+                <div class="material-item">Travertine</div>
+                <div class="material-item">Belgard Pavers</div>
+                <div class="material-item">Granite</div>
+                <div class="material-item">Stamped Concrete</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Engineering/Core Services -->
+    <section class="engineering-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Engineered Foundations</h2>
+                <p style="max-width: 600px; margin: 15px auto;">We focus on the hidden details—proper grading, reinforced bases, and drainage—to ensure your investment never shifts.</p>
+            </div>
+            
+            <div class="eng-grid">
+                <div class="eng-card">
+                    <h3>Retaining Walls</h3>
+                    <p>Structural solutions for sloped yards that create usable flat tiers and prevent erosion.</p>
+                </div>
+                <div class="eng-card">
+                    <h3>Driveway Entryways</h3>
+                    <p>Sophisticated paver patterns that boost curb appeal and handle heavy vehicle loads.</p>
+                </div>
+                <div class="eng-card">
+                    <h3>Outdoor Fireplaces</h3>
+                    <p>Hand-laid masonry focal points built for safe, year-round enjoyment.</p>
+                </div>
+                <div class="eng-card">
+                    <h3>Walkways & Steps</h3>
+                    <p>Fluid transitions between levels using natural flagstone or precision-cut pavers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dark Contrast Gallery -->
+    <section class="hardscape-gallery">
+        <div class="container">
+            <div class="section-header">
+                <h2 style="font-family: var(--font-heading);">Structural Showcase</h2>
+                <div class="divider" style="background: var(--accent); width: 50px; margin: 20px 0;"></div>
+            </div>
+
+            <div class="hardscape-grid">
+                <!-- Large Feature -->
+                <div class="hs-item hs-wide">
+                    <img src="{% static 'img/hs1.jpg' %}" alt="Paver Patio">
+                    <div class="hs-overlay">
+                        <h3>Geometric Paver Patio</h3>
+                        <p>Modern grey scale pavers with a contrasting soldier course border.</p>
+                    </div>
+                </div>
+
+                <!-- Tall Feature -->
+                <div class="hs-item hs-tall">
+                    <img src="{% static 'img/hs2.jpg' %}" alt="Stone Wall">
+                    <div class="hs-overlay">
+                        <h3>Natural Fieldstone Wall</h3>
+                        <p>Dry-stack aesthetic with reinforced concrete core.</p>
+                    </div>
+                </div>
+
+                <!-- Full Width -->
+                <div class="hs-item hs-full">
+                    <img src="{% static 'img/hs4.png' %}" alt="Outdoor Kitchen">
+                    <div class="hs-overlay">
+                        <h3>Masonry Kitchen Island</h3>
+                        <p>Stacked stone base with a polished granite countertop.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section style="padding: 100px 0; text-align: center; background: var(--white);">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading); font-size: 2.2rem;">Stability Meets Design</h2>
+            <p style="margin: 20px 0 40px; opacity: 0.8;">Let's discuss the structural needs and aesthetic goals for your property.</p>
+            <a href="/contact/" class="btn-accent" style="padding: 20px 50px;">Consult Our Masonry Experts</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

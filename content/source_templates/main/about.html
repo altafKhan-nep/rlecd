@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block head_meta %}
+    
+    
+    
+    
+    <title>REAL LIFE EXPERIENCE LLC | About Renovation & Remodeling Maryland</title>
+    <meta name="description" content="REAL LIFE EXPERIENCE LLC provides premier home renovation, remodeling, and construction services in Maryland. Expert kitchen remodeling, bathroom renovations, basement finishing, and custom home improvements. Request a free consultation.">
+    <meta name="keywords" content="REAL LIFE EXPERIENCE LLC, home renovation Maryland, home remodeling MD, kitchen remodeling, bathroom renovation Reisterstown, basement finishing, home additions, residential construction, remodeling contractor">
+    <meta name="author" content="REAL LIFE EXPERIENCE LLC">
+    <link rel="canonical" href="{{ SITE_URL }}{{ request.path }}">
+    <meta name="robots" content="index, follow">
+
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ request.path }}">
+    <meta property="og:title" content="REAL LIFE EXPERIENCE LLC | Professional Home Renovation & Remodeling">
+    <meta property="og:description" content="Transform your home with REAL LIFE EXPERIENCE LLC. Expert kitchen remodeling, bathroom renovations, basement finishing, and home additions across Maryland.">
+    <meta property="og:image" content="https://rlecd.com/static/img/rlecd_maryland_logo.png">
+    <meta property="og:site_name" content="REAL LIFE EXPERIENCE LLC">
+
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="REAL LIFE EXPERIENCE LLC | Home Renovation Experts">
+    <meta name="twitter:description" content="Professional home renovation, remodeling, kitchen, bathroom, basement, and home improvement services by REAL LIFE EXPERIENCE LLC.">
+    <meta name="twitter:image" content="https://rlecd.com/static/img/rlecd_maryland_logo.png">
+
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HomeAndConstructionBusiness",
+      "name": "REAL LIFE EXPERIENCE LLC",
+      "image": "https://rlecd.com/static/img/rlecd_maryland_logo.png",
+      "@id": "https://rlecd.com",
+      "url": "https://rlecd.com",
+      "telephone": "+14438983143",
+      "priceRange": "$$$",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Serving Greater Maryland Metro",
+        "addressLocality": "Reisterstown",
+        "addressRegion": "MD",
+        "postalCode": "21136",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 39.4682,
+        "longitude": -76.8322
+      },
+      "openingHoursSpecification": {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "08:00",
+        "closes": "18:00"
+      },
+      "areaServed": [
+        "Maryland", 
+        "Allegany County", 
+        "Washington County", 
+        "Frederick County", 
+        "Montgomery County", 
+        "Prince George's County", 
+        "Anne Arundel County", 
+        "Baltimore City"
+      ],
+      "description": "REAL LIFE EXPERIENCE LLC is a premier design-build home remodeling company providing 'by the book' craftsmanship in Maryland for over 18 years."
+    }
+    </script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/contact.css' %}">
+    <link rel="stylesheet" href="{% static 'css/area_we_serve.css' %}">
+    
+    
+{% endblock %}
+
+{% block post_body %}{% include "partials/_post_2.html" %}{% endblock %}
+
+{% block content %}
+
+<section class="about-hero" style="padding: 120px 20px; background: #1B3022; text-align: center;">
+    <div class="container">
+        
+        <span class="eyebrow" style="color: var(--accent); font-weight: 700; letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 15px;">
+            Our Story
+        </span>
+
+        
+        <h1 style="font-family: var(--font-heading); font-size: 3.5rem; margin-top: 10px; color: var(--white); line-height: 1.1;">
+            Driven by Quality, <br>Guided by <span style="color: var(--accent);">REAL LIFE EXPERIENCE LLC</span>
+        </h1>
+    </div>
+</section>
+
+<section class="about-section">
+    <div class="container about-grid">
+        
+        
+        <div class="about-images">
+            <div class="image-wrapper main-img">
+                
+                <img src="{% static 'img/about-mainn.jpg' %}" alt="REAL LIFE EXPERIENCE LLC Home Remodeling Maryland">
+                
+                <div class="trust-card">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Licensed, Bonded & Insured</span>
+                </div>
+            </div>
+            
+            <div class="image-wrapper sub-img">
+                
+                <img src="{% static 'img/about-detail.jpg' %}" alt="Custom Bathroom and Kitchen Renovation Craftsmanship Maryland">
+            </div>
+
+            
+            <div class="experience-badge">
+                <span class="years">18</span>
+                <span class="text">Years of <br> Integrity</span>
+            </div>
+        </div>
+
+        
+        <div class="about-content">
+            <div class="content-header">
+                <span class="category-tag">Maryland's Design-Build Experts</span>
+                <h2 class="section-title">Superior Service & <span>"By the Book"</span> Craftsmanship</h2>
+            </div>
+            
+            <div class="content-body">
+                <p class="lead-text">
+                    REAL LIFE EXPERIENCE LLC is a premier remodeling company that has weathered the storms of economic highs and lows for over two decades.
+                </p>
+                
+                <p class="desc-text">
+                    We believe in listening to our clients and using a design process that <strong>"steers the ship"</strong> toward a functional and aesthetically pleasing destination. While kitchen, bath, and basement remodels are the <strong>"flagships"</strong> of our fleet, we also expertly "sail" smaller projects like wall removals and window replacements.
+                </p>
+            </div>
+
+            
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-number">18</span>
+                    <span class="stat-label">Years Strong</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">100%</span>
+                    <span class="stat-label">Licensed</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">Maryland</span>
+                    <span class="stat-label">Local Experts</span>
+                </div>
+            </div>
+
+            
+            <div class="about-cta">
+                <a href="/contact" class="btn-primary">Start Your Project</a>
+                <div class="signature">
+                    <p>Company Standard</p>
+                    <strong>Welcome to REAL LIFE EXPERIENCE LLC</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<section class="features-section">
+    <div class="container">
+        <div class="section-header">
+            <span class="category-tag">Why Choose Us</span>
+            <h2 class="section-title">Superior Quality In Every Detail</h2>
+        </div>
+
+        <div class="features-grid">
+            
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-tools"></i>
+                </div>
+                <h3>Expert Craftsmanship</h3>
+                <p>Our team consists of certified Maryland home remodeling professionals with decades of combined experience in high-end design-build renovations.</p>
+            </div>
+
+            
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <h3>On-Time Delivery</h3>
+                <p>We value your time. We stick to strict schedules and ensure your custom residential construction project is completed safely within the agreed timeframe.</p>
+            </div>
+
+            
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-hand-holding-usd"></i>
+                </div>
+                <h3>Transparent Pricing</h3>
+                <p>No hidden costs or surprise fees. We provide detailed, honest home improvement estimates so you know exactly where your remodeling investment goes.</p>
+            </div>
+
+            
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3>Guaranteed Quality</h3>
+                <p>As premier MD residential contractors, we stand behind our work with a comprehensive warranty, ensuring your peace of mind long after the job is done.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="about-modern">
+    <div class="container about-wrapper">
+        
+        
+        <div class="about-visuals">
+            <div class="main-frame">
+                
+                <img src="{% static 'img/remodel-mains.jpg' %}" alt="REAL LIFE EXPERIENCE LLC - Quality Home Remodeling and Additions Maryland">
+                <div class="since-badge">
+                    <span class="since-label">Serving Maryland Since</span>
+                    <span class="since-year">2008</span>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="about-text-content">
+            <h4 class="sub-headline">Welcome to REAL LIFE EXPERIENCE LLC</h4>
+            <h2 class="main-headline">Remodeling with <span>REAL LIFE EXPERIENCE LLC</span> as our Foundation.</h2>
+            
+            <p class="lead-intro">
+                Looking for a company that does what they say, delivers quality, and charges fair prices? We take the stress out of home additions by providing the service you deserve.
+            </p>
+
+            <div class="philosophy-box">
+                <p>We believe integrity is the <strong>main building block</strong> of a strong company. From massive custom home additions to precise repairs, we handle every Maryland residential remodeling project with the same professional magnitude.</p>
+            </div>
+
+            
+            <div class="mini-features">
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Quality Work</div>
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Fair Pricing</div>
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Stress-Free Process</div>
+            </div>
+
+            
+            <div class="cta-container">
+                <div class="phone-link">
+                    <span class="call-text">Speak with an Expert</span>
+                    <a href="tel:(443) 898-3143" class="phone-number">(443) 898-3143</a>
+                </div>
+                <a href="/contact" class="btn-consult">Get Free Consultation</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Condo Renovation Specifics --- */
+    :root {
+        --condo-slate: #334155;
+        --condo-gold: #d4af37;
+        --transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Hero - Urban & Sophisticated */
+    .hero-condo {
+        background: linear-gradient(rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0.7)), 
+                    url('{% static "img/condo-hero.jpg" %}') center/cover no-repeat;
+        padding: 180px 0 120px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.5rem, 6vw, 4.5rem);
+        letter-spacing: -1px;
+    }
+
+    /* The "Condo Challenge" Section */
+    .condo-specs {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .condo-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+    }
+
+    .condo-card {
+        padding: 40px 30px;
+        background: var(--light);
+        border-radius: 2px; /* Sharp, modern edges */
+        transition: var(--transition);
+        border-bottom: 3px solid transparent;
+    }
+
+    .condo-card:hover {
+        background: var(--white);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+        border-bottom-color: var(--condo-gold);
+        transform: translateY(-10px);
+    }
+
+    .condo-card i {
+        font-size: 2rem;
+        color: var(--condo-slate);
+        margin-bottom: 20px;
+    }
+
+    /* Transformation Gallery */
+    .transformation-section {
+        padding: 100px 0;
+        background: var(--condo-slate);
+        color: var(--white);
+    }
+
+    .transform-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+        margin-top: 50px;
+    }
+
+    .transform-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 10px;
+    }
+
+    .transform-item img {
+        width: 100%;
+        height: 500px;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .transform-caption {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 30px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    }
+
+    /* Logic Bar for Condo Board Approvals */
+    .approval-bar {
+        background: var(--condo-gold);
+        color: var(--condo-slate);
+        padding: 30px 0;
+        text-align: center;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    @media (max-width: 992px) {
+        .condo-grid, .transform-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<main class="condo-renovation">
+    <section class="hero-condo">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--condo-gold); font-weight: 700; letter-spacing: 5px;">High-Rise Excellence</span>
+                <h1>Condo Transformations</h1>
+                <p>Sophisticated interior additions and structural remodels for modern urban living.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="approval-bar">
+        <div class="container">
+            <i class="fas fa-file-contract"></i> Experts in Condo Board (HOA) Regulations & Permitting
+        </div>
+    </section>
+
+    <section class="condo-specs">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.8rem;">Maximize Your Footprint</h2>
+                <p style="max-width: 700px; margin: 20px auto;">We specialize in "additions" that expand your living experience without changing the external walls.</p>
+            </div>
+
+            <div class="condo-grid">
+                <div class="condo-card">
+                    <i class="fas fa-vector-square"></i>
+                    <h3>Open-Concept Flow</h3>
+                    <p>Removing non-load-bearing walls to create expansive, light-filled living and dining areas.</p>
+                </div>
+                <div class="condo-card">
+                    <i class="fas fa-bed"></i>
+                    <h3>Suite Enhancements</h3>
+                    <p>Reconfiguring existing layouts to add walk-in closets, home offices, or luxury master baths.</p>
+                </div>
+                <div class="condo-card">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Custom Built-ins</h3>
+                    <p>Adding functional "additions" through floor-to-ceiling millwork and hidden storage systems.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="transformation-section">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading); text-align: center;">Recent Portfolio</h2>
+            
+            <div class="transform-grid">
+                <div class="transform-item">
+                    <img src="{% static 'img/condo1.jpg' %}" alt="Luxury Kitchen Addition">
+                    <div class="transform-caption">
+                        <h4>European Kitchen Integration</h4>
+                        <p>Modern cabinetry and high-end stone waterfall islands.</p>
+                    </div>
+                </div>
+                <div class="transform-item">
+                    <img src="{% static 'img/condo2.jpg' %}" alt="Condo Office Space">
+                    <div class="transform-caption">
+                        <h4>Integrated Work Studio</h4>
+                        <p>Custom glass partitioning to create a quiet office without losing natural light.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+{% endblock %}

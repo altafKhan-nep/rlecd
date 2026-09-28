@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Woodworking Page Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Warm and Textural */
+    .hero-woodworking {
+        background: linear-gradient(rgba(20, 15, 10, 0.75), rgba(20, 15, 10, 0.75)), 
+                    url('{% static "img/woodworking-hero.jpg" %}') center/cover no-repeat;
+        padding: 160px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(3rem, 7vw, 5rem);
+        margin-bottom: 20px;
+    }
+
+    /* Workshop Specs Section */
+    .specs-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .specs-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+    }
+
+    .specs-text h2 {
+        font-family: var(--font-heading);
+        font-size: 2.5rem;
+        margin-bottom: 25px;
+        color: var(--primary);
+    }
+
+    .spec-item {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 30px;
+    }
+
+    .spec-icon {
+        width: 50px;
+        height: 50px;
+        background: var(--accent);
+        color: var(--white);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 20px;
+        flex-shrink: 0;
+        font-size: 1.2rem;
+    }
+
+    /* Artisan Gallery */
+    .wood-gallery {
+        padding: 100px 0;
+        background-color: var(--light);
+    }
+
+    .artisan-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 25px;
+    }
+
+    .artisan-card {
+        background: var(--white);
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        transition: var(--transition);
+    }
+
+    .artisan-card:hover {
+        transform: scale(1.03);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+    }
+
+    .artisan-img {
+        height: 350px;
+        overflow: hidden;
+    }
+
+    .artisan-img img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .artisan-meta {
+        padding: 25px;
+        border-top: 4px solid var(--primary);
+    }
+
+    .artisan-meta h4 {
+        font-family: var(--font-heading);
+        font-size: 1.4rem;
+        margin-bottom: 5px;
+    }
+
+    .wood-tag {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--accent);
+        font-weight: 700;
+    }
+
+    @media (max-width: 992px) {
+        .specs-grid { grid-template-columns: 1fr; }
+        .specs-image { order: 2; }
+    }
+</style>
+
+<main class="woodworking-page">
+    <!-- Hero Section -->
+    <section class="hero-woodworking">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--accent); letter-spacing: 5px; text-transform: uppercase; font-weight: 700;">Legacy Craftsmanship</span>
+                <h1>Fine Woodworking</h1>
+                <p>Custom furniture, architectural trim, and handcrafted timber elements.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Technical Specs / Material Section -->
+    <section class="specs-section">
+        <div class="container">
+            <div class="specs-grid">
+                <div class="specs-image">
+                    <img src="{% static 'img/wood-tools.jpg' %}" alt="Woodworking Tools" style="width: 100%; border-radius: 20px; box-shadow: 30px 30px 0 var(--light);">
+                </div>
+                <div class="specs-text">
+                    <h2>Precision in Every Grain</h2>
+                    <div class="spec-item">
+                        <div class="spec-icon"><i class="fas fa-tree"></i></div>
+                        <div>
+                            <h4 style="margin-bottom: 5px;">Premium Timber Sourcing</h4>
+                            <p style="font-size: 0.9rem; opacity: 0.8;">We work with sustainable hardwoods including Walnut, White Oak, and Maple, hand-selecting every board for grain consistency.</p>
+                        </div>
+                    </div>
+                    <div class="spec-item">
+                        <div class="spec-icon"><i class="fas fa-drafting-compass"></i></div>
+                        <div>
+                            <h4 style="margin-bottom: 5px;">Heirloom Joinery</h4>
+                            <p style="font-size: 0.9rem; opacity: 0.8;">Utilizing traditional dovetail, mortise, and tenon joints to ensure your pieces last for generations.</p>
+                        </div>
+                    </div>
+                    <div class="spec-item">
+                        <div class="spec-icon"><i class="fas fa-oil-can"></i></div>
+                        <div>
+                            <h4 style="margin-bottom: 5px;">Natural Oil Finishes</h4>
+                            <p style="font-size: 0.9rem; opacity: 0.8;">Food-safe and eco-friendly finishes that protect the wood while allowing the natural texture to be felt.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Project Gallery -->
+    <section class="wood-gallery">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">The Artisan Collection</h2>
+                <p>One-of-a-kind pieces and custom architectural details.</p>
+            </div>
+
+            <div class="artisan-grid">
+                <!-- Project 1 -->
+                <div class="artisan-card">
+                    <div class="artisan-img">
+                        <img src="{% static 'img/wood1.jpg' %}" alt="Live Edge Table">
+                    </div>
+                    <div class="artisan-meta">
+                        <span class="wood-tag">Walnut</span>
+                        <h4>Live Edge Dining Table</h4>
+                        <p style="font-size: 0.85rem; opacity: 0.7;">Hand-planed top with butterfly joint reinforcements.</p>
+                    </div>
+                </div>
+
+                <!-- Project 2 -->
+                <div class="artisan-card">
+                    <div class="artisan-img">
+                        <img src="{% static 'img/wood2.jpg' %}" alt="Architectural Beam">
+                    </div>
+                    <div class="artisan-meta">
+                        <span class="wood-tag">Reclaimed Oak</span>
+                        <h4>Architectural Beams</h4>
+                        <p style="font-size: 0.85rem; opacity: 0.7;">Decorative ceiling accents with distressed hand-hewn texture.</p>
+                    </div>
+                </div>
+
+                <!-- Project 3 -->
+                <div class="artisan-card">
+                    <div class="artisan-img">
+                        <img src="{% static 'img/wood3.jpg' %}" alt="Custom Mantel">
+                    </div>
+                    <div class="artisan-meta">
+                        <span class="wood-tag">Cherry</span>
+                        <h4>Fireplace Mantel</h4>
+                        <p style="font-size: 0.85rem; opacity: 0.7;">Floating design with seamless mitered corners.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+{% endblock %}

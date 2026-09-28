@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Walkway Page Specifics --- */
+    :root {
+        --transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Inviting & Expansive */
+    .hero-walkways {
+        background: linear-gradient(rgba(27, 48, 34, 0.6), rgba(27, 48, 34, 0.6)), 
+                    url('{% static "img/walkway-hero.jpg" %}') center/cover no-repeat;
+        padding: 160px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(3rem, 7vw, 5rem);
+        margin-bottom: 20px;
+    }
+
+    /* Pattern Showcase Section */
+    .pattern-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .pattern-intro {
+        max-width: 800px;
+        margin: 0 auto 60px;
+        text-align: center;
+    }
+
+    .pattern-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .pattern-card {
+        text-align: center;
+        padding: 30px;
+        border: 1px solid #eee;
+        border-radius: 12px;
+        transition: var(--transition);
+    }
+
+    .pattern-card:hover {
+        border-color: var(--accent);
+        background: var(--light);
+        transform: translateY(-5px);
+    }
+
+    .pattern-card i {
+        font-size: 2rem;
+        color: var(--accent);
+        margin-bottom: 15px;
+    }
+
+    /* Path Gallery - Alternating Layout */
+    .path-gallery {
+        padding: 100px 0;
+        background-color: var(--light);
+    }
+
+    .path-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 50px;
+        align-items: center;
+        margin-bottom: 80px;
+    }
+
+    .path-row:nth-child(even) .path-img { order: 2; }
+    .path-row:last-child { margin-bottom: 0; }
+
+    .path-img {
+        position: relative;
+        border-radius: 20px;
+        overflow: hidden;
+        height: 450px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+
+    .path-img img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .path-text h3 {
+        font-family: var(--font-heading);
+        font-size: 2.2rem;
+        color: var(--primary);
+        margin-bottom: 20px;
+    }
+
+    .path-text p {
+        font-size: 1.1rem;
+        margin-bottom: 25px;
+        opacity: 0.8;
+    }
+
+    /* Pattern Badges */
+    .badge-container {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .pave-badge {
+        background: var(--white);
+        padding: 6px 15px;
+        border-radius: 50px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        border: 1px solid #ddd;
+        color: var(--primary);
+    }
+
+    @media (max-width: 992px) {
+        .path-row { grid-template-columns: 1fr; gap: 30px; }
+        .path-row:nth-child(even) .path-img { order: 0; }
+        .path-img { height: 300px; }
+    }
+</style>
+
+<main class="walkways-portfolio">
+    <!-- Hero Section -->
+    <section class="hero-walkways">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--accent); font-weight: 700; letter-spacing: 4px;">Connective Design</span>
+                <h1>Elegance Underfoot</h1>
+                <p>Curating first impressions with custom-designed paths and walkways.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Path Patterns -->
+    <section class="pattern-section">
+        <div class="container">
+            <div class="pattern-intro">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">The Art of the Pattern</h2>
+                <div class="divider" style="background: var(--accent); width: 60px; margin: 20px auto;"></div>
+                <p>The right pattern defines the architecture of your home. From classic herringbone to modern linear stacks, we help you choose the layout that matches your style.</p>
+            </div>
+
+            <div class="pattern-grid">
+                <div class="pattern-card">
+                    <i class="fas fa-th"></i>
+                    <h4>Herringbone</h4>
+                    <p style="font-size: 0.85rem;">Timeless and traditional, perfect for heavy-traffic front entries.</p>
+                </div>
+                <div class="pattern-card">
+                    <i class="fas fa-columns"></i>
+                    <h4>Running Bond</h4>
+                    <p style="font-size: 0.85rem;">A clean, contemporary look that visually lengthens shorter paths.</p>
+                </div>
+                <div class="pattern-card">
+                    <i class="fas fa-shapes"></i>
+                    <h4>Random Ashlar</h4>
+                    <p style="font-size: 0.85rem;">A natural, cottage-style feel using varied stone sizes.</p>
+                </div>
+                <div class="pattern-card">
+                    <i class="fas fa-border-all"></i>
+                    <h4>Soldier Course</h4>
+                    <p style="font-size: 0.85rem;">Elegant borders that frame and define your walkway’s edge.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detailed Alternating Gallery -->
+    <section class="path-gallery">
+        <div class="container">
+            <!-- Row 1 -->
+            <div class="path-row">
+                <div class="path-img">
+                    <img src="{% static 'img/w1.jpg' %}" alt="Paver Walkway">
+                </div>
+                <div class="path-text">
+                    <h3>The Modern Entrance</h3>
+                    <p>Clean-lined slate grey pavers set in a running bond pattern, flanked by integrated landscape lighting to ensure a warm welcome at any hour.</p>
+                    <div class="badge-container">
+                        <span class="pave-badge">Slip-Resistant</span>
+                        <span class="pave-badge">Illuminated</span>
+                        <span class="pave-badge">Linear Design</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2 -->
+            <div class="path-row">
+                <div class="path-img">
+                    <img src="{% static 'img/w3.jpg' %}" alt="Natural Stone Path">
+                </div>
+                <div class="path-text">
+                    <h3>Garden Flagstone</h3>
+                    <p>Winding natural stone paths that follow the contours of your landscape. We use wide-jointed irregular stones for an organic, established feel.</p>
+                    <div class="badge-container">
+                        <span class="pave-badge">Hand-Cut Stone</span>
+                        <span class="pave-badge">Organic Flow</span>
+                        <span class="pave-badge">Permeable</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+{% endblock %}

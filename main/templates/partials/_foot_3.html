@@ -1,0 +1,50 @@
+{% load static %}
+<footer class="footer">
+    <div class="container footer-grid">
+        <!-- Brand Column -->
+        <div class="footer-brand">
+            <img src="{% static 'img/rlecd_maryland_logo.png' %}" alt="REAL LIFE EXPERIENCE LLC  - Best Maryland Remodelers" class="footer-logo">
+            <p>REAL LIFE EXPERIENCE LLC : We help Maryland homeowners turn their vision into reality with "by the book" craftsmanship and unmatched reliability.</p>
+            <div class="footer-socials">
+                <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+                <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+            </div>
+        </div>
+
+        <!-- Quick Links Column -->
+        <div class="footer-links">
+            <h4>Quick Links</h4>
+            <ul>
+                <li><a href="{% url 'index' %}">Home</a></li>
+                <li><a href="{% url 'about' %}">About Us</a></li>
+                <li><a href="{% url 'areas_we_serve' %}">Areas We Serve</a></li>
+                <li><a href="{% url 'bathroom' %}">Our Services</a></li>
+                <li><a href="{% url 'contact' %}">Contact</a></li>
+            </ul>
+        </div>
+
+        <!-- Contact Column -->
+        <div class="footer-contact">
+            <h4>Contact Info</h4>
+            <ul>
+                <li><i class="fas fa-envelope"></i> <a href="mailto:agm@rlecd.com">agm@rlecd.com</a></li>
+                <li><i class="fas fa-map-marker-alt"></i> Reisterstown, MD</li>
+                <li><i class="fas fa-phone-alt"></i> <strong>(443) 898-3143</strong></li>
+            </ul>
+        </div>
+
+        <!-- Newsletter/CTA Column -->
+        <div class="footer-cta">
+            <h4>Free Consultation</h4>
+            <p>Ready to start your remodel? Get your free estimate today.</p>
+            <a href="tel:(443) 898-3143" class="footer-btn">Call Now</a>
+        </div>
+    </div>
+
+    <div class="footer-bottom">
+        <div class="container flex-bottom">
+            <p>&copy; 2026 REAL LIFE EXPERIENCE LLC . All Rights Reserved.</p>
+            <p class="developer">Designed by <a href="https://quantumcoresoftware.com/" target="_blank">Quantum Core Software</a></p>
+        </div>
+    </div>
+</footer>

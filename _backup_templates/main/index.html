@@ -1,0 +1,614 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Premier Home Renovations | Build Your Dream Home{% endblock %}
+
+{% block content %}
+<section class="hero-carousel">
+    <div class="carousel-container">
+        
+        <!-- Slide 1: Modern & Industrial Design -->
+        <!-- Note: We are now adding data-bg for JavaScript to set the background -->
+        <div class="carousel-slide active" style="background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('{% static 'img/hero4.jpg' %}');">
+            <div class="slide-content container">
+                
+                <!-- Content Panel (Glassmorphism) -->
+                <div class="content-left glass-panel">
+                    <span class="category-tag">Premium Renovation</span>
+                    <h1>Modern Spaces <br> Designed for Living</h1>
+                    <p>Expert home improvement services tailored to your lifestyle and budget.</p>
+                    <div class="hero-actions">
+                        <a href="#" class="btn-primary">View Our Projects</a>
+                        <a href="#" class="btn-secondary-outline">Learn More</a>
+                    </div>
+                </div>
+
+                <!-- Floating Focal Image (Optional but Recommended) -->
+                <div class="content-right design-graphic">
+                    <!-- Example: A high-quality cutout of a modern faucet or light fixture -->
+                    <img src="{% static 'img/kitchen-bg.jpg' %}" alt="Modern Pendant Light" class="floating-hero-image">
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: Architectural Elegance -->
+        <div class="carousel-slide" style="background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('{% static 'img/bathroom-bg.jpg' %}');">
+            <div class="slide-content container">
+                
+                <!-- Content Panel (Glassmorphism) -->
+                <div class="content-left glass-panel">
+                    <span class="category-tag">The Journey & The Destination</span>
+                    <h1>Architectural Elegance <br> for Your Home</h1>
+                    <p>Precision and design expertise for every home improvement project.</p>
+                    <div class="hero-actions">
+                        <a href="#" class="btn-primary">Our Services</a>
+                    </div>
+                </div>
+
+                <!-- Floating Focal Image (Optional) -->
+                <div class="content-right design-graphic">
+                    <img src="{% static 'img/carsouel2.jpg' %}" alt="Luxury Faucet" class="floating-hero-image">
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Carousel Controls (Now with Icons) -->
+    <button class="carousel-control prev" onclick="moveSlide(-1)"><i class="fas fa-chevron-left"></i></button>
+    <button class="carousel-control next" onclick="moveSlide(1)"><i class="fas fa-chevron-right"></i></button>
+
+    <!-- Carousel Indicators -->
+    <div class="carousel-indicators">
+        <span class="indicator active" onclick="currentSlide(1)"></span>
+        <span class="indicator" onclick="currentSlide(2)"></span>
+    </div>
+</section>
+
+
+<section class="about-section">
+    <div class="container about-grid">
+        
+        <!-- Image Gallery Side -->
+        <div class="about-images">
+            <div class="image-wrapper main-img">
+                <img src="{% static 'img/about-mainn.jpg' %}" alt="Integrity Home Improvements Renovation">
+                <!-- Floating Glass Card for Trust -->
+                <div class="trust-card">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Licensed, Bonded & Insured</span>
+                </div>
+            </div>
+            
+            <div class="image-wrapper sub-img">
+                <img src="{% static 'img/about-detail.jpg' %}" alt="By the book craftsmanship">
+            </div>
+
+            <!-- Enhanced Experience Badge -->
+            <div class="experience-badge">
+                <span class="years">18</span>
+                <span class="text">Years of <br> Integrity</span>
+            </div>
+        </div>
+
+        <!-- Text Content Side -->
+        <div class="about-content">
+            <div class="content-header">
+                <span class="category-tag">Maryland's Design-Build Experts</span>
+                <h2 class="section-title">Superior Service & <span>"By the Book"</span> Craftsmanship</h2>
+            </div>
+            
+            <div class="content-body">
+                <p class="lead-text">
+                    REAL LIFE EXPERIENCE LLC is a premier remodeling company that has weathered the storms of economic highs and lows for over two decades.
+                </p>
+                
+                <p class="desc-text">
+                    We believe in listening to our clients and using a design process that <strong>"steers the ship"</strong> toward a functional and aesthetically pleasing destination. While kitchen, bath, and basement remodels are the <strong>"flagships"</strong> of our fleet, we also expertly "sail" smaller projects like wall removals and window replacements.
+                </p>
+            </div>
+
+            <!-- Optimized Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-number">18</span>
+                    <span class="stat-label">Years Strong</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">100%</span>
+                    <span class="stat-label">Licensed</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">Maryland</span>
+                    <span class="stat-label">Local Experts</span>
+                </div>
+            </div>
+
+            <!-- Modern CTA Area -->
+            <div class="about-cta">
+                <a href="/contact" class="btn-primary">Start Your Project</a>
+                <div class="signature">
+                    <p>Company Standard</p>
+                    <strong>Welcome to REAL LIFE EXPERIENCE LLC</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- Why Choose Us Section -->
+<section class="features-section">
+    <div class="container">
+        <div class="section-header">
+            <span class="category-tag">Why Choose Us</span>
+            <h2 class="section-title">Superior Quality In Every Detail</h2>
+        </div>
+
+        <div class="features-grid">
+            <!-- Feature 1 -->
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-tools"></i>
+                </div>
+                <h3>Expert Craftsmanship</h3>
+                <p>Our team consists of certified professionals with decades of combined experience in high-end home renovation.</p>
+            </div>
+
+            <!-- Feature 2 -->
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <h3>On-Time Delivery</h3>
+                <p>We value your time. We stick to strict schedules and ensure your project is completed within the agreed timeframe.</p>
+            </div>
+
+            <!-- Feature 3 -->
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-hand-holding-usd"></i>
+                </div>
+                <h3>Transparent Pricing</h3>
+                <p>No hidden costs or surprise fees. We provide detailed, honest quotes so you know exactly where your investment goes.</p>
+            </div>
+
+            <!-- Feature 4 -->
+            <div class="feature-card">
+                <div class="icon-box">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3>Guaranteed Quality</h3>
+                <p>We stand behind our work with a comprehensive warranty, ensuring your peace of mind long after the job is done.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="about-modern">
+    <div class="container about-wrapper">
+        
+        <!-- Left: Image Composition -->
+        <div class="about-visuals">
+            <div class="main-frame">
+                <img src="{% static 'img/remodel-mains.jpg' %}" alt="Quality Home Remodeling Atlanta">
+                <div class="since-badge">
+                    <span class="since-label">Serving Maryland Since</span>
+                    <span class="since-year">2008</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Professional Content (Stretches to 20px of edge) -->
+        <div class="about-text-content">
+            <h4 class="sub-headline">Welcome to REAL LIFE EXPERIENCE LLC</h4>
+            <h2 class="main-headline">Remodeling with <span>REAL LIFE EXPERIENCE LLC</span> as our Foundation.</h2>
+            
+            <p class="lead-intro">
+                Looking for a company that does what they say, delivers quality, and charges fair prices? We take the stress out of home additions by providing the service you deserve.
+            </p>
+
+            <div class="philosophy-box">
+                <p>We believe integrity is the <strong>main building block</strong> of a strong company. From massive home additions to precise repairs, we handle every project with the same professional magnitude.</p>
+            </div>
+
+            <!-- Features Grid -->
+            <div class="mini-features">
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Quality Work</div>
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Fair Pricing</div>
+                <div class="feature-tag"><i class="fas fa-check-circle"></i> Stress-Free Process</div>
+            </div>
+
+            <!-- Action Zone -->
+            <div class="cta-container">
+                <div class="phone-link">
+                    <span class="call-text">Speak with an Expert</span>
+                    <a href="tel:(443) 898-3143" class="phone-number">(443) 898-3143</a>
+                </div>
+                <a href="/contact" class="btn-consult">Get Free Consultation</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Mission Statement Section -->
+<section class="mission-section">
+    <div class="container">
+        <div class="mission-box">
+            <div class="mission-text">
+                <span class="category-tag light">Our Mission</span>
+                <h2>Dedicated to Enhancing Your Living Experience</h2>
+                <p>To provide homeowners with a stress-free renovation process that results in extraordinary living spaces, built on a foundation of integrity, innovation, and unparalleled craftsmanship.</p>
+            </div>
+            <div class="mission-image">
+                <!-- Replace with an image of a finished professional project -->
+                <img src="{% static 'img/mission-display.jpg' %}" alt="Our Mission in Action">
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="services-elite">
+    <div class="container-fluid">
+        <div class="elite-wrapper">
+            
+            <!-- Left Side: Navigation -->
+            <div class="elite-nav">
+                <div class="nav-header">
+                    <span class="category-tag">Expertise</span>
+                    <h2 class="elite-title">Exceptional Spaces.</h2>
+                </div>
+                
+                <div class="services-list">
+                    <!-- Added data-caption attribute to update text dynamically -->
+                    <div class="service-nav-item active" data-img="kitchen" data-caption="Modern Kitchen Project, Atlanta GA">
+                        <span class="service-num">01</span>
+                        <div class="service-text">
+                            <h3>Kitchens</h3>
+                            <p>Culinary centers built with "By the Book" precision.</p>
+                        </div>
+                    </div>
+
+                    <div class="service-nav-item" data-img="bathroom" data-caption="Luxury Master Bath, Buckhead">
+                        <span class="service-num">02</span>
+                        <div class="service-text">
+                            <h3>Bathrooms</h3>
+                            <p>Master-grade sanctuaries and luxury spa suites.</p>
+                        </div>
+                    </div>
+
+                    <div class="service-nav-item" data-img="basement" data-caption="Custom Basement Suite & Theater">
+                        <span class="service-num">03</span>
+                        <div class="service-text">
+                            <h3>Basements</h3>
+                            <p>From structural reinforcement to high-end living areas.</p>
+                        </div>
+                    </div>
+
+                    <div class="service-nav-item" data-img="addition" data-caption="Modern Home Expansion & Porch">
+                        <span class="service-num">04</span>
+                        <div class="service-text">
+                            <h3>Additions</h3>
+                            <p>Architectural expansions that blend seamlessly.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elite-cta">
+                    <a href="#contact" class="btn-outline-dark">Start Your Transformation</a>
+                </div>
+            </div>
+
+            <!-- Right Side: Immersive Image Display -->
+            <div class="elite-display">
+                <div class="display-container">
+                    <!-- All 4 images are loaded but hidden via CSS until .active is added -->
+                    <img src="{% static 'img/kitchen-service.jpg' %}" class="display-img active" id="img-kitchen">
+                    <img src="{% static 'img/bathroom-service.jpg' %}" class="display-img" id="img-bathroom">
+                    <img src="{% static 'img/basement-service.jpg' %}" class="display-img" id="img-basement">
+                    <img src="{% static 'img/addition-service.jpg' %}" class="display-img" id="img-addition">
+                    
+                    <div class="img-caption">
+                        <span id="caption-text">Modern Kitchen Project, Atlanta GA</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<section class="tiles-gallery">
+    <div class="custom-container">
+        <header class="section-header">
+            <span class="eyebrow">Expert Installation</span>
+            <h2 class="section-title">Premium Tile & Stone Work</h2>
+            <div class="header-line"></div>
+        </header>
+
+        <div class="tiles-grid">
+            <!-- Tile Item 1: Showers -->
+            <div class="tile-card large">
+                <img src="{% static 'img/custom-showers.jpg' %}" alt="Custom Tile Shower Installation Atlanta">
+                <div class="tile-overlay">
+                    <h3>Custom Showers</h3>
+                    <p>Waterproof, elegant, and built to last.</p>
+                </div>
+            </div>
+
+            <!-- Tile Item 2: Tile Floor -->
+            <div class="tile-card">
+                <img src="{% static 'img/tile-flooring.jpg' %}" alt="Professional Tile Flooring">
+                <div class="tile-overlay">
+                    <h3>Tile Floors</h3>
+                    <p>Durable beauty for every room.</p>
+                </div>
+            </div>
+
+            <!-- Tile Item 3: Backsplashes -->
+            <div class="tile-card">
+                <img src="{% static 'img/backsplash.jpg' %}" alt="Kitchen Backsplash Tile Work">
+                <div class="tile-overlay">
+                    <h3>Backsplashes</h3>
+                    <p>The perfect accent for your kitchen.</p>
+                </div>
+            </div>
+
+            <!-- Tile Item 4: Bathroom Tile -->
+            <div class="tile-card">
+                <img src="{% static 'img/bathroom-tile.jpg' %}" alt="Modern Bathroom Tiling">
+                <div class="tile-overlay">
+                    <h3>Bathroom Tiling</h3>
+                    <p>Transforming your space into a spa.</p>
+                </div>
+            </div>
+
+            <!-- Tile Item 5: Fireplaces -->
+            <div class="tile-card large">
+                <img src="{% static 'img/fireplace-tile.jpg' %}" alt="Custom Tile Fireplace Surround">
+                <div class="tile-overlay">
+                    <h3>Fireplaces</h3>
+                    <p>Stunning stone and tile surrounds.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="areas-serve">
+    <div class="container">
+        <div class="areas-wrapper">
+            <div class="areas-header">
+                <h2 class="elite-title">Areas We Serve</h2>
+                <span class="header-divider"></span>
+                <p class="areas-desc">Providing premium home transformations across the Greater Maryland Metro and surrounding communities.</p>
+            </div>
+
+            <div class="areas-grid">
+                <div class="area-column">
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Maryland (Inside Perimeter)</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Allegany County</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Washington County</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Frederick County</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Montgomery County</div>
+                </div>
+                <div class="area-column">
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Prince George's County</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Anne Arundel County</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Baltimore City</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Mableton</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Powder Springs</div>
+                </div>
+                <div class="area-column">
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Hiram</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Dallas</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Winston</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Douglasville</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Carrollton</div>
+                </div>
+                <div class="area-column">
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Whitesburg</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Fairburn</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Newnan</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Sharpsburg</div>
+                    <div class="area-item"><i class="fas fa-map-marker-alt"></i> Peachtree City</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!--<section class="cta-section" style="background: var(--light); padding: 80px 0; text-align: center;">-->
+<!--    <div class="container">-->
+<!--        <h2>Ready to start your project?</h2>-->
+<!--        <p>Contact us today for a free consultation and detailed estimate.</p>-->
+<!--        <br>-->
+<!--        <a href="#" class="btn-primary">Contact Us Now</a>-->
+<!--    </div>-->
+<!--</section>-->
+
+<section class="premium-about">
+    <div class="container wide-grid">
+        
+        <!-- Left: Image Portfolio Block -->
+        <div class="visual-stack">
+            <div class="image-main">
+                <img src="{% static 'img/atlanta_logo-removebg-preview.png' %}" alt="High-end Home Remodeling Atlanta">
+                <div class="experience-floating-card">
+                    <span class="exp-num">18</span>
+                    <span class="exp-text">Years of <br> Perfectionism</span>
+                </div>
+            </div>
+            <div class="quote-overlay">
+                <p>"It's not just the destination, but the journey that creates quality."</p>
+            </div>
+        </div>
+
+        <!-- Right: Professional Narrative -->
+        <div class="narrative-content">
+            <header class="narrative-header">
+                <span class="eyebrow">Quality as a Way of Life</span>
+                <h2 class="narrative-title">Craftsmanship Guided by <span>IREAL LIFE EXPERIENCE</span></h2>
+            </header>
+            
+            <div class="narrative-body">
+                <p class="impact-text">
+                    We refuse to compete in the "low price leader" arena. Instead, we focus on work that is safe, strong, and aesthetically enduring because you deserve the best.
+                </p>
+                
+                <!-- Modern Feature Grid -->
+                <div class="values-grid">
+                    <div class="value-item">
+                        <div class="icon-wrap"><i class="fas fa-check-double"></i></div>
+                        <div class="value-text">
+                            <strong>No "Slam-Bam" Methods</strong>
+                            <p>We lean toward perfectionism, never rushing the structural or aesthetic details.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="value-item">
+                        <div class="icon-wrap"><i class="fas fa-book-reader"></i></div>
+                        <div class="value-text">
+                            <strong>Continuing Education</strong>
+                            <p>Our commitment to staying updated ensures a superior, modern product for your home.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="spiritual-commitment">
+                    <p><em>Guided by an understanding that even when a client or inspector isn't watching, <strong>Someone greater is.</strong></em></p>
+                </div>
+            </div>
+
+            <!-- Modern CTA & Contact -->
+            <div class="action-bar">
+                <a href="/contact" class="btn-modern">Contact Us Now</a>
+                <div class="contact-mini">
+                    <span>Direct Line:</span>
+                    <strong>(443) 898-3143</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="contact-section" id="contact">
+    <div class="container contact-container">
+        
+        <div class="contact-form-box">
+            <h3>Request a Free Quote</h3>
+            <p>Tell us about your project and we'll get back to you within 24 hours.</p>
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}" style="padding: 10px; margin-bottom: 15px; border-radius: 5px; 
+                         {% if message.tags == 'success' %}background-color: #d4edda; color: #155724;{% else %}background-color: #f8d7da; color: #721c24;{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <form action="#contact" method="POST" class="main-form">
+                {% csrf_token %}
+                <div class="form-group">
+                    <input type="text" name="name" placeholder="Full Name" required>
+                </div>
+                <div class="form-row">
+                    <input type="email" name="email" placeholder="Email Address" required>
+                    <input type="tel" name="phone" placeholder="Phone Number">
+                </div>
+                <div class="form-group">
+                    <select name="service" required>
+                        <option value="" disabled selected>Select Service</option>
+                        <option value="Bathroom Remodeling">Bathroom Remodeling</option>
+                        <option value="Kitchen Remodeling">Kitchen Remodeling</option>
+                        <option value="Basement Finishing">Basement Finishing</option>
+                        <option value="Painting">Painting</option>
+                        <option value="Home Improvement">Home Improvement</option>
+                        <option value="Patios & Decks">Patios & Decks</option>
+                        <option value="Cabinets">Cabinets</option>
+                        <option value="Woodworking">Woodworking</option>
+                        <option value="Hardscaping">Hardscaping</option>
+                        <option value="Walkway Designs">Walkway Designs</option>
+                        <option value="Pergolas">Pergolas</option>
+                        <option value="Lead Removal">Lead Removal</option>
+                        <option value="Shed Builder">Shed Builder</option>
+                        <option value="Lead Renovator">Lead Renovator</option>
+                        <option value="Home Additions">Home Additions</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <textarea name="message" rows="5" placeholder="Tell us more about your vision..." required></textarea>
+                </div>
+                <button type="submit" class="btn-primary w-100">Send Message</button>
+            </form>
+        </div>
+
+        <div class="contact-info-box">
+            <div class="info-item">
+                <div class="info-icon"><i class="fas fa-map-marker-alt"></i></div>
+                <div class="info-text">
+                    <h4>Our Location</h4>
+                    <p>Reisterstown, MD</p>
+                </div>
+            </div>
+            <div class="info-item">
+                <div class="info-icon"><i class="fas fa-phone-alt"></i></div>
+                <div class="info-text">
+                    <h4>Call Us</h4>
+                    <p>(443) 898-3143</p>
+                </div>
+            </div>
+            <div class="info-item">
+                <div class="info-icon"><i class="fas fa-envelope"></i></div>
+                <div class="info-text">
+                    <h4>Email Support</h4>
+                    <p>agm@rlecd.com</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 2: BBB ACCREDITATION CTA -->
+<section class="bbb-cta-section">
+    <div class="bbb-container">
+        <div class="bbb-grid">
+            <div class="bbb-text">
+                <span class="sub-title">FOR BUSINESSES</span>
+                <h2>Apply for BBB Accreditation</h2>
+                <p>Show your customers that your company operates honestly and with integrity. Join the community of trustworthy businesses today.</p>
+            </div>
+            <div class="bbb-action">
+                <a href="https://www.bbb.org/" class="btn-bbb" target="_blank">
+                    <img src="{% static 'img/logo_bbb.png' %}" alt="BBB Logo" class="bbb-mini-logo">
+                    Apply for Accreditation ™
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SECTION 1: FINANCIAL PARTNER (NELNET) -->
+<section class="partner-section">
+    <div class="partner-container">
+        <div class="partner-card">
+            <div class="partner-image">
+                <!-- Replace with an image of a happy family in a renovated home or Nelnet Logo -->
+                <img src="{% static 'img/images.png' %}" alt="Home Improvement Financing">
+                <div class="image-overlay"></div>
+            </div>
+            <div class="partner-content">
+                <span class="badge">Financing Available</span>
+                <h2>Flexible Payment Plans</h2>
+                <p>We’ve partnered with Nelnet Bank to offer competitive financing options that turn your home improvement dreams into reality today.</p>
+                <a href="https://loanapplication.hil.nelnetbank.com/1af2214a-88b8-4d43-8e3f-45ec1d3b536a" class="btn-partner" target="_blank">
+                    View Financing Options <i class="fas fa-external-link-alt"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+{% endblock %}

@@ -1,0 +1,422 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% comment %}
+Branded replacement for the Django admin login page.
+
+Overrides templates/admin/login.html at the project level, which is the
+documented way to restyle a single admin screen.
+
+The form contract with Django is preserved exactly: same action, same field
+names, csrf token, the `next` hidden input, the non-field error block and the
+password-reset link. Restyling a login page is only safe as long as none of
+that is dropped — a visually nicer page that silently loses the `next` field
+bounces staff back to the login screen after signing in.
+
+All CSS is scoped under .rlecd-login and the local custom properties, so it
+cannot leak into the rest of the admin, and it deliberately does not depend on
+the site's own style.css, which the admin never loads.
+{% endcomment %}
+
+{% block title %}{% if form.errors %}{% translate "Error:" %} {% endif %}{{ block.super }}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap">
+<link rel="stylesheet" href="{% static "admin/css/login.css" %}">
+<style>
+  .rlecd-login {
+    --rl-primary: #1B3022;
+    --rl-primary-soft: #243D2C;
+    --rl-accent: #E27D60;
+    --rl-dark: #2D2D2D;
+    --rl-muted: #6B7280;
+    --rl-light: #F4F4F2;
+    --rl-white: #fff;
+    --rl-border: #E3E3DF;
+    --rl-danger-bg: #FEF2F2;
+    --rl-danger-fg: #991B1B;
+    --rl-danger-border: #FECACA;
+    --rl-font-body: 'Montserrat', system-ui, -apple-system, sans-serif;
+    --rl-font-display: 'Playfair Display', Georgia, serif;
+    --rl-radius: 10px;
+    --rl-ease: cubic-bezier(.23, 1, .32, 1);
+  }
+
+  /* admin base.css does not set border-box on form controls, so `width:100%`
+     plus padding overflows the viewport on narrow screens. The site's own
+     style.css does the same thing globally; mirrored here to match. */
+  .rlecd-login *,
+  .rlecd-login *::before,
+  .rlecd-login *::after { box-sizing: border-box; }
+
+  /* Strip the admin chrome so the login can be full-bleed. */
+  .rlecd-login #header,
+  .rlecd-login #nav-breadcrumbs,
+  .rlecd-login #footer,
+  .rlecd-login .sticky { display: none; }
+
+  .rlecd-login #content,
+  .rlecd-login #content.colM,
+  .rlecd-login #content.colMS { float: none; width: 100%; padding: 0; }
+
+  .rlecd-login body,
+  body.rlecd-login {
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--rl-font-body);
+    background: var(--rl-light);
+    color: var(--rl-dark);
+  }
+
+  .rl-shell {
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    min-height: 100vh;
+  }
+
+  /* ---- brand panel ---- */
+  .rl-brand {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 40px;
+    padding: 56px 60px;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, var(--rl-primary-soft) 0%, transparent 62%),
+      var(--rl-primary);
+    color: var(--rl-white);
+    overflow: hidden;
+  }
+  /* soft accent arc, decorative only */
+  .rl-brand::after {
+    content: "";
+    position: absolute;
+    right: -180px; bottom: -220px;
+    width: 520px; height: 520px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .rl-logo-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 76px; height: 76px;
+    padding: 8px;
+    background: var(--rl-white);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.22);
+  }
+  .rl-logo-chip img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+  .rl-wordmark {
+    margin: 26px 0 0;
+    font-family: var(--rl-font-display);
+    font-size: clamp(1.9rem, 3.1vw, 2.6rem);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -.01em;
+  }
+  .rl-wordmark span { color: var(--rl-accent); }
+
+  .rl-tagline {
+    margin: 14px 0 0;
+    max-width: 34ch;
+    font-size: .95rem;
+    line-height: 1.7;
+    color: rgba(255,255,255,.74);
+  }
+
+  .rl-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 13px; }
+  .rl-points li {
+    display: flex; align-items: flex-start; gap: 11px;
+    font-size: .875rem;
+    color: rgba(255,255,255,.86);
+  }
+  .rl-points li::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 18px; height: 18px;
+    margin-top: 1px;
+    border-radius: 50%;
+    background: rgba(226,125,96,.2);
+    box-shadow: inset 0 0 0 1px rgba(226,125,96,.55);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23E27D60' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+    background-size: 12px 12px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .rl-legal { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+              color: rgba(255,255,255,.4); }
+
+  /* ---- form panel ---- */
+  .rl-form-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 40px;
+    background: var(--rl-white);
+  }
+  .rl-form-card { width: 100%; max-width: 384px; }
+
+  .rl-kicker {
+    margin: 0 0 10px;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--rl-accent);
+  }
+  .rl-form-card h1 {
+    margin: 0 0 8px;
+    font-family: var(--rl-font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--rl-primary);
+  }
+  .rl-lede { margin: 0 0 30px; font-size: .9rem; color: var(--rl-muted); }
+
+  .rl-alert {
+    margin: 0 0 22px;
+    padding: 13px 15px;
+    border: 1px solid var(--rl-danger-border);
+    border-left: 3px solid #DC2626;
+    border-radius: 8px;
+    background: var(--rl-danger-bg);
+    color: var(--rl-danger-fg);
+    font-size: .85rem;
+    line-height: 1.55;
+  }
+  .rl-alert ul { margin: 6px 0 0; padding-left: 18px; }
+  .rl-alert p { margin: 0; }
+
+  .rl-field { margin-bottom: 20px; }
+  .rl-field > label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: .74rem;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: #4B5563;
+  }
+  .rl-field input[type="text"],
+  .rl-field input[type="password"],
+  .rl-field input[type="email"] {
+    width: 100%;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: .95rem;
+    color: var(--rl-dark);
+    background: #FBFBFA;
+    border: 1px solid var(--rl-border);
+    border-radius: var(--rl-radius);
+    transition: border-color .18s var(--rl-ease), box-shadow .18s var(--rl-ease), background .18s var(--rl-ease);
+  }
+  .rl-field input::placeholder { color: #A6A6A0; }
+  .rl-field input:focus {
+    outline: none;
+    background: var(--rl-white);
+    border-color: var(--rl-primary);
+    box-shadow: 0 0 0 3px rgba(27,48,34,.10);
+  }
+  .rl-field ul.errorlist {
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+    color: #B91C1C;
+    font-size: .8rem;
+  }
+
+  .rl-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    margin: 4px 0 26px;
+    flex-wrap: wrap;
+  }
+  .rl-forgot { font-size: .82rem; color: var(--rl-primary);
+               text-decoration: none; border-bottom: 1px solid rgba(27,48,34,.28); }
+  .rl-forgot:hover { color: var(--rl-accent); border-bottom-color: var(--rl-accent); }
+
+  /* Specificity note: admin base.css styles `input[type=submit]` (0,1,1),
+     which outranks a bare `.rl-submit` (0,1,0) and repaints the button
+     Django's accent blue. These selectors include the type attribute so the
+     brand colour actually wins. */
+  input[type=submit].rl-submit {
+    display: block;
+    width: 100%;
+    padding: 14px 20px;
+    font-family: inherit;
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--rl-white);
+    background: var(--rl-primary);
+    border: 1px solid var(--rl-primary);
+    border-radius: var(--rl-radius);
+    cursor: pointer;
+    box-shadow: none;
+    transition: background .2s var(--rl-ease), transform .12s var(--rl-ease), box-shadow .2s var(--rl-ease);
+  }
+  input[type=submit].rl-submit:hover {
+    background: #12281B;
+    border-color: #12281B;
+    box-shadow: 0 10px 24px rgba(27,48,34,.24);
+  }
+  input[type=submit].rl-submit:active { transform: translateY(1px); }
+  input[type=submit].rl-submit:focus,
+  input[type=submit].rl-submit:focus-visible {
+    background: #12281B;
+    border-color: var(--rl-accent);
+    outline: 2px solid var(--rl-accent);
+    outline-offset: 2px;
+  }
+
+  .rl-foot {
+    margin: 30px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--rl-border);
+    font-size: .76rem;
+    line-height: 1.6;
+    color: var(--rl-muted);
+    text-align: center;
+  }
+
+  @media (max-width: 860px) {
+    .rl-shell { grid-template-columns: 1fr; }
+    .rl-brand {
+      padding: 34px 26px;
+      gap: 22px;
+    }
+    .rl-brand::after { display: none; }
+    .rl-wordmark { font-size: 1.6rem; margin-top: 18px; }
+    .rl-tagline { display: none; }
+    .rl-points, .rl-legal { display: none; }
+    .rl-logo-chip { width: 56px; height: 56px; border-radius: 14px; }
+    .rl-form-panel { padding: 36px 24px 56px; }
+    .rl-form-card h1 { font-size: 1.7rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    input[type=submit].rl-submit, .rl-field input { transition: none; }
+  }
+</style>
+{{ form.media }}
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} rlecd-login{% endblock %}
+
+{% block header %}{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<div class="rl-shell">
+
+  <section class="rl-brand" aria-label="About RLECD">
+    <div>
+      <span class="rl-logo-chip">
+        <img src="{% static 'img/rlecd_maryland_logo.png' %}"
+             alt="REAL LIFE EXPERIENCE LLC" width="76" height="76">
+      </span>
+      <p class="rl-wordmark">Real Life<br>Experience <span>LLC</span></p>
+      <p class="rl-tagline">Premium home remodeling and custom cabinetry across
+        Reisterstown and Greater Maryland.</p>
+    </div>
+
+    <ul class="rl-points">
+      <li>Licensed &amp; insured general contractor</li>
+      <li>20+ years of craftsmanship in Maryland</li>
+      <li>Free, no-obligation estimates</li>
+    </ul>
+
+    <p class="rl-legal">Serving Greater Maryland Metro</p>
+  </section>
+
+  <section class="rl-form-panel">
+    <div class="rl-form-card">
+      <p class="rl-kicker">RLECD CRM</p>
+      <h1>{% translate "Sign in" %}</h1>
+      <p class="rl-lede">Leads, projects and website content — staff access only.</p>
+
+      {% if user.is_authenticated %}
+        <div class="rl-alert" role="status">
+          <p>{% blocktranslate trimmed %}
+            You are signed in as {{ username }}, but your account is not
+            authorized to see this page. Sign in with a different account to
+            continue.
+          {% endblocktranslate %}</p>
+        </div>
+      {% endif %}
+
+      {% if form.errors and not form.non_field_errors %}
+        <div class="rl-alert" role="alert">
+          {% blocktranslate count counter=form.errors.items|length %}
+            Please correct the error below.
+          {% plural %}
+            Please correct the errors below.
+          {% endblocktranslate %}
+        </div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        <div class="rl-alert" role="alert">
+          {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+        <div class="rl-field">
+          {{ form.username.errors }}
+          <label for="{{ form.username.id_for_label }}">{% translate "Username" %}</label>
+          {{ form.username }}
+        </div>
+
+        <div class="rl-field">
+          {{ form.password.errors }}
+          <label for="{{ form.password.id_for_label }}">{% translate "Password" %}</label>
+          {{ form.password }}
+        </div>
+
+        <input type="hidden" name="next" value="{{ next }}">
+
+        {% comment %}
+        Django only reverses 'admin_password_reset' when password-reset URLs
+        are registered; this project does not register them, so the guard
+        evaluates false and no dead link is emitted. The whole row is skipped
+        rather than left as an empty margin box.
+        {% endcomment %}
+        {% url 'admin_password_reset' as password_reset_url %}
+        {% if password_reset_url %}
+          <div class="rl-row">
+            <a class="rl-forgot" href="{{ password_reset_url }}">
+              {% translate "Forgot your password?" %}
+            </a>
+          </div>
+        {% endif %}
+
+        <input type="submit" class="rl-submit" value="{% translate 'Sign in' %}">
+      </form>
+
+      <p class="rl-foot">
+        {% translate "Authorised staff only." %}<br>
+        <a class="rl-forgot" href="{% url 'index' %}">{% translate "Back to the website" %}</a>
+      </p>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

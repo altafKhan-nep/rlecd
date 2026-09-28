@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Cabinetry Page Specifics --- */
+    :root {
+        --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling - Elegant & Focused */
+    .hero-cabinets {
+        background: linear-gradient(rgba(27, 48, 34, 0.8), rgba(27, 48, 34, 0.8)), 
+                    url('{% static "img/cabinet-hero.jpg" %}') center/cover no-repeat;
+        padding: 150px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin-bottom: 15px;
+    }
+
+    /* Detail Grid - Highlighting the "Finishes" */
+    .detail-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+        margin-top: 50px;
+    }
+
+    .detail-card {
+        text-align: center;
+        padding: 40px 20px;
+        background: var(--light);
+        border-radius: 15px;
+        transition: var(--transition);
+        border: 1px solid transparent;
+    }
+
+    .detail-card:hover {
+        background: var(--white);
+        border-color: var(--accent);
+        box-shadow: 0 15px 30px rgba(0,0,0,0.05);
+        transform: translateY(-5px);
+    }
+
+    .detail-card i {
+        font-size: 2.5rem;
+        color: var(--accent);
+        margin-bottom: 20px;
+    }
+
+    /* Gallery - Showcase of Custom Work */
+    .cabinet-gallery {
+        padding: 80px 0 120px;
+        background-color: var(--white);
+    }
+
+    .cabinet-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+    }
+
+    .cabinet-item {
+        position: relative;
+        height: 450px;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+    }
+
+    .cabinet-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .cabinet-info {
+        position: absolute;
+        inset: 0;
+        background: rgba(27, 48, 34, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 40px;
+        opacity: 0;
+        transition: var(--transition);
+        text-align: center;
+        color: var(--white);
+    }
+
+    .cabinet-item:hover img { transform: scale(1.1); }
+    .cabinet-item:hover .cabinet-info { opacity: 1; }
+
+    .cabinet-info h4 { font-family: var(--font-heading); font-size: 1.5rem; margin-bottom: 10px; }
+    .cabinet-info p { font-size: 0.9rem; opacity: 0.8; margin-bottom: 20px; }
+
+    .btn-outline-white {
+        border: 2px solid var(--white);
+        padding: 10px 25px;
+        color: var(--white);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        transition: var(--transition);
+    }
+
+    .btn-outline-white:hover {
+        background: var(--white);
+        color: var(--primary);
+    }
+
+    @media (max-width: 992px) { .detail-grid { grid-template-columns: 1fr; } }
+</style>
+
+<main class="cabinet-portfolio">
+    <!-- Hero Section -->
+    <section class="hero-cabinets">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle-gold" style="color: var(--accent); font-weight: 700; letter-spacing: 3px;">Artisan Craftsmanship</span>
+                <h1>Custom Cabinetry</h1>
+                <p>Tailor-made storage solutions that define the character of your home.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detail Highlights -->
+    <section class="detail-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Built to Last</h2>
+                <div class="divider" style="background: var(--accent); width: 60px; height: 3px; margin: 20px auto;"></div>
+            </div>
+            
+            <div class="detail-grid">
+                <div class="detail-card">
+                    <i class="fas fa-hammer"></i>
+                    <h3>Custom Fabrication</h3>
+                    <p>Every piece is built to the exact specifications of your space, maximizing every square inch.</p>
+                </div>
+                <div class="detail-card">
+                    <i class="fas fa-gem"></i>
+                    <h3>Premium Hardware</h3>
+                    <p>Soft-close hinges, high-end pulls, and integrated lighting for a modern, functional feel.</p>
+                </div>
+                <div class="detail-card">
+                    <i class="fas fa-tint"></i>
+                    <h3>Flawless Finishes</h3>
+                    <p>From factory-grade paint to natural wood stains that highlight the beauty of the grain.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Project Gallery -->
+    <section class="cabinet-gallery">
+        <div class="container">
+            <div class="section-header" style="margin-bottom: 50px;">
+                <h2 style="font-family: var(--font-heading);">Recent Installations</h2>
+            </div>
+
+            <div class="cabinet-grid">
+                <!-- Project 1 -->
+                <div class="cabinet-item">
+                    <img src="{% static 'img/cab1.jpg' %}" alt="Shaker Style Kitchen">
+                    <div class="cabinet-info">
+                        <h4>Classic Shaker</h4>
+                        <p>Matte Navy finish with brushed brass accents.</p>
+                        <a href="/contact/" class="btn-outline-white">Inquire Now</a>
+                    </div>
+                </div>
+
+                <!-- Project 2 -->
+                <div class="cabinet-item">
+                    <img src="{% static 'img/cab2.jpg' %}" alt="Built-in Bookshelves">
+                    <div class="cabinet-info">
+                        <h4>Custom Library</h4>
+                        <p>Floor-to-ceiling shelving with integrated LED task lighting.</p>
+                        <a href="/contact/" class="btn-outline-white">Inquire Now</a>
+                    </div>
+                </div>
+
+                <!-- Project 3 -->
+                <div class="cabinet-item">
+                    <img src="{% static 'img/cab3.jpg' %}" alt="Modern Vanity">
+                    <div class="cabinet-info">
+                        <h4>Modern Floating Vanity</h4>
+                        <p>Seamless walnut grain with hidden finger pulls.</p>
+                        <a href="/contact/" class="btn-outline-white">Inquire Now</a>
+                    </div>
+                </div>
+
+                <!-- Project 4 -->
+                <div class="cabinet-item">
+                    <img src="{% static 'img/cab4.jpg' %}" alt="Custom Closet">
+                    <div class="cabinet-info">
+                        <h4>Custom Closet</h4>
+                        <p>Pull-out clothes and custom organization systems.</p>
+                        <a href="/contact/" class="btn-outline-white">Inquire Now</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section style="padding: 100px 0; background: var(--light); text-align: center;">
+        <div class="container">
+            <h2 style="font-family: var(--font-heading);">Ready for a Storage Upgrade?</h2>
+            <p style="margin: 20px 0 30px;">Let’s design a cabinetry solution that fits your lifestyle.</p>
+            <a href="/contact/" class="btn-accent">Start Your Design</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

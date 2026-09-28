@@ -1,0 +1,216 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Bathroom Page Specifics --- */
+    :root {
+        --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Hero Styling */
+    .hero-sub {
+        background: linear-gradient(rgba(27, 48, 34, 0.85), rgba(27, 48, 34, 0.85)), 
+                    url('{% static "img/bathroom-hero-bg.jpg" %}') center/cover no-repeat;
+        padding: 140px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.8rem, 6vw, 4.5rem);
+        margin-bottom: 20px;
+    }
+
+    .subtitle {
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        font-size: 0.85rem;
+        color: var(--accent);
+        display: block;
+        margin-bottom: 15px;
+        font-weight: 700;
+    }
+
+    /* Gallery Styling */
+    .gallery-section {
+        padding: 100px 0;
+        background-color: var(--white);
+    }
+
+    .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 25px;
+        margin-top: 50px;
+    }
+
+    .gallery-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 12px;
+        height: 350px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        background: var(--light); /* Placeholder color while loading */
+    }
+
+    .gallery-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: var(--transition);
+    }
+
+    .gallery-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(27, 48, 34, 0.8);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: var(--transition);
+        color: var(--white);
+    }
+
+    .gallery-item:hover img { transform: scale(1.1); }
+    .gallery-item:hover .gallery-overlay { opacity: 1; }
+
+    .gallery-overlay i { font-size: 1.5rem; margin-bottom: 10px; }
+    .gallery-overlay span { font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; }
+
+    /* Layout Components */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; padding: 100px 0; }
+    .btn-accent { display: inline-block; background-color: var(--accent); color: var(--white); padding: 18px 40px; text-decoration: none; font-weight: 600; border-radius: 4px; transition: var(--transition); }
+    .divider { width: 80px; height: 4px; background: var(--accent); margin: 20px auto; }
+    .section-header { text-align: center; margin-bottom: 40px; }
+
+    @media (max-width: 992px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+
+<main class="remodel-page">
+    <section class="hero-sub">
+        <div class="container">
+            <div class="hero-content">
+                <span class="subtitle">Luxury & Comfort</span>
+                <h1>Bathroom Portfolio</h1>
+                <p>Browse 20 of our most recent luxury bathroom transformations.</p>
+                <a href="/contact/" class="btn-accent">Start Your Transformation</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Project Gallery Section -->
+    <section class="gallery-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Our Work Gallery</h2>
+                <div class="divider"></div>
+            </div>
+
+            <div class="gallery-grid">
+                <!-- Row 1 -->
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath1.jpg' %}" alt="Modern Master Bath">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath2.jpg' %}" alt="Spa Style Shower">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath3.jpg' %}" alt="Luxury Vanity">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath4.jpg' %}" alt="Tile Detail">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                <!-- Row 2 -->
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath5.jpg' %}" alt="Small Bathroom Idea">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath6.jpg' %}" alt="Soaking Tub">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath7.jpg' %}" alt="Modern Lighting">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath8.jpg' %}" alt="Custom Cabinetry">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                <!-- Row 3 -->
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath9.jpg' %}" alt="Floating Vanity">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath10.jpg' %}" alt="Marble Finish">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath11.jpg' %}" alt="Guest Bath">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath12.jpg' %}" alt="Glass Shower">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                <!-- Row 4 -->
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath13.jpg' %}" alt="Brass Fixtures">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath14.jpg' %}" alt="Hexagon Tile">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath15.jpg' %}" alt="Walk-in Closet Combo">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath16.jpg' %}" alt="Contemporary Design">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+
+                <!-- Row 5 -->
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath15.jpg' %}" alt="Rustic Bathroom">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath16.jpg' %}" alt="Industrial Style">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath14.jpg' %}" alt="Accent Wall">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+                <div class="gallery-item">
+                    <img src="{% static 'img/bath2.jpg' %}" alt="Wet Room">
+                    <div class="gallery-overlay"><i class="fas fa-plus"></i><span>View Project</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="bottom-cta" style="text-align: center; padding: 80px 0;">
+        <div class="container">
+            <h2>Like what you see?</h2>
+            <p>Let's discuss how we can bring this level of quality to your home.</p>
+            <a href="/contact/" class="btn-accent" style="margin-top: 20px;">Get a Free Quote</a>
+        </div>
+    </section>
+</main>
+{% endblock %}

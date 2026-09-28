@@ -1,0 +1,96 @@
+{% load static %}
+<!-- Sidebar -->
+    <nav class="spatial-sidebar initial-hide" id="socialSidebar">
+        <a href="https://www.facebook.com/profile.php?id=61590862768775" target="_blank" class="spatial-item fb">
+            <i class="fab fa-facebook-f"></i>
+            <span class="spatial-text">Facebook</span>
+        </a>
+
+        <a href="https://wa.me/14432286769" target="_blank" class="spatial-item wa">
+            <i class="fab fa-whatsapp"></i>
+            <span class="spatial-text">Whatsapp</span>
+        </a>
+        
+        <a href="https://www.instagram.com/rlecd/" target="_blank" class="spatial-item in">
+            <i class="fab fa-instagram"></i>
+            <span class="spatial-text">Instagram</span>
+        </a>
+    </nav>
+
+    <!-- Chat Trigger Button -->
+<div class="chat-spatial-trigger initial-hide" id="chatWrapper" onclick="toggleChat()">
+    <i class="fas fa-comment-dots"></i>
+    <span class="chat-tooltip">Live Support</span>
+</div>
+
+<!-- Tawk.to Script -->
+<script type="text/javascript">
+    var Tawk_API = Tawk_API || {},
+        Tawk_LoadStart = new Date();
+
+    (function () {
+        var s1 = document.createElement("script"),
+            s0 = document.getElementsByTagName("script")[0];
+
+        s1.async = true;
+
+        /* Your New Tawk.to Widget */
+        s1.src = 'https://embed.tawk.to/6a34e0d7c398881d4797669d/1jrf8sj5h';
+
+        s1.charset = 'UTF-8';
+        s1.setAttribute('crossorigin', '*');
+        s0.parentNode.insertBefore(s1, s0);
+    })();
+
+    /* Open/Close Chat */
+    function toggleChat() {
+        if (typeof Tawk_API !== 'undefined') {
+            Tawk_API.toggle();
+        }
+    }
+
+    /* Hide Default Widget Bubble */
+    Tawk_API.onLoad = function () {
+        Tawk_API.hideWidget();
+    };
+
+    /* Reveal Button After Page Load */
+    window.addEventListener('load', function () {
+        setTimeout(function () {
+            var socialSidebar = document.getElementById('socialSidebar');
+            var chatWrapper = document.getElementById('chatWrapper');
+
+            if (socialSidebar) {
+                socialSidebar.classList.add('reveal');
+            }
+
+            if (chatWrapper) {
+                chatWrapper.classList.add('reveal');
+            }
+        }, 800);
+    });
+</script>
+
+<script>
+    const menu = document.getElementById('mobile-menu');
+    const toggle = document.getElementById('mobile-toggle');
+    const close = document.getElementById('mobile-close');
+
+    // Open Menu
+    toggle.addEventListener('click', () => {
+        menu.classList.add('active');
+    });
+
+    // Close Menu
+    close.addEventListener('click', () => {
+        menu.classList.remove('active');
+    });
+
+    // Close menu if clicking outside
+    document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !toggle.contains(e.target)) {
+            menu.classList.remove('active');
+        }
+    });
+</script>
+    <script src="{% static 'js/script.js' %}"></script>

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% load content_tags %}
+{% comment %}
+The single generic page template.
+
+Every public URL renders this one file, driven entirely by the `page` row it
+receives. That is what makes the frontend CRUD-able from the CRM: there is no
+per-page template left holding hard-coded copy, and the per-page shell
+differences the live site actually ships (which navbar, which footer, which
+script block, what <main> attributes) are data on the Page row.
+{% endcomment %}
+
+{% block head_meta %}{% page_head page %}{% endblock %}
+
+{% block nav %}{% simple_include page.nav_variant %}{% endblock %}
+
+{% comment %}
+main_attrs is raw attribute text ("  class=...") captured from the live markup.
+It carries its own leading space so that <main{% block %} renders as
+"<main class=...>", so it must not be escaped or the quotes become &quot;.
+
+It is trusted shell data, editable only alongside page content — the same
+trust level as a template author. See the note in content/render.py.
+{% endcomment %}
+{% block main_attrs %}{{ page.main_attrs|safe }}{% endblock %}
+
+{% block content %}{% page_sections page %}{% endblock %}
+
+{% block footer %}{% simple_include page.footer_variant %}{% endblock %}
+
+{% block post_body %}{% simple_include page.post_variant %}{% endblock %}

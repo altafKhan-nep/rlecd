@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<style>
+    /* --- Lead Removal Specifics --- */
+    :root {
+        --safe-blue: #2c3e50;
+        --warning-orange: #e67e22; /* Professional warning color */
+        --transition: all 0.3s ease;
+    }
+
+    /* Hero Styling - Serious & Professional */
+    .hero-lead {
+        background: linear-gradient(rgba(44, 62, 80, 0.9), rgba(44, 62, 80, 0.9)), 
+                    url('{% static "img/lead-safety-bg.jpg" %}') center/cover no-repeat;
+        padding: 150px 0 100px;
+        color: var(--white);
+        text-align: center;
+    }
+
+    .hero-content h1 {
+        font-family: var(--font-heading);
+        font-size: clamp(2.5rem, 6vw, 4rem);
+        margin-bottom: 20px;
+    }
+
+    /* Certification Badge Section */
+    .cert-bar {
+        background: var(--light);
+        padding: 40px 0;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .cert-flex {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 50px;
+        flex-wrap: wrap;
+    }
+
+    .cert-item {
+        display: flex;
+        align-items: center;
+        font-weight: 700;
+        color: var(--safe-blue);
+        text-transform: uppercase;
+        font-size: 0.9rem;
+    }
+
+    .cert-item i {
+        font-size: 1.5rem;
+        color: var(--warning-orange);
+        margin-right: 12px;
+    }
+
+    /* Safety Process Grid */
+    .process-section {
+        padding: 100px 0;
+        background: var(--white);
+    }
+
+    .process-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 30px;
+        margin-top: 50px;
+    }
+
+    .step-card {
+        padding: 40px;
+        background: var(--light);
+        border-radius: 8px;
+        position: relative;
+        transition: var(--transition);
+        border-top: 4px solid var(--safe-blue);
+    }
+
+    .step-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+        border-top-color: var(--warning-orange);
+    }
+
+    .step-number {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        font-size: 3rem;
+        font-weight: 900;
+        color: rgba(0,0,0,0.05);
+    }
+
+    /* Safety Comparison / Checklist */
+    .safety-check {
+        padding: 100px 0;
+        background: var(--safe-blue);
+        color: var(--white);
+    }
+
+    .check-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+    }
+
+    .check-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .check-list li {
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        font-size: 1.1rem;
+    }
+
+    .check-list li i {
+        color: var(--warning-orange);
+        margin-right: 15px;
+        font-size: 1.2rem;
+    }
+
+    @media (max-width: 992px) {
+        .check-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+<main class="lead-removal-page">
+    <section class="hero-lead">
+        <div class="container">
+            <div class="hero-content">
+                <span style="color: var(--warning-orange); font-weight: 800; letter-spacing: 2px; text-transform: uppercase;">Certified EPA Lead-Safe</span>
+                <h1>Professional Lead Removal</h1>
+                <p style="max-width: 700px; margin: 20px auto;">Ensuring a safe environment for your family through certified abatement and remediation techniques.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="cert-bar">
+        <div class="container">
+            <div class="cert-flex">
+                <div class="cert-item"><i class="fas fa-certificate"></i> EPA Certified Firm</div>
+                <div class="cert-item"><i class="fas fa-shield-alt"></i> Fully Licensed & Insured</div>
+                <div class="cert-item"><i class="fas fa-user-md"></i> OSHA Compliant</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="process-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center;">
+                <h2 style="font-family: var(--font-heading); font-size: 2.5rem;">Our Remediation Process</h2>
+                <div class="divider" style="background: var(--warning-orange); width: 60px; margin: 20px auto;"></div>
+            </div>
+
+            <div class="process-steps">
+                <div class="step-card">
+                    <span class="step-number">01</span>
+                    <h3>Containment</h3>
+                    <p>We seal off the work area using heavy-duty plastic sheeting and HEPA-filtered air scrubbers to prevent dust migration.</p>
+                </div>
+                <div class="step-card">
+                    <span class="step-number">02</span>
+                    <h3>Safe Removal</h3>
+                    <p>Using wet-scraping and HEPA-vacuuming techniques to minimize airborne lead particles during the extraction phase.</p>
+                </div>
+                <div class="step-card">
+                    <span class="step-number">03</span>
+                    <h3>HEPA Cleaning</h3>
+                    <p>A specialized multi-stage cleaning process of all surfaces to ensure no residual lead dust remains.</p>
+                </div>
+                <div class="step-card">
+                    <span class="step-number">04</span>
+                    <h3>Clearance</h3>
+                    <p>Final testing and verification to ensure the space meets all safety standards for re-occupancy.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="safety-check">
+        <div class="container">
+            <div class="check-grid">
+                <div class="check-text">
+                    <h2 style="font-family: var(--font-heading); font-size: 2.5rem; margin-bottom: 25px;">Why Professional Removal Matters</h2>
+                    <p style="margin-bottom: 30px; opacity: 0.9;">Lead-based paint is a serious health hazard, especially in homes built before 1978. Simple sanding or scraping can release toxic dust that lingers for years.</p>
+                    <ul class="check-list">
+                        <li><i class="fas fa-check-circle"></i> Industrial Grade HEPA Filtration</li>
+                        <li><i class="fas fa-check-circle"></i> Specialized Lead-Vacuuming Equipment</li>
+                        <li><i class="fas fa-check-circle"></i> Proper Hazardous Waste Disposal</li>
+                        <li><i class="fas fa-check-circle"></i> EPA-Required Documentation</li>
+                    </ul>
+                </div>
+                <div class="check-image">
+                    <img src="{% static 'img/lead-work.jpg' %}" alt="Lead Safe Work" style="width: 100%; border-radius: 15px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}

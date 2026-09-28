@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "framework": null,
+  "buildCommand": "python manage.py collectstatic --noinput && if [ \"$RUN_MIGRATIONS_ON_BUILD\" = \"true\" ]; then python manage.py migrate --noinput; fi",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/api/index" }
+  ],
+  "PYTHON_VERSION": "3.12"
+}
