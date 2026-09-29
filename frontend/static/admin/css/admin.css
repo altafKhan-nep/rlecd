@@ -1667,50 +1667,322 @@ input:focus, select:focus, textarea:focus {
     line-height: 1.6;
 }
 
-/* ---------------------------------------------------------------- buttons */
-.button, input[type=submit], input[type=button], .submit-row input, a.button {
-    border-radius: var(--radius-sm);
+/* ==========================================================================
+   THE CHANGE FORM
+   ==========================================================================
+
+   Every fieldset on every change form in this admin is the same object: a
+   titled group of rows. It had four renderings -- a headerless white box, a
+   dark green header, and two shades of heavy collapsed bar -- so one form read
+   as four unrelated stacked widgets.
+
+   This is deliberately generic Django markup rather than anything a ModelAdmin
+   declares, which is the point: Sections, Projects, Leads, Tasks and the rest
+   get the same cards and the same alignment without each being restyled.
+*/
+
+#content-main .module {
+    margin: 0 0 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+/* A quiet band with the brand accent as a left edge, not a slab of colour.
+   A dark green bar three times down a form is furniture; this is a label. */
+#content-main .module > h2 {
+    margin: 0;
+    padding: 13px 18px 13px 15px;
+    border-bottom: 1px solid var(--line);
+    border-left: 3px solid var(--c-clay);
+    background: var(--surface-2);
+    color: var(--c-clay);
+    font-family: var(--font);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+#content-main .module > .description,
+#content-main .module > p.description {
+    margin: 0;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+/* A fieldset with no title still gets the card, just without the band. */
+#content-main .module:not(:has(> h2)) { padding: 2px 0; margin-top: 18px; }
+
+/* Django 5.2 wraps a collapsible fieldset in <details>, so its title is a
+   <summary>, not an <h2> -- which is why the collapsed rows kept the old dark
+   slab while the open one picked up the new band. Same component, two
+   elements. */
+#content-main .module > details > summary,
+#content-main .module > summary {
+    padding: 13px 18px 13px 15px;
+    border-bottom: 1px solid transparent;
+    border-left: 3px solid var(--c-clay);
+    background: var(--surface-2);
+    color: var(--c-clay);
+    font-family: var(--font);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    list-style: none;
+}
+
+#content-main .module > details > summary::-webkit-details-marker { display: none; }
+
+#content-main .module > details > summary::before {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-right: 8px;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    vertical-align: middle;
+    transition: transform .16s ease;
+}
+
+#content-main .module > details[open] > summary::before { transform: rotate(90deg); }
+
+#content-main .module > details[open] > summary { border-bottom-color: var(--line); }
+
+#content-main .module > details > summary:hover { color: var(--link); }
+
+#content-main .module > details { margin: 0; }
+
+/* ------------------------------------------------------------- field rows
+
+   Django 5.2 wraps each row's label, control and help text in one plain div,
+   so the row is a grid inside that div. A fixed label column is the whole
+   point: it is what makes the controls line up, which they did not when each
+   row decided its own. */
+#content-main .form-row {
+    margin: 0;
+    padding: 13px 18px;
+    border-top: 1px solid var(--line-soft);
+}
+
+#content-main .form-row:first-of-type { border-top: 0; }
+
+#content-main .form-row .flex-container {
+    display: grid;
+    grid-template-columns: 176px minmax(0, 1fr);
+    gap: 4px 18px;
+    align-items: center;
+}
+
+#content-main .form-row label {
+    text-align: right;
+    color: var(--ink);
+    font-size: 13px;
     font-weight: 600;
-    font-size: 13.5px;
+}
+
+/* Django puts a boolean's checkbox and its label as two siblings inside
+   .checkbox-row, so as grid items they landed in two different columns: the
+   box on the right of the label gutter, its text a column further right. The
+   pair is one control, so it goes in the control column as one flex row and
+   lines up with the inputs above it. */
+#content-main .form-row .checkbox-row {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+#content-main .form-row .checkbox-row label {
+    text-align: left;
+    font-weight: 500;
+}
+
+#content-main .form-row .checkbox-row input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    flex: none;
+    accent-color: var(--primary);
+}
+
+#content-main .form-row .help {
+    grid-column: 2;
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+/* A readable measure. Full-width text inputs on a 1,100px card are hard to
+   scan and harder to notice a typo in. */
+#content-main .form-row input[type="text"],
+#content-main .form-row input[type="url"],
+#content-main .form-row input[type="email"],
+#content-main .form-row input[type="number"],
+#content-main .form-row select {
+    width: 100%;
+    max-width: 420px;
+    box-sizing: border-box;
+}
+
+#content-main .form-row textarea {
+    width: 100%;
+    max-width: 680px;
+    box-sizing: border-box;
+    min-height: 110px;
+    line-height: 1.6;
+}
+
+#content-main .form-row .readonly {
+    padding: 9px 12px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+/* No breadcrumbs.
+
+   base_site blanks `{% block breadcrumbs %}`, but change_form.html defines its
+   own and a child's block always wins over its parent's -- so the block was
+   never actually empty. What survived was the trail's last crumb, the current
+   page's name, rendered at heading size directly under "Change page": a second
+   heading with no trail attached to it, reading as a title rather than as
+   navigation.
+
+   A breadcrumb is worth having; a lone fragment of one is not. This suppresses
+   the whole block, which is what base_site asked for in the first place. If it
+   is ever wanted back, style `.breadcrumbs` properly rather than letting the
+   default through. */
+.breadcrumbs { display: none; }
+
+/* The object name is a subtitle, not a second heading. It was set nearly as
+   large as "Change page" and competed with it.
+
+   Scoped structurally rather than by a direct-child selector, because how deep
+   Django nests the object name has moved between releases. A fieldset title
+   always sits inside a .module, and `#content-main .module > h2` is the more
+   specific of the two rules, so this is the default everywhere else and never
+   reaches a card header. */
+#content-main h2 {
+    margin: 2px 0 16px;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+#content-main form > h1,
+#content-main h1 {
+    margin: 0 0 4px;
+    color: var(--ink);
+    font-size: 26px;
+    font-weight: 700;
+}
+
+/* The change form's own tools sit opposite the title, and are secondary: they
+   are ways of leaving the screen, not of acting on the record. */
+#content-main > .object-tools {
+    position: static;
+    float: none;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+}
+
+/* ---------------------------------------------------------------- buttons
+
+   One system, three weights: primary, secondary, danger.
+
+   The fill used to be declared here and the ink left to be inherited, and
+   inherited ink is whatever Django's blanket `a:link, a:visited { color:
+   var(--link-fg) }` supplies -- at (0,1,1), which outranks a single class. So
+   every button on every form rendered dark text on a dark fill: Save, Save and
+   continue editing, History, View on site, the page-content links. Fixing the
+   sidebar and leaving these would have been the same bug twice, so background
+   and colour are now declared together on every weight, with the :link and
+   :visited variants spelled out rather than assumed.
+
+   Measured against the fills below: --primary-fg on --primary is 13.6:1,
+   --primary-soft on --surface is 9.4:1, white on --danger is 6.2:1. A test
+   re-checks these rather than trusting the comment.
+   -------------------------------------------------------------------------- */
+
+.button,
+input[type=submit],
+input[type=button],
+.submit-row input,
+.submit-row a,
+a.button,
+.object-tools a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 38px;
     padding: 9px 16px;
-    background: linear-gradient(135deg, #1B3022 0%, #2E5540 100%);
-    border: none;
-    box-shadow: 0 2px 8px rgba(27, 48, 34, .22);
-    transition: transform .16s ease, box-shadow .16s ease;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-family: var(--font);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, color .16s ease,
+                box-shadow .16s ease;
 }
 
-.button:hover, input[type=submit]:hover, .submit-row input:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(27, 48, 34, .30);
-}
-
-/* One "add" treatment, not two.
-
-   This file used to paint the same anchor twice: `.button.addlink` in a red
-   gradient and `.object-tools a` in a teal one. They are the same specificity
-   fight the anchor rules lost, and `.button.addlink` won, so the primary
-   "Add page" on a list was a different colour from every other primary button
-   in the product -- and red, which reads as destructive.
-
-   Primary actions are the brand green. Clay is reserved for delete, so red on
-   screen always means the same thing. */
-.button.addlink,
+/* Primary: the one action the screen exists to perform. */
+.button,
+input[type=submit],
+input[type=button],
+.submit-row input.default,
+.submit-row input[name="_save"],
+a.button,
 .addlink,
 .object-tools a {
     background: var(--primary);
-    border: 1px solid var(--primary);
+    border-color: var(--primary);
     color: var(--primary-fg);
     box-shadow: 0 2px 8px rgba(27, 48, 34, .18);
 }
 
-.button.addlink:link,
-.button.addlink:visited,
+.button:link,
+.button:visited,
+a.button:link,
+a.button:visited,
 .addlink:link,
 .addlink:visited,
 .object-tools a:link,
 .object-tools a:visited { color: var(--primary-fg); }
 
-.button.addlink:hover,
+.button:hover,
+input[type=submit]:hover,
+input[type=button]:hover,
+.submit-row input:hover,
+a.button:hover,
 .addlink:hover,
 .object-tools a:hover {
     background: var(--primary-mid);
@@ -1719,24 +1991,94 @@ input:focus, select:focus, textarea:focus {
     box-shadow: 0 6px 16px rgba(27, 48, 34, .26);
 }
 
+/* Secondary: same shape, quiet enough to sit beside a primary. Django renders
+   "Save and continue editing" and the change-form tools as anchors, so this is
+   an anchor rule and needs the same variants. */
+.submit-row a:not([class*="deletelink"]),
+.submit-row input:not(.default):not(.deletelink),
+.object-tools a.historylink,
+.object-tools a.viewsitelink {
+    background: var(--surface-2);
+    border-color: var(--line);
+    color: var(--primary-soft);
+}
+
+.submit-row a:link,
+.submit-row a:visited,
+.object-tools a.historylink:link,
+.object-tools a.historylink:visited,
+.object-tools a.viewsitelink:link,
+.object-tools a.viewsitelink:visited { color: var(--primary-soft); }
+
+.submit-row a:hover,
+.submit-row input:not(.default):not(.deletelink):hover,
+.object-tools a.historylink:hover,
+.object-tools a.viewsitelink:hover {
+    background: var(--surface-3);
+    border-color: var(--link);
+    color: var(--link);
+}
+
+/* Danger. Red is reserved for this, which is why the "Add page" button is not
+   red any more: when red appears it always means the same thing.
+
+   The `a.deletelink:link` form is not redundant. Django ships
+   `.deletelink:link` at (0,2,0), which outranks a bare `.deletelink` at
+   (0,1,0), so the delete button kept dark ink on a red fill no matter which
+   order the two stylesheets were linked in. Naming the element as well takes
+   it to (0,2,1) and settles it. */
+a.deletelink,
+a.deletelink:link,
+a.deletelink:visited,
+.deletelink,
+.deletelink:link,
+.deletelink:visited,
+.button.danger,
+.button.danger:link,
+.button.danger:visited,
+.object-tools a.danger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+}
+
+a.deletelink:hover,
+a.deletelink:focus,
+.deletelink:hover,
+.button.danger:hover,
+.object-tools a.danger:hover {
+    background: var(--rose);
+    border-color: var(--rose);
+    color: #fff;
+}
+
 .object-tools a {
-    border-radius: var(--radius-sm);
     font-size: 12px;
-    font-weight: 600;
     letter-spacing: .03em;
     text-transform: uppercase;
     padding: 8px 13px;
-    text-decoration: none;
-    transition: background .16s ease, box-shadow .16s ease;
+    min-height: 34px;
 }
 
+/* The save row is the one piece of a long form that must always be reachable,
+   so it follows the viewport instead of sitting below three collapsed bars. */
 .submit-row {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 15px;
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
     gap: 10px;
+    margin-top: 4px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 -2px 18px rgba(27, 48, 34, .10);
 }
+
+.submit-row .deletelink,
+.submit-row .button.danger { margin-left: auto; }
 
 /* ----------------------------------------------------------------- inlines */
 .inline-group {

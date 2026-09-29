@@ -531,3 +531,37 @@ body.rlecd-login #container {
     min-height: 100dvh;
 }
 
+/* ------------------------------------------------------------- change forms
+
+   The form's own responsive rules live here with the rest of the scale: a
+   @media in admin.css is a second set of breakpoints to keep in step, which
+   is what the test on the breakpoint scale is there to prevent.
+
+   Below 900px the label column goes away rather than shrinking: at 176px it
+   leaves a 390px phone about 150px of gutter and a 150px field. */
+@media (max-width: 900px) {
+    #content-main .form-row .flex-container {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    #content-main .form-row label { text-align: left; }
+    #content-main .form-row .help { grid-column: 1; }
+
+    #content-main .form-row input[type="text"],
+    #content-main .form-row select,
+    #content-main .form-row textarea { max-width: 100%; }
+
+    #content-main > .object-tools { justify-content: flex-start; }
+
+    .submit-row { flex-wrap: wrap; }
+
+    .submit-row .deletelink,
+    .submit-row .button.danger { margin-left: 0; }
+}
+
+@media (max-width: 640px) {
+    .submit-row > * { flex: 1 1 100%; }
+    .submit-row .deletelink,
+    .submit-row .button.danger { width: 100%; }
+}
