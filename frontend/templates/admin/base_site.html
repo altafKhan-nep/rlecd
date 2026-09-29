@@ -14,15 +14,6 @@ only the frame around them changes.
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-{% comment %}
-tokens.css first, then admin.css, then responsive.css. The order is load-
-bearing: tokens defines the colours, admin.css consumes them, and responsive
-overrides both at narrow widths. Loading admin.css first would let the tokens
-land on top of rules that are supposed to read them.
-{% endcomment %}
-<link rel="stylesheet" href="{% static 'admin/css/tokens.css' %}">
-<link rel="stylesheet" href="{% static 'admin/css/admin.css' %}">
-<link rel="stylesheet" href="{% static 'admin/css/responsive.css' %}">
 <script src="{% static 'admin/js/theme.js' %}"></script>
 <script>
 /* Runs in <head>, before first paint. Without this the browser lays the sidebar
@@ -47,6 +38,35 @@ try {
     document.documentElement.setAttribute('data-theme', 'light');
 }
 </script>
+{% endblock %}
+
+{% comment %}
+Load order is load-bearing, and getting it wrong is invisible in the
+stylesheet and maddening in the browser.
+
+These used to live in `extrastyle`, but that block is not last. `change_list.
+html` extends this template and appends Django's `changelists.css` to
+`extrastyle` *after* `{{ block.super }}`, so on every changelist Django's rules
+arrived after ours and won each equal-specificity tie -- which is why the table
+styling here had been losing arguments for so long. `extrahead` renders after
+`extrastyle`, so ours go there now and genuinely land last.
+
+`responsive.css` has to go one step further, into the `responsive` block:
+Django ships a `responsive.css` of its own there, and it renders after
+`extrahead`. Overriding the block and re-emitting `{{ block.super }}` keeps the
+viewport meta tag and puts our file after Django's.
+
+Within our own files the order is tokens -> admin -> responsive: tokens defines
+the colours, admin.css consumes them, responsive overrides both at narrow
+widths.
+{% endcomment %}
+{% block extrahead %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'admin/css/admin.css' %}">
+{% endblock %}
+
+{% block responsive %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/responsive.css' %}">
 {% endblock %}
 
 {% block bodyclass %}{{ block.super }} studio-admin{% endblock %}

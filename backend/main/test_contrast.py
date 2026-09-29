@@ -372,12 +372,55 @@ class DesignTokenTests(SimpleTestCase):
         self.assertIn("setAttribute('data-theme', 'light')", html)
 
     def test_tokens_css_is_loaded_before_admin_css(self):
-        """Load order is load-bearing: tokens define, admin consumes."""
+        """Load order is load-bearing: tokens define, admin consumes.
+
+        This reads the <link> tags rather than searching the raw text, because
+        the file also discusses the load order in a comment and a plain
+        `index()` finds the prose instead of the stylesheet.
+        """
         base = (pathlib.Path(__file__).resolve().parents[2]
                 / "frontend" / "templates" / "admin" / "base_site.html")
         html = base.read_text()
-        self.assertLess(html.index("tokens.css"), html.index("admin.css"))
-        self.assertLess(html.index("admin.css"), html.index("responsive.css"))
+        ours = re.findall(r"admin/css/([\w.-]+\.css)", html)
+        self.assertEqual(
+            ours, ["tokens.css", "admin.css", "responsive.css"],
+            f"stylesheet link order changed: {ours}")
+
+    def test_our_stylesheets_load_after_djangos(self):
+        """Django must not get the last word on the pages we style.
+
+        `change_list.html` extends *this* base_site and appends its own
+        `changelists.css` to `extrastyle` after `{{ block.super }}`. Stylesheets
+        emitted from `extrastyle` therefore lose every equal-specificity tie to
+        it, which is how the changelist kept Django's `white-space: nowrap` on
+        the header cells while our rules sat in the file the whole time.
+        `extrahead` and `responsive` both render after `extrastyle`, so ours
+        have to be emitted from there.
+        """
+        base = (pathlib.Path(__file__).resolve().parents[2]
+                / "frontend" / "templates" / "admin" / "base_site.html")
+        html = base.read_text()
+
+        def block(name):
+            match = re.search(
+                r"\{% block " + re.escape(name) + r" %\}(.*?)\{% endblock %\}",
+                html, re.S)
+            self.assertIsNotNone(match, f"no {name} block in base_site.html")
+            return match.group(1)
+
+        extrastyle = block("extrastyle")
+        for sheet in ("tokens.css", "admin.css", "responsive.css"):
+            self.assertNotIn(
+                sheet, extrastyle,
+                f"{sheet} is emitted from extrastyle, so changelists.css "
+                f"loads after it and wins every specificity tie")
+        self.assertIn("tokens.css", block("extrahead"))
+        self.assertIn("admin.css", block("extrahead"))
+        # responsive.css has to go one step further still: Django ships a
+        # responsive.css of its own in the `responsive` block.
+        self.assertIn("responsive.css", block("responsive"))
+        self.assertIn("{{ block.super }}", block("responsive"),
+                      "the responsive block must keep the viewport meta tag")
 
     def test_generated_tokens_are_up_to_date(self):
         """Re-running the generator must be a no-op.
@@ -410,8 +453,99 @@ class DesignTokenTests(SimpleTestCase):
         queries = re.findall(r"@media[^\n{]*", self.responsive)
         widths = {int(w) for q in queries for w in re.findall(r"(\d{3,4})px", q)}
         self.assertTrue(
-            widths <= {640, 900, 1180, 1280},
+            widths <= {640, 900, 1180, 1280, 1440, 1600},
             f"unexpected breakpoint widths in responsive.css: {widths}")
+
+    def test_every_breakpoint_is_a_measured_one(self):
+        """1440 and 1600 exist because of arithmetic, not taste.
+
+        The widest changelist (Section) has a 1,190px minimum content width,
+        and the content column has already surrendered 254px to the sidebar and
+        80px to padding. 1,190 + 254 + 80 = 1,524, so the table is only shown
+        above 1,440 and the cards below it. 1600 is where Django's 270px filter
+        column stops sitting beside the results. Both numbers are recorded here
+        so a later edit has to argue with the measurement rather than guess.
+        """
+        self.assertIn("1,190", self.responsive)
+        self.assertIn("254", self.responsive)
+        self.assertEqual(1190 + 254 + 80, 1524)
+
+    def test_the_container_does_not_outgrow_its_own_margin(self):
+        """The bug behind the scrollbar on every single page.
+
+        Django ships `#container { width: 100%; min-width: 980px }`. A
+        percentage width is resolved against the containing block, so the
+        sidebar's `margin-left` never subtracts from it: the box stayed a full
+        viewport wide and stuck out past the right edge by exactly the sidebar
+        width. `width: auto` lets the margin reduce the content box, and the
+        980px floor is what forced any narrower viewport to scroll too.
+        """
+        match = re.search(r"^#container \{(.*?)\}", self.admin, re.S | re.M)
+        self.assertIsNotNone(match, "no #container rule in admin.css")
+        body = match.group(1)
+        self.assertIn("width: auto", body,
+                      "#container must be width:auto so margin-left counts "
+                      "against it")
+        self.assertIn("min-width: 0", body,
+                      "Django's min-width:980px must be cleared or every "
+                      "viewport under 980px scrolls sideways")
+        self.assertNotIn("100%", body)
+
+    def test_the_drawer_breakpoint_clears_the_sidebar_offset(self):
+        """Below 900px the sidebar becomes a drawer, so the offset has nothing
+        to clear. Left in place it left a phantom gutter a sidebar wide."""
+        body = self._block(900)
+        self.assertRegex(
+            body, r"#container[^{]*\{[^}]*margin-left:\s*0",
+            "the 900px drawer block must reset #container's margin-left")
+        # The collapsed rule is more specific than a bare #container, so it has
+        # to be reset too or the rail-width offset comes back.
+        self.assertIn("html.sidebar-collapsed #container", body)
+
+    def test_the_stacked_changelist_is_stretched_not_shrunk_to_fit(self):
+        """`align-items: flex-start` is correct while Django's filter sits
+        beside the results. Once they are stacked into a column, flex-start
+        leaves both children shrink-to-fit, so a wide table picks its own
+        max-content width and is clipped by the panel's overflow-x: hidden."""
+        body = self._block(1600)
+        self.assertRegex(
+            body, r"#changelist\s*\{[^}]*align-items:\s*stretch",
+            "the stacked changelist must stretch its children")
+        self.assertRegex(body, r"#changelist-filter\s*\{[^}]*margin:",
+                         "the filter's 30px left margin belongs to the "
+                         "beside-the-list layout and must be cleared")
+        self.assertRegex(body, r"#changelist-filter\s*\{[^}]*float:\s*none")
+
+    def test_djangos_nowrap_cells_are_released(self):
+        """Django tags date, time and foreign-key cells `nowrap`.
+
+        In a table that reserves enough width to push the result list past its
+        container, where `.results` clips it. In the card layout it is worse:
+        each cell is already a full-width line, so the value starts setting the
+        width of the whole list. Both element names matter, because Django
+        renders the first linkable column as a <th> row header -- a td-only
+        selector left Section's Page column at 357px for "Home (/)".
+        """
+        self.assertRegex(
+            self.admin, r"#changelist td\.nowrap[^{]*,\s*\n?\s*"
+                        r"#changelist th\.nowrap\s*\{[^}]*white-space:\s*normal")
+        cards = self._block(1440)
+        self.assertIn("#result_list td.nowrap", cards)
+        self.assertIn("#result_list th.nowrap", cards)
+
+    def test_form_controls_may_not_exceed_their_container(self):
+        """Django renders the search box as `<input size="40">`.
+
+        An input sizes itself from that attribute rather than from the space
+        available, so the intrinsic 366px was wider than a phone-width panel
+        and pushed the search box, paginator, filters and rows out of the
+        viewport together.
+        """
+        self.assertRegex(
+            self.admin, r'#changelist input\[type="text"\][^{]*\{[^}]*'
+                        r"max-width:\s*100%")
+        self.assertRegex(
+            self.admin, r"#changelist select[^{]*\{[^}]*max-width:\s*100%")
 
     def _block(self, width):
         match = re.search(
@@ -423,12 +557,13 @@ class DesignTokenTests(SimpleTestCase):
     def test_changelist_becomes_cards_rather_than_scrolling(self):
         """A horizontal scroll on a changelist is the "half the page is cut"
         complaint: there is no cue that there is more to the right."""
-        body = self._block(1280)
+        body = self._block(1440)
         self.assertIn("#result_list tr", body)
         self.assertIn("data-label", body)
         self.assertIn("#result_list thead", body)
         # Beaten against Django's own `overflow-x: auto` on the same element,
-        # which is (1,1,0) and loads after this file.
+        # which is (1,1,0) and would otherwise keep the container scrolling
+        # horizontally while the rows inside it are cards.
         self.assertIn("#changelist-form .results", body)
 
     def test_no_rule_forces_a_track_wider_than_a_laptop(self):

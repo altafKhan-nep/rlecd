@@ -51,15 +51,56 @@
 
    A nine-column table needs about 1,280px before it stops being cramped, and
    below that it either wraps ugly or grows a horizontal scrollbar. So the
-   changelist becomes cards much earlier than the sidebar does: cards at any
-   width under 1280px, table above it. That is also the only way "no bottom
-   scrollbar" can hold on a laptop, which is where most editing happens.
+   changelist becomes cards much earlier than the sidebar does.
+
+   The threshold is 1440px, and that number is measured rather than guessed.
+   The table needs about 1,106px of content width at its narrowest honest
+   setting. The content column has already surrendered 254px to the sidebar
+   and 80px to page padding, so 1,106 + 254 + 80 lands exactly on 1,440. Under
+   that the table cannot lay out its columns without being clipped by
+   `.results`, which is what put a horizontal scrollbar on the page and left
+   the row actions unreachable.
 */
 
-@media (max-width: 1280px) {
+/* The filter column is the first thing to give up room. Django parks
+   #changelist-filter as a 270px column beside the results, and that is
+   measured against the full viewport -- but the content column has already
+   lost the 254px sidebar, so on a 1440px laptop the table is left with 836px
+   and gets clipped by `.results`, taking the action column with it. Stacking
+   the filter above the list hands the full width back to the table. The
+   height cap stops a long filter list from pushing the rows off screen. */
+@media (max-width: 1600px) {
+    /* align-items: stretch is load-bearing here. Django sets #changelist to
+       align-items: flex-start, which is correct while the filter sits beside
+       the results -- each takes the width it needs. Once the two are stacked
+       into a column, flex-start leaves them shrink-to-fit, so a wide table
+       picks its own max-content width (1,190px on the section list) and
+       overruns the 1,107px panel, where #changelist's overflow-x: hidden
+       silently clips it. Stretch pins both children to the panel width. */
+    #changelist {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #changelist-filter {
+        float: none;
+        width: 100%;
+        max-height: 300px;
+        overflow-y: auto;
+        /* The 30px left margin belongs to the beside-the-list layout, where it
+           made room for the divider. Left in place here it pushes a full-width
+           filter 30px past the panel, clipping its own heading. */
+        margin: 0 0 16px;
+    }
+
+    #changelist .results,
+    #changelist-form .results { width: 100%; }
+}
+
+@media (max-width: 1440px) {
     /* Django's changelists.css sets `#changelist-form .results` to
-     * `overflow-x: auto`, which is (1,1,0) and loads after this file. Matching
-     * or beating that specificity is required, or the container keeps scrolling
+     * `overflow-x: auto`, which is (1,1,0). Matching or beating that
+     * specificity is required, or the container keeps scrolling
      * horizontally while the rows inside it are cards -- the worst of both. */
     #changelist .results,
     #changelist-form .results {
@@ -77,6 +118,19 @@
         display: block;
         width: auto;
     }
+
+    /* Django tags every date, time and foreign-key cell `nowrap` so the value
+       stays on one line. That is right for a table row and wrong for a card,
+       where each cell is already a full-width line: the value stops being a
+       value and starts setting the width of the entire list. */
+    #result_list td.nowrap,
+    #result_list th.nowrap { white-space: normal; }
+
+    /* The bulk-action bar holds its label and select on one line, which is
+       right beside a table and wrong once the bar is full width: a nowrap
+       label sizes to its widest option and pushes the bar out of the panel. */
+    #changelist .actions,
+    #changelist .actions label { white-space: normal; }
 
     /* The header row is now redundant: each cell is labelled. */
     #result_list thead {
@@ -199,7 +253,21 @@
 }
 
 @media (max-width: 900px) {
-    /* The sidebar is a drawer below here. */
+    /* The sidebar is a drawer below here. It slides off-screen, so the
+       left offset that made room for it no longer has anything to clear --
+       keeping it left a phantom gutter the width of the sidebar on every
+       phone. Both selectors are needed: the collapsed rule is more specific
+       than a bare #container and would otherwise win. */
+    #container,
+    html.sidebar-collapsed #container { margin-left: 0; }
+
+    /* Django pads #content by 40px a side, and that lands on top of the
+       padding already on .content above. Two layers of horizontal inset is
+       104px gone before anything renders, which on a 390px phone leaves
+       286px for the results and pushes the last column out of the panel.
+       The outer .content owns the padding from here down. */
+    #content { padding: 0; }
+
     .studio-sidebar {
         transform: translateX(-100%);
         transition: transform .26s cubic-bezier(.4, 0, .2, 1);
@@ -256,6 +324,14 @@
 
     .dash-table { min-width: 0; }
     .panel { overflow-x: visible; }
+
+    /* 36px of horizontal padding per cell is more than a 390px phone can give
+       three columns, and the header labels refuse to wrap, so the table ran
+       18px past the panel. Trim the padding and let the labels wrap. */
+    .dash-table thead th,
+    .dash-table td { padding-left: 12px; padding-right: 12px; }
+
+    .dash-table thead th { white-space: normal; }
 
     /* The topbar keeps search plus the add action; the rest collapses. */
     .topbar-user-meta { display: none; }

@@ -68,7 +68,17 @@ a:hover, a:focus { color: var(--accent); }
     transition: width .22s cubic-bezier(.4, 0, .2, 1);
 }
 
+/* Django's base.css ships #container as `width: 100%; min-width: 980px`.
+   A percentage width is resolved against the containing block, so the
+   sidebar's margin-left never subtracts from it: the box stayed a full
+   viewport wide and stuck out past the right edge by exactly the sidebar
+   width, which put a horizontal scrollbar on every admin page. `width: auto`
+   lets the margin actually reduce the content box. The 980px floor forced any
+   narrower viewport to scroll sideways too, so it goes; wide tables wrap and
+   stack instead of overflowing. */
 #container {
+    width: auto;
+    min-width: 0;
     margin-left: var(--sidebar-w);
     min-height: 100vh;
     display: flex;
@@ -1433,6 +1443,30 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     margin: 0;
 }
 
+/* Django's changelists.css holds `.results` at `overflow-x: auto`, so a table
+   wider than the content column is silently clipped instead of scrolling the
+   page -- the action column ends up cut off and unclickable. Letting the cells
+   wrap lets the table settle at the container's width; below 1280px the rows
+   stack into cards entirely. */
+/* Django renders the search box as `<input size="40">`, and an input sizes
+   itself from that attribute rather than from the space available. The
+   intrinsic 366px is wider than a phone-width panel, so the search box pushed
+   the whole form -- paginator, filters and rows -- out of the viewport. The
+   controls have to be told they may not exceed their container. */
+#changelist input[type="text"],
+#changelist input[type="search"],
+#changelist input[type="email"],
+#changelist input[type="url"],
+#changelist input[type="number"],
+#changelist input[type="password"],
+#changelist select,
+#changelist textarea {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#changelist table { width: 100%; }
+
 #changelist table thead th {
     background: #F4F7F4;
     color: var(--muted);
@@ -1441,7 +1475,7 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     letter-spacing: .06em;
     text-transform: uppercase;
     border-bottom: 1px solid var(--line);
-    white-space: nowrap;
+    white-space: normal;
 }
 
 #changelist table tbody td,
@@ -1449,7 +1483,21 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     padding: 12px 14px;
     border-bottom: 1px solid var(--line-soft);
     vertical-align: middle;
+    /* Long slugs and URLs break rather than holding the table open. */
+    overflow-wrap: anywhere;
 }
+
+/* Django's admin_list.py tags every date, time and foreign-key cell `nowrap`
+   so the value stays on one line. In a wide table that tag alone reserves
+   enough width to push the result list past its container, and `.results`
+   clips the overflow rather than scrolling, so the action column ends up out
+   of reach. Dates read perfectly well wrapped onto two lines.
+
+   Both element names matter: Django renders the first linkable column as a
+   <th> row header, not a <td>, so a td-only selector left the Page column on
+   the section list sitting at 357px for the seven characters "Home (/)". */
+#changelist td.nowrap,
+#changelist th.nowrap { white-space: normal; }
 
 #changelist table tbody tr:hover { background: #fcfbfa; }
 #changelist table tbody tr.selected { background: var(--selected-row); }
@@ -2285,9 +2333,16 @@ input:focus, select:focus, textarea:focus {
     color: var(--ink-soft, #5b6167);
 }
 
+/* One line with an ellipsis, as the text is already truncated server-side.
+   The cap is a column budget, not a taste decision: at 42ch this cell alone
+   asked for 348px, which is what pushed the result list past its container
+   and got the action column clipped away. 28ch is the widest cap at which the
+   whole table still fits the content column once the 254px sidebar has taken
+   its cut. Below the card breakpoint this is released and the full summary
+   is allowed to wrap. */
 .page-summary {
     display: inline-block;
-    max-width: 42ch;
+    max-width: 28ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
