@@ -10,6 +10,7 @@ import re
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.template.loader import render_to_string
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -335,3 +336,108 @@ class MirrorRegressionTests(TestCase):
         contact = self.client.get("/contact/").content.decode()
         self.assertIn("tawk", home.lower())
         self.assertNotIn("tawk", contact.lower())
+
+
+class HollowPageTests(TestCase):
+    """A published row with nothing in it must not shadow the mirror template.
+
+    This is the state the live dev database was actually in: `about` and
+    `contact` had published rows with no sections, no head and no shell
+    variants. Because the navbar, footer and head are all read off the Page
+    row, rendering one of those emitted an empty <main> and no navigation --
+    a 200 response the visitor cannot act on.
+    """
+
+    def make_hollow(self, slug, **kwargs):
+        return Page.objects.create(
+            slug=slug, title=slug.title(), path=f"/{slug}/", **kwargs)
+
+    def test_has_content_is_false_for_a_bare_row(self):
+        self.assertFalse(self.make_hollow("bare").has_content())
+
+    def test_sections_make_a_page_count_as_content(self):
+        page = self.make_hollow("with-sections")
+        Section.objects.create(page=page, key="a", label="A", position=0,
+                               content_html="<p>BODY</p>")
+        self.assertTrue(page.has_content())
+
+    def test_a_shell_variant_alone_counts_as_content(self):
+        """A page with a navbar but no body is still a page.
+
+        The shell is per-page data, not decoration -- the live site ships
+        different navbars and footers per page -- so a row carrying one of them
+        has been captured deliberately and must render.
+        """
+        for field in ("nav_variant", "footer_variant", "post_variant"):
+            with self.subTest(field=field):
+                self.assertTrue(self.make_hollow(f"shell-{field}", **{field: "x.html"}).has_content())
+
+    def test_head_html_alone_counts_as_content(self):
+        self.assertTrue(self.make_hollow("headed", head_html="<title>T</title>").has_content())
+
+    def test_whitespace_head_does_not_count(self):
+        self.assertFalse(self.make_hollow("blank-head", head_html="   \n  ").has_content())
+
+    def test_hollow_published_page_serves_the_mirror(self):
+        self.make_hollow("about")
+        response = self.client.get("/about/")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        # The mirror's own content, not a blank shell.
+        self.assertIn("<main", html)
+        self.assertGreater(len(html), 2000)
+        # And critically, the navbar is back, so the page is not a dead end.
+        self.assertIn('href="/contact/"', html)
+
+    def test_hollow_page_still_serves_a_usable_contact_form(self):
+        """The contact form posts into the CRM, so a hollow page loses leads."""
+        self.make_hollow("contact")
+        html = self.client.get("/contact/").content.decode()
+        self.assertIn('name="email"', html)
+        self.assertIn('name="message"', html)
+        self.assertIn('action="/contact/"', html)
+
+    def test_a_page_with_content_still_renders_from_the_database(self):
+        """The fallback must not steal pages that really are populated."""
+        page = Page.objects.create(
+            slug="about", title="About", path="/about/",
+            head_html="<title>About</title>")
+        Section.objects.create(page=page, key="a", label="A", position=0,
+                               content_html="<p>DB CONTENT MARKER</p>")
+        clear_template_cache()
+        html = self.client.get("/about/").content.decode()
+        self.assertIn("DB CONTENT MARKER", html)
+        # "Our Story" is a heading in the captured mirror template. Its absence
+        # is what proves the database won the page rather than the fallback --
+        # asserting the marker is present alone would also pass if the mirror
+        # happened to contain it.
+        self.assertNotIn("Our Story", strip_tags(html))
+
+    def test_the_two_fallbacks_serve_different_content(self):
+        """Sanity check on the marker above: it really is in the mirror.
+
+        Without this, a rename of the captured heading would turn the assertion
+        above into a permanent no-op.
+        """
+        self.assertIn("Our Story", strip_tags(
+            render_to_string("main/about.html")))
+
+    def test_hollow_page_without_a_mirror_template_is_a_404(self):
+        """Falling back is a courtesy; a genuine typo must still 404."""
+        self.make_hollow("no_such_mirror")
+        self.assertEqual(self.client.get("/no-such-mirror/").status_code, 404)
+
+    def test_unpublished_page_still_falls_back(self):
+        page = self.make_hollow("about")
+        page.is_published = False
+        page.save()
+        self.assertEqual(self.client.get("/about/").status_code, 200)
+
+    def test_hollow_page_logs_a_distinct_warning(self):
+        """A missing row and a hollow row need different fixes, so the log
+        has to tell them apart."""
+        with self.assertLogs("content.views", level="WARNING") as caught:
+            self.make_hollow("about")
+            clear_template_cache()
+            self.client.get("/about/")
+        self.assertIn("no content", "\n".join(caught.output))

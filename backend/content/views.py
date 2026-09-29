@@ -51,18 +51,38 @@ def get_page_or_404(slug):
 def render_page(request, slug, **context):
     """Render a public page from its database row.
 
-    Falls back to the hard-coded template when the row is missing, so a
-    partially imported database degrades to the static mirror instead of a wall
-    of 404s. A ContentRenderError is logged loudly and re-raised: silently
-    serving a half-rendered page would hide content errors from editors.
+    Falls back to the mirror template when the row is missing *or* when it has
+    nothing in it, so a partially imported database degrades to the static
+    mirror instead of a wall of 404s. The two cases are distinguished only for
+    the log line, because they need different fixes: a missing row means
+    `manage.py capture_content` has not run, while a hollow row means it ran
+    and captured nothing for this URL.
+
+    A hollow row is the more dangerous of the two. Because the navbar, footer
+    and head all live on the Page row, rendering it emits an empty <main> with
+    no way to navigate away, so a visitor who clicks a nav link to About lands
+    on a dead end that still returns 200.
+
+    A ContentRenderError is logged loudly and re-raised: silently serving a
+    half-rendered page would hide content errors from editors.
     """
     page = get_page(slug)
+    legacy = LEGACY_TEMPLATES.get(slug)
     if page is None:
-        legacy = LEGACY_TEMPLATES.get(slug)
         logger.warning(
             "No published Page row for slug=%r; serving the static mirror "
             "template %r instead. Run `manage.py capture_content`.",
             slug, legacy)
+    elif not page.has_content():
+        logger.warning(
+            "Page slug=%r is published but has no content; serving the static "
+            "mirror template %r instead. The row exists but nothing was "
+            "captured into it, so the page would otherwise render as an empty "
+            "<main> with no navigation.",
+            slug, legacy)
+        page = None
+
+    if page is None:
         if legacy:
             return render(request, legacy, context)
         raise Http404(f"No published page for slug {slug!r}")

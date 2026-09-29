@@ -81,6 +81,29 @@ class Page(models.Model):
     def visible_sections(self):
         return self.sections.filter(is_visible=True).order_by("position")
 
+    def has_content(self):
+        """Can this row actually render a page?
+
+        A published row with nothing in it renders an empty <main> with no
+        navbar and no footer, because the whole shell -- head, nav, footer and
+        post block -- is read off this row. That is worse than a missing page:
+        a visitor arrives from a search result or a nav link and has no way
+        back. `content.views.render_page` uses this to fall back to the mirror
+        template instead, so a half-imported page degrades to the original
+        site's content rather than to a blank screen.
+
+        Any one of these is enough to count as real content. Sections are the
+        body; the shell variants are the per-page navbar, footer and script
+        block, and a page that has one of those but no body is still a page.
+        """
+        return bool(
+            self.sections.exists()
+            or self.head_html.strip()
+            or self.nav_variant
+            or self.footer_variant
+            or self.post_variant
+        )
+
 
 class SectionType(models.TextChoices):
     """Editorial label. Purely for the CRM UI — any value renders the same."""
