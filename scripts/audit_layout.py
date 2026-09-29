@@ -167,7 +167,7 @@ def main():
         by_page = {}
         for r in lost:
             by_page.setdefault(r["path"], set()).add(r["requestedWidth"])
-        keep = []
+        # (recovered and still-lost rows are both re-added below)
         replacements = {}
         for group, auth in (
                 ([p for p in by_page if p not in ANONYMOUS], True),
@@ -179,11 +179,21 @@ def main():
                 key = (f.get("path"), f.get("requestedWidth"))
                 replacements.setdefault(key, f)
         results = [r for r in results if not r.get("error")]
-        for r in results:
-            key = (r.get("path"), r.get("requestedWidth"))
-            if key in replacements and replacements[key].get("error"):
-                keep.append(replacements[key])
-        results.extend(keep)
+        recovered = []
+        still_lost = []
+        for key, fresh in replacements.items():
+            if fresh.get("error"):
+                still_lost.append(fresh)
+            else:
+                recovered.append(fresh)
+        # Both halves have to go back in. Appending only the failures -- which
+        # is what this did first -- threw away every measurement the retry had
+        # just recovered, so coverage came out *lower* than before the retry and
+        # the "still lost" detail block printed nothing, because by then there
+        # were no error rows left to describe. The gap looked like a page that
+        # silently refused to measure.
+        results.extend(recovered)
+        results.extend(still_lost)
 
     errors = [r for r in results if r.get("error")]
     if errors:
