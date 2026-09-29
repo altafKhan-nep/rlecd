@@ -5,6 +5,7 @@ the dashboard, the sidebar and any list view can share them.
 """
 from django import template
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from main.icons import icon
 
@@ -79,3 +80,40 @@ def has_key(mapping, key):
     """`{% if d|has_key:"k" %}` -- Django templates cannot index by variable."""
     return bool(mapping) and key in mapping
 
+
+@register.filter
+def get_item(sequence, index):
+    """`sequence[index]`, or None if the index is out of range.
+
+    Used to pair a changelist row's cells with their column headers, which are
+    two parallel lists in the template context. A template cannot index a list,
+    so this is the bridge.
+    """
+    try:
+        return sequence[index]
+    except (IndexError, TypeError, KeyError):
+        return None
+
+
+@register.filter
+def cell_label(cell, header_text):
+    """Add `data-label="<header>"` to a changelist cell, keeping its content.
+
+    Below the 900px breakpoint responsive.css turns each <tr> into a stacked
+    card and hides the header row, so each cell has to carry its own label. This
+    injects the attribute into the <td> or <th> Django produced rather than
+    rebuilding the cell, so list_display_links, list_editable widgets and popup
+    behaviour are all left exactly as Django rendered them.
+
+    The header text is stripped of its surrounding whitespace and truncated:
+    "Position" is useful, a full sentence is not, and this string is repeated
+    once per cell on every row.
+    """
+    if not cell:
+        return cell
+    label = " ".join(str(header_text or "").split())
+    if not label:
+        return cell
+    if len(label) > 24:
+        label = label[:24].rsplit(" ", 1)[0] + "…"
+    return format_html('{} data-label="{}"', mark_safe(cell), label)

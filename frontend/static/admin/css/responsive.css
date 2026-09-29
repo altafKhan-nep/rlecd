@@ -1,0 +1,323 @@
+/* ==========================================================================
+   RESPONSIVE LAYER
+   ==========================================================================
+
+   The eight @media blocks this replaces were added one at a time as each
+   feature landed, so they used three different breakpoints (640, 760, 860,
+   900, 1100) and none of them knew about the changelists -- which is where the
+   breakage actually was. content.Page is nine columns wide and content.Section
+   and crm.Lead are eight, and nothing between 640px and infinity had an answer
+   for a table that does not fit.
+
+   Breakpoints, matching the tokens in tokens.css:
+     <=1180px  wide desktops and small laptops: trim padding, shrink type
+     <=900px   the sidebar becomes a drawer, changelists become cards
+     <=640px   phones: one column, the topbar collapses to icons
+
+   The changelist treatment is the important one. Django renders a <table>, and
+   a table cannot reflow. Below 900px the rows become stacked cards using each
+   cell's column header as its label. The header text is emitted as a
+   data-label attribute by the changelist furniture, which is what makes this
+   possible without forking Django's changelist.
+
+   Min-width is never used to force a scroll on a phone. A horizontal scroll
+   on a changelist is the "half the page is cut" complaint: you cannot see that
+   there is more to the right, so you do not know to scroll.
+*/
+
+/* ---------------------------------------------------------- wide -> narrow */
+
+@media (max-width: 1180px) {
+    :root {
+        --sidebar-w: 232px;
+    }
+
+    .content { padding: 22px 26px 34px; }
+
+    .dash-grid { grid-template-columns: 1fr; }
+
+    /* Four stat cards become two rows of two rather than one squeezed row. */
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+
+    .stat-inner { min-height: 96px; padding: 14px 16px; }
+    .stat-value { font-size: 30px; }
+
+    .panel { padding: 16px 18px; }
+
+    .list-filters { margin-left: 0; }
+}
+
+/* --------------------------------------------------- the narrow breakpoint */
+
+@media (max-width: 900px) {
+    /* The sidebar is a drawer below here. */
+    .studio-sidebar {
+        transform: translateX(-100%);
+        transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+        box-shadow: none;
+    }
+
+    body.sidebar-open .studio-sidebar {
+        transform: translateX(0);
+        box-shadow: 0 0 40px rgba(0, 0, 0, .28);
+    }
+
+    .content { padding: 18px 18px 28px; }
+
+    .dash-head,
+    .content-head,
+    .kanban-head {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .dash-head-actions,
+    .content-head-actions,
+    .kanban-head-actions { width: 100%; }
+
+    .dash-head-actions .button,
+    .content-head-actions .button,
+    .kanban-head-actions .button { flex: 1; text-align: center; }
+
+    .quick-links { grid-template-columns: repeat(2, 1fr); }
+
+    .pipe-row { grid-template-columns: minmax(64px, 1fr) minmax(40px, 1.4fr) 30px; }
+
+    /* ---- changelists: the table becomes cards ---- */
+
+    /* Horizontal scroll is what made these lists unusable on a small screen,
+     * so the table is rebuilt as a stack instead. Every cell carries its own
+     * column header as a data-label, emitted by the changelist furniture. */
+    /* Django's changelists.css sets `#changelist-form .results` to
+     * `overflow-x: auto`, which is (1,1,0) and loads after this file. Matching
+     * or beating that specificity is required, or the container keeps scrolling
+     * horizontally while the rows inside it are cards -- the worst of both. */
+    #changelist .results,
+    #changelist-form .results {
+        overflow-x: visible;
+        border: 0;
+        width: 100%;
+    }
+
+    #result_list,
+    #result_list thead,
+    #result_list tbody,
+    #result_list tr,
+    #result_list td,
+    #result_list th {
+        display: block;
+        width: auto;
+    }
+
+    /* The header row is now redundant: each cell is labelled. */
+    #result_list thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    #result_list tr {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2px;
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+    }
+
+    #result_list td,
+    #result_list th {
+        display: grid;
+        grid-template-columns: 40% 1fr;
+        gap: 10px;
+        align-items: baseline;
+        padding: 3px 0;
+        border: 0;
+        text-align: left;
+        white-space: normal;
+    }
+
+    #result_list td::before,
+    #result_list th::before {
+        content: attr(data-label);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--muted);
+    }
+
+    /* The action checkbox and the row actions carry no label worth showing and
+     * would each eat a whole grid row. */
+    #result_list .action-checkbox,
+    #result_list .action-checkbox-column { display: none; }
+
+    #result_list .field-studio_row_actions,
+    #result_list .field-actions { display: flex; justify-content: flex-end; }
+
+    #result_list .field-studio_row-actions::before,
+    #result_list .field-actions::before { content: none; }
+
+    /* Filter and action chrome wraps instead of pushing the list sideways. */
+    #changelist .changelist-form-container { display: block; }
+
+    #toolbar #changelist-search { margin-bottom: 10px; }
+
+    #toolbar #changelist-search input[type="text"] { width: 100%; }
+
+    .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 0 12px;
+    }
+
+    .actions label { display: flex; align-items: center; gap: 6px; }
+
+    .action-counter { width: 100%; }
+
+    .paginator { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    /* The image column is the one cell that earns full width on a card. */
+    #result_list .field-first_image,
+    #result_list .field-project_thumb,
+    #result_list .field-badge_thumb,
+    #result_list .field-thumb {
+        grid-template-columns: 1fr;
+        margin-bottom: 4px;
+    }
+
+    #result_list .field-first_image::before,
+    #result_list .field-project_thumb::before,
+    #result_list .field-badge_thumb::before,
+    #result_list .field-thumb::before { content: none; }
+
+    #result_list .section-image-thumb,
+    #result_list .thumb {
+        width: 100%;
+        max-width: 260px;
+        height: 130px;
+    }
+
+    /* Summary and excerpt columns read as prose on a card, not as a label/value
+     * pair squeezed into the right half. */
+    #result_list .field-summary,
+    #result_list .field-excerpt,
+    #result_list .field-answer_excerpt,
+    #result_list .field-quote_excerpt,
+    #result_list .field-summary_excerpt {
+        grid-template-columns: 1fr;
+        padding: 6px 0;
+    }
+
+    #result_list .field-summary::before,
+    #result_list .field-excerpt::before,
+    #result_list .field-answer_excerpt::before,
+    #result_list .field-quote_excerpt::before,
+    #result_list .field-summary_excerpt::before { content: none; }
+
+    .page-summary { max-width: none; white-space: normal; }
+
+    /* ---- the board ---- */
+
+    /* Six columns at a minimum 230px each is a 1380px scroll on a phone. As
+     * rows instead, each column is a short stack and the page scrolls the way
+     * a page is supposed to. */
+    .kanban-board {
+        grid-auto-flow: row;
+        grid-auto-columns: auto;
+        grid-template-columns: 1fr;
+        overflow-x: visible;
+    }
+
+    .kanban-col-body { max-height: none; }
+
+    /* ---- content screen ---- */
+
+    .content-card { grid-template-columns: 1fr; gap: 10px; }
+    .content-card-actions { flex-direction: row; }
+    .content-card-order { flex-direction: row; align-items: center; gap: 8px; }
+
+    .search-hero { flex-wrap: wrap; }
+    .search-hero-go { width: 100%; margin-top: 4px; text-align: center; }
+}
+
+/* ------------------------------------------------------------ phone width */
+
+@media (max-width: 640px) {
+    :root { --radius: 12px; }
+
+    .content { padding: 14px 12px 24px; }
+
+    /* One card per row. Two across at this width means each is about 150px,
+     * which is not enough for a value and its label. */
+    .stat-grid { grid-template-columns: 1fr; gap: 10px; }
+    .stat-inner { min-height: 0; padding: 13px 14px; }
+    .stat-value { font-size: 26px; }
+
+    .quick-links { grid-template-columns: 1fr; }
+
+    .panel { padding: 14px; }
+
+    .dash-table { min-width: 0; }
+    .panel { overflow-x: visible; }
+
+    /* The topbar keeps search plus the add action; the rest collapses. */
+    .topbar-user-meta { display: none; }
+    .topbar-add span { display: none; }
+    .topbar-add { padding: 0 10px; }
+    .topbar-link span { display: none; }
+    .topbar-link { padding: 0 10px; }
+
+    .topbar-search kbd { display: none; }
+
+    .content-card-thumbs img { width: 62px; height: 46px; }
+
+    #result_list tr { padding: 11px 12px; }
+    #result_list td, #result_list th { grid-template-columns: 44% 1fr; }
+
+    .module caption,
+    .module h2 { font-size: 15px; }
+
+    .submit-row { flex-wrap: wrap; gap: 8px; }
+    .submit-row input[type="submit"],
+    .submit-row .button { flex: 1 1 44%; text-align: center; }
+
+    /* Long identifiers and paths are the usual cause of a stray horizontal
+     * scrollbar, and they are the least useful thing to force onto one line. */
+    .mono,
+    code,
+    .form-row .readonly { overflow-wrap: anywhere; }
+
+    .field-content_html textarea { min-height: 260px; }
+}
+
+/* ------------------------------------------------------- motion and print */
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+@media print {
+    .studio-sidebar,
+    .studio-topbar,
+    .object-tools,
+    .submit-row,
+    .sidebar-overlay,
+    .studio-timeline { display: none !important; }
+
+    .content { padding: 0; }
+    .module { border: 0; }
+}

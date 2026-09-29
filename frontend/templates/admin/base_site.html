@@ -14,17 +14,38 @@ only the frame around them changes.
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+{% comment %}
+tokens.css first, then admin.css, then responsive.css. The order is load-
+bearing: tokens defines the colours, admin.css consumes them, and responsive
+overrides both at narrow widths. Loading admin.css first would let the tokens
+land on top of rules that are supposed to read them.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'admin/css/tokens.css' %}">
 <link rel="stylesheet" href="{% static 'admin/css/admin.css' %}">
+<link rel="stylesheet" href="{% static 'admin/css/responsive.css' %}">
+<script src="{% static 'admin/js/theme.js' %}"></script>
 <script>
-/* Runs in <head>, before the sidebar paints. Without this the browser lays the
-   sidebar out at full width and then snaps it to the collapsed width, which
-   reads as a flicker on every reload. The script at the foot of the header
-   takes over from here and owns the toggle. */
+/* Runs in <head>, before first paint. Without this the browser lays the sidebar
+   out at full width and then snaps it to the collapsed width, which reads as a
+   flicker on every reload. The script at the foot of the header takes over from
+   here and owns the toggle.
+
+   The theme is applied in the same breath, for the same reason: resolving it
+   after paint would flash a white page on every load for everyone who chose
+   dark. The OS preference is only the default -- window.studioTheme.set()
+   overrides it and remembers the choice. */
 try {
     if (window.localStorage.getItem('studio.sidebar.collapsed') === '1') {
         document.documentElement.classList.add('sidebar-collapsed');
     }
 } catch (e) {}
+try {
+    window.studioTheme.apply(window.studioTheme.current());
+} catch (e) {
+    /* Never leave data-theme unset: if it is missing, Django's media query
+       decides the palette again and the two themes start fighting. */
+    document.documentElement.setAttribute('data-theme', 'light');
+}
 </script>
 {% endblock %}
 
@@ -164,6 +185,21 @@ Real count: unassigned new leads plus overdue tasks. Hidden entirely at
       {% studio_icon "globe" %}
       <span>{% translate "View site" %}</span>
     </a>
+
+    {% comment %}
+Theme toggle. aria-pressed carries the state, and the label is written for the
+current state rather than the action, so a screen reader says "Dark mode: on"
+rather than an ambiguous verb. The label is swapped by the script at the foot
+of the header; the server-rendered text is the pre-paint default, so the button
+is never blank before JS runs.
+{% endcomment %}
+    <button type="button" class="topbar-icon-btn theme-toggle" id="theme-toggle"
+            aria-pressed="false" title="{% translate 'Dark mode' %}">
+      <span class="theme-icon theme-icon-light" aria-hidden="true">{% studio_icon "sun" %}</span>
+      <span class="theme-icon theme-icon-dark" aria-hidden="true">{% studio_icon "moon" %}</span>
+      <span class="visually-hidden theme-toggle-label">{% translate "Dark mode" %}</span>
+    </button>
+
     <div class="topbar-user">
       <span class="topbar-avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span>
       <div class="topbar-user-meta">
@@ -250,6 +286,42 @@ Real count: unassigned new leads plus overdue tasks. Hidden entirely at
             field.select();
         }
     });
+})();
+
+/* Theme toggle. The palette was already applied before first paint by the
+   snippet in <head>, so this only wires the click and keeps the button's
+   accessible state in step. It also subscribes to OS changes: a user who has
+   never chosen a theme follows the system, and should keep following it when
+   the system flips at sunset. */
+(function () {
+    var button = document.getElementById('theme-toggle');
+    if (!button || !window.studioTheme) return;
+
+    function sync() {
+        var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        button.setAttribute('aria-pressed', dark ? 'true' : 'false');
+        button.title = dark ? 'Light mode' : 'Dark mode';
+        var label = button.querySelector('.theme-toggle-label');
+        if (label) label.textContent = dark ? 'Light mode' : 'Dark mode';
+    }
+
+    button.addEventListener('click', function () {
+        window.studioTheme.toggle();
+        sync();
+    });
+
+    document.addEventListener('studio:themechange', sync);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+        /* Only while the user has not made a choice of their own. */
+        var stored = null;
+        try { stored = window.localStorage.getItem(window.studioTheme.key); } catch (e) {}
+        if (stored !== 'light' && stored !== 'dark') {
+            window.studioTheme.apply(window.studioTheme.systemTheme());
+            sync();
+        }
+    });
+
+    sync();
 })();
 </script>
 {% endblock %}

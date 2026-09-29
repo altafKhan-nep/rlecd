@@ -13,100 +13,17 @@
    Montserrat + Playfair Display) so the CMS reads as the same product.
    ========================================================================== */
 
-/* ----------------------------------------------------------- design tokens */
-:root {
-    --primary: #1B3022;
-    --primary-soft: #2b4632;
-    --primary-mid: #24483A;
-    --accent: #E27D60;
-    --accent-deep: #C9483B;
+/* ----------------------------------------------------------- design tokens
+   Every colour, radius and breakpoint lives in tokens.css, which is generated
+   by scripts/build_tokens.py and contrast-checked before it is written.
 
-    --ink: #16211b;
-    --body: #3d4741;
-    --muted: #6B7570;
-    --line: #e4e7e4;
-    --line-soft: #eef0ee;
-    --bg: #f2f4f1;
-    --surface: #ffffff;
-
-    --radius: 14px;
-    --radius-sm: 9px;
-
-    --shadow-sm: 0 1px 2px rgba(27, 48, 34, .05);
-    --shadow: 0 1px 2px rgba(27, 48, 34, .05), 0 10px 28px rgba(27, 48, 34, .08);
-    --shadow-lg: 0 2px 6px rgba(27, 48, 34, .10), 0 22px 48px rgba(27, 48, 34, .18);
-
-    --font: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-display: 'Playfair Display', Georgia, serif;
-    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-
-    /* Supporting hues. Each owns one data series so colour carries meaning. */
-    --c-teal: #0E8F87;
-    --c-teal-deep: #0A6E68;
-    --c-sky: #2F7BB5;
-    --c-amber: #C9821B;
-    --c-amber-deep: #A8620F;
-    --c-violet: #7C5CBF;
-    --c-violet-deep: #6A3C8C;
-    --c-mint: #2E9E6B;
-    --c-mint-deep: #1F7A50;
-    --c-rose: #D2547C;
-    --c-rose-deep: #A8355C;
-    --c-clay: #E27D60;
-
-    --sidebar-w: 264px;
-    --sidebar-w-collapsed: 68px;
-    --topbar-h: 60px;
-}
-
-/* Django's own variables, remapped so its components inherit the brand. */
-:root {
-    --secondary: #4a5a51;
-    --text: var(--ink);
-    --text-strong: var(--ink);
-    --text-subdued: var(--muted);
-    --border-color: var(--line);
-    --header-color: var(--primary-soft);
-    --header-branding-color: #fff;
-    --header-bg: var(--primary);
-    --header-text-color: rgba(255, 255, 255, .78);
-    --header-link-color: #fff;
-    --header-active-link-color: var(--accent);
-    --breadcrumbs-fg: var(--muted);
-    --breadcrumbs-link-fg: var(--primary);
-    --breadcrumbs-bg: var(--surface);
-    --link-fg: var(--primary-soft);
-    --link-hover-color: var(--accent);
-    --link-selected-fg: var(--accent);
-    --button-fg: #fff;
-    --button-bg: var(--primary);
-    --button-hover-bg: var(--primary-soft);
-    --default-button-bg: var(--primary);
-    --default-button-hover-bg: var(--primary-soft);
-    --close-button-bg: var(--primary);
-    --close-button-hover-bg: #d03a3a;
-    --delete-button-bg: #c0392b;
-    --delete-button-hover-bg: #a5281c;
-    --object-tools-fg: var(--primary);
-    --object-tools-bg: #eef0ee;
-    --object-tools-hover-bg: var(--accent);
-    --object-tools-hover-fg: #fff;
-    --font-family-primary: var(--font);
-    --font-family-default: var(--font);
-    --font-family-mono: var(--font-mono);
-    --body-fg: var(--body);
-    --body-bg: var(--bg);
-    --error-fg: #c0392b;
-    --message-success-bg: #e7f4ec;
-    --message-warning-bg: #fdf3e0;
-    --message-error-bg: #fdeceb;
-    --input-border-color: var(--line);
-    --input-bg: var(--surface);
-    --input-fg: var(--ink);
-    --input-placeholder: #a9b0ab;
-    --selected-bg: #fdf0ec;
-    --selected-row: #fff8f5;
-}
+   They used to be defined right here, on a bare `:root`. That was the bug:
+   Django 5.2's dark_mode.css also owns `:root` and repaints it under
+   `prefers-color-scheme: dark`. Same specificity, and this file loaded last, so
+   this won -- which left near-black text on Django's #121212 body. No single
+   rule was wrong; the cascade was. The tokens are now scoped to
+   `:root[data-theme=...]` so an explicit theme always outranks the OS.
+*/
 
 /* ------------------------------------------------------------------- base */
 *, *::before, *::after { box-sizing: border-box; }
@@ -791,10 +708,6 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 #changelist .actions { text-align: right; white-space: nowrap; }
 #changelist .actions .row-actions { display: inline-flex; }
 
-@media (max-width: 760px) {
-    .list-filters { margin-left: 0; }
-}
-
 /* ==========================================================================
    CROSS-MODEL SEARCH
    ========================================================================== */
@@ -943,11 +856,6 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 }
 
 .search-model-list a:hover { border-color: var(--accent); color: var(--accent); }
-
-@media (max-width: 640px) {
-    .search-hero { flex-wrap: wrap; }
-    .search-hero-go { width: 100%; margin-top: 4px; text-align: center; }
-}
 
 /* ==========================================================================
    DASHBOARD
@@ -1743,9 +1651,21 @@ input:focus, select:focus, textarea:focus {
     border: 1px solid transparent;
 }
 
-.messagelist li.success { background: var(--message-success-bg); color: #145c39; border-color: #bfe3cd; }
-.messagelist li.warning { background: var(--message-warning-bg); color: #7d4a0d; border-color: #f0dcb4; }
-.messagelist li.error   { background: var(--message-error-bg); color: #a5342a; border-color: #f3c9c5; }
+.messagelist li.success {
+    background: var(--message-success-bg);
+    color: var(--msg-ok-fg);
+    border-color: var(--line);
+}
+.messagelist li.warning {
+    background: var(--message-warning-bg);
+    color: var(--msg-warn-fg);
+    border-color: var(--line);
+}
+.messagelist li.error {
+    background: var(--message-error-bg);
+    color: var(--msg-err-fg);
+    border-color: var(--line);
+}
 
 .storage-warning {
     margin: 0 0 18px;
@@ -1795,99 +1715,10 @@ input:focus, select:focus, textarea:focus {
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */
-@media (max-width: 1100px) {
-    .dash-grid { grid-template-columns: 1fr; }
-}
 
 /* Sidebar becomes an overlay drawer below this width. */
-@media (max-width: 900px) {
-    .studio-sidebar {
-        transform: translateX(-100%);
-        transition: transform .26s cubic-bezier(.4, 0, .2, 1);
-        box-shadow: none;
-    }
-
-    body.sidebar-open .studio-sidebar {
-        transform: translateX(0);
-        box-shadow: 24px 0 60px rgba(16, 26, 20, .35);
-    }
-
-    body.sidebar-open .sidebar-overlay { display: block; }
-
-    #container { margin-left: 0; }
-
-    .sidebar-toggle { display: inline-flex; }
-
-    .studio-content { padding: 20px 16px 56px; }
-    .studio-topbar { padding: 0 16px; }
-
-    /* The search field is the first thing to give up room on a tablet: the
-       sidebar, notifications and site link are all still worth a tap. */
-    .topbar-search { max-width: none; margin-left: 10px; }
-    .topbar-search kbd { display: none; }
-
-    /* Below this width the sidebar is a full-height drawer, so collapsing it is
-       meaningless -- the rail rules would shrink the drawer to 68px and hide
-       the very labels the drawer exists to show. The stored preference is left
-       untouched so it still applies at desktop widths. */
-    html.sidebar-collapsed .studio-sidebar { width: var(--sidebar-w); }
-    html.sidebar-collapsed .nav-text,
-    html.sidebar-collapsed .sidebar-brand-name,
-    html.sidebar-collapsed .sidebar-user-name,
-    html.sidebar-collapsed .nav-group-label {
-        visibility: visible;
-        position: static;
-        width: auto;
-        height: auto;
-        clip-path: none;
-    }
-    html.sidebar-collapsed .nav-item,
-    html.sidebar-collapsed .sidebar-link { justify-content: flex-start; padding-left: 10px; padding-right: 10px; }
-    html.sidebar-collapsed .nav-item .nav-count { position: static; margin-left: auto; min-width: 22px; padding: 1px 7px; font-size: 11px; }
-    .sidebar-collapse { display: none; }
-}
-
-@media (max-width: 640px) {
-    .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-    .stat-inner { min-height: 112px; padding: 15px; }
-    .stat-value { font-size: 28px; }
-    .quick-links { grid-template-columns: 1fr; }
-    .dash-head-actions { width: 100%; }
-    .dash-head-actions .button { flex: 1; text-align: center; }
-    .pipe-row { grid-template-columns: minmax(70px, 1fr) minmax(48px, 1.4fr) 32px; gap: 9px; }
-
-    /* The trend badge would sit under the hint on a two-up card grid, so the
-       hint loses its reserve and the badge tucks into the card's top-left. */
-    .stat-hint { padding-right: 0; }
-    .stat-trend {
-        top: 14px;
-        right: auto;
-        bottom: auto;
-        left: 15px;
-    }
-    .stat-label { padding-right: 0; }
-
-    .chart-bars { height: 140px; gap: 7px; padding: 16px 14px 12px; }
-    .topbar-user { display: none; }
-
-    /* The add buttons drop their labels to icons: two full-word buttons plus a
-       search field do not fit, and the icons stay tappable at 36px. */
-    .topbar-add span { display: none; }
-    .topbar-add { padding: 0 11px; }
-}
 
 /* Tables scroll sideways rather than crushing their columns on small screens. */
-@media (max-width: 760px) {
-    .panel { overflow-x: auto; }
-    .dash-table { min-width: 560px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        transition-duration: .01ms !important;
-        animation-duration: .01ms !important;
-    }
-}
 
 /* ---------------------------------------------------------------- media path
    The image-bearing content fields are text inputs holding a path. The picker
@@ -2449,7 +2280,34 @@ input:focus, select:focus, textarea:focus {
     font-size: 12.5px;
 }
 
-@media (max-width: 860px) {
-    .content-card { grid-template-columns: 1fr; }
-    .content-card-actions { flex-direction: row; }
+/* ==========================================================================
+   THEME TOGGLE
+   ==========================================================================
+   The button is in the topbar rather than the sidebar because the sidebar is a
+   drawer below 900px, and a control that disappears when you narrow the window
+   is a control you cannot find when you need it.
+
+   Both icons are always in the DOM and CSS picks one by theme. Toggling
+   visibility in JS instead would leave a blank button for the moment between
+   the click and the next frame, and would flash on load.
+*/
+
+.theme-toggle { position: relative; }
+
+.theme-toggle .theme-icon {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
 }
+
+:root[data-theme="light"] .theme-icon-light,
+[data-theme="dark"] .theme-icon-dark { display: inline-flex; }
+
+.theme-toggle svg { width: 17px; height: 17px; }
+
+/* The sun reads as "switch to light" and the moon as "switch to dark", so the
+   icon shown is the *other* theme, not the current one. A user who is in dark
+   mode is offered the sun. */
+[data-theme="light"] .theme-icon-light svg { color: var(--amber); }
+[data-theme="dark"] .theme-icon-dark svg { color: var(--accent-soft); }
