@@ -47,7 +47,156 @@
     .list-filters { margin-left: 0; }
 }
 
-/* --------------------------------------------------- the narrow breakpoint */
+/* ------------------------------------------------------- the card layout
+
+   A nine-column table needs about 1,280px before it stops being cramped, and
+   below that it either wraps ugly or grows a horizontal scrollbar. So the
+   changelist becomes cards much earlier than the sidebar does: cards at any
+   width under 1280px, table above it. That is also the only way "no bottom
+   scrollbar" can hold on a laptop, which is where most editing happens.
+*/
+
+@media (max-width: 1280px) {
+    /* Django's changelists.css sets `#changelist-form .results` to
+     * `overflow-x: auto`, which is (1,1,0) and loads after this file. Matching
+     * or beating that specificity is required, or the container keeps scrolling
+     * horizontally while the rows inside it are cards -- the worst of both. */
+    #changelist .results,
+    #changelist-form .results {
+        overflow-x: visible;
+        border: 0;
+        width: 100%;
+    }
+
+    #result_list,
+    #result_list thead,
+    #result_list tbody,
+    #result_list tr,
+    #result_list td,
+    #result_list th {
+        display: block;
+        width: auto;
+    }
+
+    /* The header row is now redundant: each cell is labelled. */
+    #result_list thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    #result_list tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2px;
+        margin-bottom: 10px;
+        padding: 13px 15px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+    }
+
+    #result_list td,
+    #result_list th {
+        display: grid;
+        grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+        gap: 12px;
+        align-items: baseline;
+        padding: 3px 0;
+        border: 0;
+        text-align: left;
+        white-space: normal;
+    }
+
+    #result_list td::before,
+    #result_list th::before {
+        content: attr(data-label);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--muted);
+    }
+
+    #result_list .action-checkbox,
+    #result_list .action-checkbox-column { display: none; }
+
+    #result_list .field-studio_row_actions,
+    #result_list .field-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line-soft);
+    }
+
+    #result_list .field-studio_row_actions::before,
+    #result_list .field-actions::before { content: none; }
+
+    #changelist .changelist-form-container { display: block; }
+
+    #toolbar #changelist-search { margin-bottom: 10px; }
+
+    #toolbar #changelist-search input[type="text"] { width: 100%; }
+
+    .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 0 12px;
+    }
+
+    .actions label { display: flex; align-items: center; gap: 6px; }
+
+    .action-counter { width: 100%; }
+
+    .paginator { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    /* The image column is the one cell that earns full width on a card. */
+    #result_list .field-first_image,
+    #result_list .field-project_thumb,
+    #result_list .field-badge_thumb,
+    #result_list .field-thumb {
+        grid-template-columns: minmax(0, 1fr);
+        margin-bottom: 4px;
+    }
+
+    #result_list .field-first_image::before,
+    #result_list .field-project_thumb::before,
+    #result_list .field-badge_thumb::before,
+    #result_list .field-thumb::before { content: none; }
+
+    #result_list .section-image-thumb,
+    #result_list .thumb {
+        width: 100%;
+        max-width: 280px;
+        height: 140px;
+    }
+
+    /* Summary and excerpt columns read as prose on a card, not as a label and
+     * a value squeezed into the right half. */
+    #result_list .field-summary,
+    #result_list .field-excerpt,
+    #result_list .field-answer_excerpt,
+    #result_list .field-quote_excerpt,
+    #result_list .field-summary_excerpt {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 7px 0;
+    }
+
+    #result_list .field-summary::before,
+    #result_list .field-excerpt::before,
+    #result_list .field-answer_excerpt::before,
+    #result_list .field-quote_excerpt::before,
+    #result_list .field-summary_excerpt::before { content: none; }
+
+    .page-summary { max-width: none; white-space: normal; }
+}
 
 @media (max-width: 900px) {
     /* The sidebar is a drawer below here. */
@@ -83,167 +232,6 @@
     .quick-links { grid-template-columns: repeat(2, 1fr); }
 
     .pipe-row { grid-template-columns: minmax(64px, 1fr) minmax(40px, 1.4fr) 30px; }
-
-    /* ---- changelists: the table becomes cards ---- */
-
-    /* Horizontal scroll is what made these lists unusable on a small screen,
-     * so the table is rebuilt as a stack instead. Every cell carries its own
-     * column header as a data-label, emitted by the changelist furniture. */
-    /* Django's changelists.css sets `#changelist-form .results` to
-     * `overflow-x: auto`, which is (1,1,0) and loads after this file. Matching
-     * or beating that specificity is required, or the container keeps scrolling
-     * horizontally while the rows inside it are cards -- the worst of both. */
-    #changelist .results,
-    #changelist-form .results {
-        overflow-x: visible;
-        border: 0;
-        width: 100%;
-    }
-
-    #result_list,
-    #result_list thead,
-    #result_list tbody,
-    #result_list tr,
-    #result_list td,
-    #result_list th {
-        display: block;
-        width: auto;
-    }
-
-    /* The header row is now redundant: each cell is labelled. */
-    #result_list thead {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        white-space: nowrap;
-    }
-
-    #result_list tr {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 2px;
-        margin-bottom: 10px;
-        padding: 12px 14px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-sm);
-    }
-
-    #result_list td,
-    #result_list th {
-        display: grid;
-        grid-template-columns: 40% 1fr;
-        gap: 10px;
-        align-items: baseline;
-        padding: 3px 0;
-        border: 0;
-        text-align: left;
-        white-space: normal;
-    }
-
-    #result_list td::before,
-    #result_list th::before {
-        content: attr(data-label);
-        font-size: 10.5px;
-        font-weight: 600;
-        letter-spacing: .04em;
-        text-transform: uppercase;
-        color: var(--muted);
-    }
-
-    /* The action checkbox and the row actions carry no label worth showing and
-     * would each eat a whole grid row. */
-    #result_list .action-checkbox,
-    #result_list .action-checkbox-column { display: none; }
-
-    #result_list .field-studio_row_actions,
-    #result_list .field-actions { display: flex; justify-content: flex-end; }
-
-    #result_list .field-studio_row-actions::before,
-    #result_list .field-actions::before { content: none; }
-
-    /* Filter and action chrome wraps instead of pushing the list sideways. */
-    #changelist .changelist-form-container { display: block; }
-
-    #toolbar #changelist-search { margin-bottom: 10px; }
-
-    #toolbar #changelist-search input[type="text"] { width: 100%; }
-
-    .actions {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 0 12px;
-    }
-
-    .actions label { display: flex; align-items: center; gap: 6px; }
-
-    .action-counter { width: 100%; }
-
-    .paginator { display: flex; flex-wrap: wrap; gap: 8px; }
-
-    /* The image column is the one cell that earns full width on a card. */
-    #result_list .field-first_image,
-    #result_list .field-project_thumb,
-    #result_list .field-badge_thumb,
-    #result_list .field-thumb {
-        grid-template-columns: 1fr;
-        margin-bottom: 4px;
-    }
-
-    #result_list .field-first_image::before,
-    #result_list .field-project_thumb::before,
-    #result_list .field-badge_thumb::before,
-    #result_list .field-thumb::before { content: none; }
-
-    #result_list .section-image-thumb,
-    #result_list .thumb {
-        width: 100%;
-        max-width: 260px;
-        height: 130px;
-    }
-
-    /* Summary and excerpt columns read as prose on a card, not as a label/value
-     * pair squeezed into the right half. */
-    #result_list .field-summary,
-    #result_list .field-excerpt,
-    #result_list .field-answer_excerpt,
-    #result_list .field-quote_excerpt,
-    #result_list .field-summary_excerpt {
-        grid-template-columns: 1fr;
-        padding: 6px 0;
-    }
-
-    #result_list .field-summary::before,
-    #result_list .field-excerpt::before,
-    #result_list .field-answer_excerpt::before,
-    #result_list .field-quote_excerpt::before,
-    #result_list .field-summary_excerpt::before { content: none; }
-
-    .page-summary { max-width: none; white-space: normal; }
-
-    /* ---- the board ---- */
-
-    /* Six columns at a minimum 230px each is a 1380px scroll on a phone. As
-     * rows instead, each column is a short stack and the page scrolls the way
-     * a page is supposed to. */
-    .kanban-board {
-        grid-auto-flow: row;
-        grid-auto-columns: auto;
-        grid-template-columns: 1fr;
-        overflow-x: visible;
-    }
-
-    .kanban-col-body { max-height: none; }
-
-    /* ---- content screen ---- */
-
-    .content-card { grid-template-columns: 1fr; gap: 10px; }
-    .content-card-actions { flex-direction: row; }
-    .content-card-order { flex-direction: row; align-items: center; gap: 8px; }
 
     .search-hero { flex-wrap: wrap; }
     .search-hero-go { width: 100%; margin-top: 4px; text-align: center; }
@@ -321,3 +309,99 @@
     .content { padding: 0; }
     .module { border: 0; }
 }
+
+/* ==========================================================================
+   NO HORIZONTAL SCROLLBAR, AT ANY WIDTH
+   ==========================================================================
+
+   The complaint was a scrollbar along the bottom of every admin page. There is
+   no single fix for that, because the page is full of independent boxes and any
+   one of them can be wider than the window. So this section is the backstop
+   for the ones the layout rules above do not already constrain.
+
+   It is not a blanket `overflow-x: hidden`, which would hide the symptom and
+   break every sticky and fixed element in the admin at the same time. Each
+   rule below names a specific thing that was genuinely able to exceed the
+   viewport.
+*/
+
+/* Tabular inlines are a <table> and a Section form can hold nine image rows,
+   each with a path, an alt text and a caption. Scrolling a table sideways is
+   the "half the page is cut" experience; below the card breakpoint the rows
+   stack instead. */
+@media (max-width: 1280px) {
+    .inline-group { overflow-x: visible; }
+
+    .inline-group .tabular {
+        display: block;
+        width: 100%;
+        overflow-x: visible;
+    }
+
+    .inline-group .tabular thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+    }
+
+    .inline-group .tabular tbody,
+    .inline-group .tabular tr,
+    .inline-group .tabular td,
+    .inline-group .tabular th { display: block; width: auto; }
+
+    .inline-group .tabular tr {
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+    }
+
+    .inline-group .tabular td {
+        display: grid;
+        grid-template-columns: minmax(0, 34%) minmax(0, 1fr);
+        gap: 10px;
+        align-items: baseline;
+        padding: 3px 0;
+        border: 0;
+        text-align: left;
+    }
+
+    /* Row actions and the delete control sit on their own line at the end. */
+    .inline-group .tabular td.delete,
+    .inline-group .tabular .original { display: none; }
+
+    .section-image-inline .field-thumb { width: auto; }
+    .section-image-inline .field-thumb::before { content: none; }
+    .section-image-inline .field-css_class,
+    .section-image-inline .field-dom_id,
+    .section-image-inline .field-inline_style { display: none; }
+}
+
+/* Long identifiers are the most common accidental overflow: a repo path, a CDN
+   URL, a pasted tracking parameter, a hash. They are also the least useful
+   thing to force onto one line. */
+@media (max-width: 1280px) {
+    .mono,
+    code,
+    pre,
+    .studio-code,
+    .readonly {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    #result_list td,
+    #result_list th,
+    .form-row .vTextField,
+    .form-row textarea {
+        max-width: 100%;
+    }
+}
+
+/* The one place a horizontal scroll is correct: a <textarea> holding a long
+   single line. Scrolling inside the box is what a textarea is for, and it does
+   not move the page. */
+textarea { max-width: 100%; }

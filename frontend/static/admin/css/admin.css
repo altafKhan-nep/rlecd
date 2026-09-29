@@ -132,9 +132,12 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     align-items: center;
     gap: 14px;
     padding: 0 28px;
-    background: rgba(255, 255, 255, .92);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
+    /* Search shrinks first, then the labels go, rather than the bar growing
+     * wider than the page and putting a scrollbar along the bottom. */
+    min-width: 0;
 }
 
 .studio-content {
@@ -350,16 +353,18 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 .sidebar-toggle svg { width: 18px; height: 18px; stroke: currentColor; }
 
 .topbar-actions {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: none;
+    margin-left: auto;
 }
 
 /* The search field sits between the title and the actions and takes the slack
    in the bar, so .topbar-actions keeps its auto margin while the field
    absorbs the remaining width. */
 .topbar-search {
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1983,13 +1988,20 @@ input:focus, select:focus, textarea:focus {
 
 .kanban-head-actions { display: flex; gap: 8px; }
 
+/* Columns wrap instead of scrolling sideways.
+
+   This was `grid-auto-flow: column` with `minmax(230px, 1fr)`, which is a hard
+   floor of 230px per column -- six pipeline stages is 1,380px before any
+   padding, so the board grew a horizontal scrollbar on every screen narrower
+   than that and there was nothing to do about it. `auto-fit` with `1fr` lets
+   the columns shrink and wrap into rows, so the board is as wide as the page
+   at every size and never overflows. */
 .kanban-board {
     display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(230px, 1fr);
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
     gap: 14px;
     align-items: start;
-    overflow-x: auto;
     padding-bottom: 12px;
 }
 
@@ -2156,7 +2168,10 @@ input:focus, select:focus, textarea:focus {
 
 .content-card {
     display: grid;
-    grid-template-columns: 120px minmax(0, 1fr) auto;
+    /* minmax(0, 1fr) rather than 1fr: a bare 1fr track has an automatic
+       minimum of its content, so one long unbreakable word inside it widens
+       the whole grid and the page. 0 removes that floor. */
+    grid-template-columns: 116px minmax(0, 1fr) max-content;
     gap: 16px;
     align-items: start;
     padding: 13px 15px;

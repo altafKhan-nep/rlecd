@@ -410,19 +410,66 @@ class DesignTokenTests(SimpleTestCase):
         queries = re.findall(r"@media[^\n{]*", self.responsive)
         widths = {int(w) for q in queries for w in re.findall(r"(\d{3,4})px", q)}
         self.assertTrue(
-            widths <= {640, 900, 1180},
+            widths <= {640, 900, 1180, 1280},
             f"unexpected breakpoint widths in responsive.css: {widths}")
+
+    def _block(self, width):
+        match = re.search(
+            rf"@media \(max-width: {width}px\) \{{(.*?)\n\}}",
+            self.responsive, re.S)
+        self.assertIsNotNone(match, f"no {width}px block in responsive.css")
+        return match.group(1)
 
     def test_changelist_becomes_cards_rather_than_scrolling(self):
         """A horizontal scroll on a changelist is the "half the page is cut"
         complaint: there is no cue that there is more to the right."""
-        narrow = re.search(
-            r"@media \(max-width: 900px\) \{(.*?)\n\}", self.responsive, re.S)
-        self.assertIsNotNone(narrow, "no 900px block in responsive.css")
-        body = narrow.group(1)
+        body = self._block(1280)
         self.assertIn("#result_list tr", body)
         self.assertIn("data-label", body)
         self.assertIn("#result_list thead", body)
+        # Beaten against Django's own `overflow-x: auto` on the same element,
+        # which is (1,1,0) and loads after this file.
+        self.assertIn("#changelist-form .results", body)
+
+    def test_no_rule_forces_a_track_wider_than_a_laptop(self):
+        """The specific cause of the bottom scrollbar.
+
+        `grid-auto-flow: column` with `minmax(230px, 1fr)` is a hard floor of
+        230px per column: six pipeline stages is 1,380px before any padding, so
+        the board grew a horizontal scrollbar on every screen narrower than
+        that and nothing about the layout could prevent it. A 1fr track also
+        has an automatic minimum equal to its content, so one long unbreakable
+        word inside it widens the grid and the page.
+        """
+        sources = {"admin.css": self.admin, "responsive.css": self.responsive}
+        for name, source in sources.items():
+            for rule in re.findall(r"([^{}]+)\{([^{}]*)\}", source):
+                selector, body = rule
+                if "grid" not in body and "flex" not in body:
+                    continue
+                if "column" in body:
+                    with self.subTest(file=name, selector=selector.strip()[:40]):
+                        self.assertNotIn(
+                            "grid-auto-flow: column", body,
+                            "a column-flow grid has a fixed per-column minimum, "
+                            "so N columns overflow any viewport below their sum")
+            for track in re.findall(r"minmax\(\s*(\d+)px", body):
+                with self.subTest(file=name, selector=selector.strip()[:40],
+                                  track=track):
+                    self.assertLessEqual(
+                        int(track), 320,
+                        f"{selector.strip()[:40]} has a {track}px floor, which "
+                        f"alone exceeds a phone")
+
+    def test_the_board_wraps_instead_of_scrolling(self):
+        board = re.search(r"\.kanban-board\s*\{([^}]*)\}", self.admin)
+        self.assertIsNotNone(board, "no .kanban-board rule")
+        body = board.group(1)
+        self.assertIn("auto-fit", body,
+                      "the board must wrap its columns; a fixed column flow is "
+                      "what put a scrollbar under it")
+        self.assertNotIn("grid-auto-flow: column", body)
+        self.assertNotIn("overflow-x: auto", body)
 
 
 class ThemeToggleTests(SimpleTestCase):
