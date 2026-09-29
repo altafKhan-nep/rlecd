@@ -116,8 +116,15 @@ DARK = {
     "line": "#2a3a32",
     "line-soft": "#1f2c25",
     "primary": "#8fbf9f",
-    "primary-soft": "#24483a",
-    "primary-mid": "#2f5c49",
+    # primary-soft and primary-mid are *ink and hover* on this theme's surfaces,
+    # not fills, and the light theme's values were carried over verbatim. Both
+    # are dark greens there (#2b4632 / #24483a) and on this theme's #151f1a
+    # surface they were invisible: the change form's "History" and "View on
+    # site" buttons, the "Save and continue editing" link and a dozen other
+    # places that use this as a text colour. They have to be lighter here, in
+    # the same family as primary, to do the same job.
+    "primary-soft": "#79b18d",
+    "primary-mid": "#a3cdb0",
     "primary-fg": "#0d1310",
     "accent": "#e89275",
     "accent-soft": "#7a4433",
@@ -224,8 +231,15 @@ DJANGO = [
     ("--button-fg", "ink"), ("--button-bg", "surface-2"),
     ("--button-hover-bg", "surface-3"), ("--default-button-fg", "primary-fg"),
     ("--default-button-bg", "primary"), ("--default-button-hover-bg", "primary-mid"),
-    ("--object-tools-fg", "muted"), ("--object-tools-bg", "surface"),
-    ("--object-tools-hover-bg", "surface-3"),
+    # Django paints `.object-tools a:link` with --object-tools-bg at (0,2,1),
+    # which outranks a bare `.object-tools a` at (0,1,1) -- so this variable, not
+    # our own rule, decides what the "Add page" button looks like. Mapped to
+    # `surface` it was near-white, and the text on it is --primary-fg, so the
+    # primary action on every list rendered as an empty white box. Fixing the
+    # variable is the fix that also holds for the second theme and for anything
+    # else Django paints with it.
+    ("--object-tools-fg", "primary-fg"), ("--object-tools-bg", "primary"),
+    ("--object-tools-hover-bg", "primary-mid"),
     ("--error-fg", "danger"),
     ("--message-error-bg", "msg-err-bg"),
     ("--message-success-fg", "msg-ok-fg"),

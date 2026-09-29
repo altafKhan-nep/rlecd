@@ -138,9 +138,9 @@
   --default-button-fg: #f4f7f4;
   --default-button-bg: #1b3022;
   --default-button-hover-bg: #24483a;
-  --object-tools-fg: #5f6c65;
-  --object-tools-bg: #ffffff;
-  --object-tools-hover-bg: #eef2ef;
+  --object-tools-fg: #f4f7f4;
+  --object-tools-bg: #1b3022;
+  --object-tools-hover-bg: #24483a;
   --error-fg: #9b2c1c;
   --message-error-bg: #fdeceb;
   --message-success-fg: #1a5c3a;
@@ -172,8 +172,8 @@
   --line: #2a3a32;
   --line-soft: #1f2c25;
   --primary: #8fbf9f;
-  --primary-soft: #24483a;
-  --primary-mid: #2f5c49;
+  --primary-soft: #79b18d;
+  --primary-mid: #a3cdb0;
   --primary-fg: #0d1310;
   --accent: #e89275;
   --accent-soft: #7a4433;
@@ -242,10 +242,10 @@
   --button-hover-bg: #22312a;
   --default-button-fg: #0d1310;
   --default-button-bg: #8fbf9f;
-  --default-button-hover-bg: #2f5c49;
-  --object-tools-fg: #93a399;
-  --object-tools-bg: #151f1a;
-  --object-tools-hover-bg: #22312a;
+  --default-button-hover-bg: #a3cdb0;
+  --object-tools-fg: #0d1310;
+  --object-tools-bg: #8fbf9f;
+  --object-tools-hover-bg: #a3cdb0;
   --error-fg: #e88b78;
   --message-error-bg: #2c1a17;
   --message-success-fg: #7fd3a6;

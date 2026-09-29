@@ -1981,22 +1981,12 @@ input[type=button],
 .submit-row input.default,
 .submit-row input[name="_save"],
 a.button,
-.addlink,
-.object-tools a {
+.addlink {
     background: var(--primary);
     border-color: var(--primary);
     color: var(--primary-fg);
     box-shadow: 0 2px 8px rgba(27, 48, 34, .18);
 }
-
-.button:link,
-.button:visited,
-a.button:link,
-a.button:visited,
-.addlink:link,
-.addlink:visited,
-.object-tools a:link,
-.object-tools a:visited { color: var(--primary-fg); }
 
 .button:hover,
 input[type=submit]:hover,
@@ -2016,11 +2006,17 @@ a.button:hover,
    an anchor rule and needs the same variants. */
 .submit-row a:not([class*="deletelink"]),
 .submit-row input:not(.default):not(.deletelink),
+/* The ink is --link, not --primary-soft. --primary-soft is #2b4632 in the
+   light theme and #24483a in the dark one -- dark greens both times, tuned as
+   an ink for a *light* surface. Used here on --surface-2 it put #24483a text
+   on #1b2822 in dark mode: the "History" and "View on site" buttons on every
+   change form, invisible. --link is the one accent that is legible on a
+   surface in both themes (#1a5c7a on white, #7cc4e8 on #1b2822). */
 .object-tools a.historylink,
 .object-tools a.viewsitelink {
     background: var(--surface-2);
     border-color: var(--line);
-    color: var(--primary-soft);
+    color: var(--link);
 }
 
 .submit-row a:link,
@@ -2028,7 +2024,7 @@ a.button:hover,
 .object-tools a.historylink:link,
 .object-tools a.historylink:visited,
 .object-tools a.viewsitelink:link,
-.object-tools a.viewsitelink:visited { color: var(--primary-soft); }
+.object-tools a.viewsitelink:visited { color: var(--link); }
 
 .submit-row a:hover,
 .submit-row input:not(.default):not(.deletelink):hover,

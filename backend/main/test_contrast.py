@@ -870,3 +870,72 @@ class ThemeToggleTests(SimpleTestCase):
     def test_color_scheme_follows_so_native_widgets_match(self):
         """Without this the OS keeps drawing light scrollbars on a dark page."""
         self.assertIn("colorScheme", self.js)
+
+
+class DarkThemeInkTests(SimpleTestCase):
+    """A dark theme has to be designed, not inherited from the light one.
+
+    The dark palette was written with the brand inverted -- `primary` became a
+    light green so it would read on a dark surface -- and then two of its inks
+    were carried across from the light palette unchanged: `primary-soft`
+    (#2b4632) and `primary-mid` (#24483a). Both are dark greens. Used as text on
+    this theme's own surfaces they were invisible, which is how the change
+    form's "History" and "View on site" buttons, the "Save and continue
+    editing" link and a dozen other places came out as dark text on a dark
+    button. Nothing flagged it, because the light theme was perfect and the
+    tokens are generated from one table.
+
+    These assert the inks against the surfaces they are actually used on, in
+    this theme, so the next palette edit cannot quietly reintroduce it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.tokens = TOKENS_PATH.read_text()
+
+    SURFACES = {
+        "surface": "#151f1a",
+        "surface-2": "#1b2822",
+        "surface-3": "#22312a",
+        "bg": "#0d1310",
+    }
+
+    def dark(self, name):
+        block = re.search(
+            r'\[data-theme="dark"\]\s*\{(.*?)\n\}', self.tokens, re.S)
+        self.assertIsNotNone(block, "no dark theme block in tokens.css")
+        match = re.search(r"--%s:\s*(#[0-9A-Fa-f]{6})" % re.escape(name),
+                          block.group(1))
+        self.assertIsNotNone(match, f"--{name} is not defined for the dark theme")
+        return match.group(1)
+
+    def test_brand_inks_clear_contrast_on_every_dark_surface(self):
+        for ink in ("primary-soft", "primary-mid", "primary"):
+            colour = self.dark(ink)
+            for name, surface in self.SURFACES.items():
+                with self.subTest(ink=ink, surface=name):
+                    ratio = contrast_ratio(colour, surface)
+                    self.assertGreaterEqual(
+                        ratio, 4.5,
+                        f"--{ink} {colour} on --{name} {surface} is only "
+                        f"{ratio:.2f}:1; this theme's surfaces are dark, so an "
+                        f"ink carried over from the light palette disappears")
+
+    def test_the_object_tools_pair_agrees_with_the_palette(self):
+        """Django paints `.object-tools a:link` with this pair at (0,2,1).
+
+        That outranks any `.object-tools a` rule, so these two variables -- not
+        our stylesheet -- decide what the primary button on every list looks
+        like. They were mapped to `surface` and `muted`, which is a near-white
+        fill, so "Add page" rendered as an empty white box on every changelist.
+        """
+        fill = self.dark("object-tools-bg")
+        ink = self.dark("object-tools-fg")
+        self.assertGreaterEqual(
+            contrast_ratio(ink, fill), 4.5,
+            f"the object-tools pair is {ink} on {fill}, which is unreadable")
+        # And it must be the brand fill, not a page surface: a light surface
+        # cannot carry near-white text.
+        self.assertEqual(fill, self.dark("primary"))
+        self.assertEqual(ink, self.dark("primary-fg"))

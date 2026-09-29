@@ -139,7 +139,8 @@ def main():
 
     # Batched so a dropped websocket costs one batch, not the whole sweep, and
     # so no single session is asked to drive hundreds of navigations.
-    BATCH = 6
+    BATCH = 1  # one page per session: a long-lived CDP socket drops under
+            # load, and a short session means a drop costs one page, not a batch
     # The login page is measured signed out. With a session it redirects to the
     # dashboard, so it would be "audited" as a page it never rendered.
     ANONYMOUS = {"/admin/login/"}
@@ -154,11 +155,47 @@ def main():
     print("  ...%d pages measured (%d signed out)"
           % (len(pages), len(signed_out)))
 
+    # A dropped websocket costs the page/width pairs measured after the drop,
+    # not the whole sweep -- so re-measure exactly those, in a fresh session,
+    # rather than reporting a pass with holes in it.
+    for attempt in range(3):
+        lost = [r for r in results if r.get("error")]
+        if not lost:
+            break
+        print("  retrying %d lost measurement(s), pass %d"
+              % (len(lost), attempt + 1))
+        by_page = {}
+        for r in lost:
+            by_page.setdefault(r["path"], set()).add(r["requestedWidth"])
+        keep = []
+        replacements = {}
+        for group, auth in (
+                ([p for p in by_page if p not in ANONYMOUS], True),
+                ([p for p in by_page if p in ANONYMOUS], False)):
+            if not group:
+                continue
+            for f in m.run_all(group, sorted(
+                    {w for p in group for w in by_page[p]}), auth=auth):
+                key = (f.get("path"), f.get("requestedWidth"))
+                replacements.setdefault(key, f)
+        results = [r for r in results if not r.get("error")]
+        for r in results:
+            key = (r.get("path"), r.get("requestedWidth"))
+            if key in replacements and replacements[key].get("error"):
+                keep.append(replacements[key])
+        results.extend(keep)
+
     errors = [r for r in results if r.get("error")]
     if errors:
-        print("\n%d measurement(s) lost to a dropped session; rerun for those"
+        print("\n%d measurement(s) still lost after retries; these are NOT covered"
               % len(errors))
-    results = [r for r in results if not r.get("error")]
+        for e in sorted({(x.get("path"), x.get("requestedWidth")) for x in errors}):
+            print("   %s at %spx" % e)
+    measured = [r for r in results if not r.get("error")]
+    expected = len(pages) * len(widths)
+    print("\n  covered %d of %d page/width combinations"
+          % (len(measured), expected))
+    results = measured
     failures = [r for r in results
                 if r.get("count") or r.get("scrolls") or r.get("deadGutter")]
 
@@ -186,9 +223,20 @@ def main():
             print("  %-34s %5dpx  %-10s %s +%s"
                   % (f["path"], f["requestedWidth"], kind, what, amt))
 
-    print("\n%s" % ("ALL CLEAN" if not failures
-                    else "%d failing page/width combinations" % len(failures)))
-    return 1 if failures else 0
+    # A pass that skipped combinations is not a pass. Reporting "ALL CLEAN"
+    # while a seventh of the sweep went unmeasured is how a real failure gets
+    # waved through, so uncovered pairs are a non-zero result in their own right.
+    uncovered = expected - len(results)
+    if uncovered:
+        print("\n%d combination(s) were never measured -- rerun before "
+              "trusting this." % uncovered)
+    if failures:
+        print("%d failing page/width combination(s)" % len(failures))
+    elif not uncovered:
+        print("ALL CLEAN")
+    else:
+        print("no failures in the combinations that ran")
+    return 1 if (failures or uncovered) else 0
 
 
 if __name__ == "__main__":

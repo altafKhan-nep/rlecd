@@ -275,25 +275,32 @@ def run_all(pages, widths, height=900, auth=True):
             time.sleep(2.0)
 
         out = []
-        for path in pages:
+        remaining = [(p, w) for p in pages for w in widths]
+        for index, path in enumerate(pages):
             for w in widths:
-                cdp.cmd("Emulation.setDeviceMetricsOverride", {
-                    "width": w, "height": height,
-                    "deviceScaleFactor": 1, "mobile": w < 900,
-                })
-                cdp.cmd("Page.navigate", {"url": BASE + path})
-                time.sleep(0.7)
+                remaining_index = len(out)
+                # The whole measurement, not just the evaluate. A navigate can
+                # lose the socket too.
                 try:
+                    cdp.cmd("Emulation.setDeviceMetricsOverride", {
+                        "width": w, "height": height,
+                        "deviceScaleFactor": 1, "mobile": w < 900,
+                    })
+                    cdp.cmd("Page.navigate", {"url": BASE + path})
+                    time.sleep(0.7)
                     res = cdp.cmd("Runtime.evaluate",
                                   {"expression": PROBE, "returnByValue": True})
                     value = res.get("result", {}).get("result", {}).get("value")
                 except (ConnectionResetError, OSError) as exc:
-                    # A long session occasionally loses the socket. Report what
-                    # was covered rather than failing the whole sweep; the
-                    # caller batches pages so a dropped session costs one batch.
-                    out.append({"path": path, "requestedWidth": w,
-                                "count": 0, "scrolls": False,
-                                "error": "session lost: %s" % exc})
+                    # Everything not yet measured is lost too, and has to be
+                    # recorded as lost. Returning only the pair that happened to
+                    # be in flight left the rest of the batch silently missing:
+                    # the caller counted them as neither pass nor fail, and
+                    # reported a clean sweep that had skipped a third of itself.
+                    for p2, w2 in remaining[remaining_index:]:
+                        out.append({"path": p2, "requestedWidth": w2,
+                                    "count": 0, "scrolls": False,
+                                    "error": "session lost: %s" % exc})
                     return out
                 if not isinstance(value, dict):
                     value = {"error": "probe returned nothing",
