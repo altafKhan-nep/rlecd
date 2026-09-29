@@ -18,6 +18,26 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 
+def visible_text(html):
+    """The words in a chunk of stored markup, as one clean line.
+
+    Strips <style>, <script> and <svg> first, because a CSS rule or an inline
+    icon path is not something anybody wants to read as a page description.
+    Then drops the image markers -- they are slots, not content -- and finally
+    the remaining tags, collapsing the whitespace the markup left behind.
+
+    One implementation, used by the changelists and the page-content screen, so
+    an editor reads the same words a visitor sees without having to read markup
+    to find them.
+    """
+    import re
+
+    text = re.sub(r"<(style|script|svg)\b.*?</\1>", " ", html or "", flags=re.S | re.I)
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return " ".join(text.split())
+
+
 class Page(models.Model):
     """One public URL.
 
@@ -100,17 +120,9 @@ class Page(models.Model):
         path never becomes the description, and collapses whitespace so the
         result is one clean line in a table cell.
         """
-        import re
-
         collected = []
         for section in self.sections.filter(is_visible=True).order_by("position"):
-            text = re.sub(
-                r"<(style|script|svg)\b.*?</\1>", " ",
-                section.content_html, flags=re.S | re.I)
-            # The image markers are not text; drop them before stripping tags.
-            text = re.sub(r"<!--rlecd-image:\d+-->", " ", text)
-            text = re.sub(r"<[^>]+>", " ", text)
-            collected.append(" ".join(text.split()))
+            collected.append(visible_text(section.content_html))
             # Kept going until there is a sentence's worth. Demanding that a
             # *single* section be long enough would blank the summary of a page
             # whose copy is split into several short sections.
@@ -222,9 +234,24 @@ class Section(models.Model):
             self.label = Section.derive_label(self.content_html, self.position)
         super().save(*args, **kwargs)
 
+    def plain_text(self, limit=None):
+        """What this section actually says, as text.
+
+        The edit screen is HTML, because the page is HTML. This is the other
+        half: so an editor can read the section without reading markup, and see
+        at a glance whether the copy is the copy they meant.
+        """
+        text = visible_text(self.content_html)
+        if limit and len(text) > limit:
+            return text[:limit].rsplit(" ", 1)[0] + "…"
+        return text
+
+    def first_image(self):
+        """This section's first image in render order, or None."""
+        return self.images.order_by("position", "pk").first()
+
     @staticmethod
     def derive_label(html, position):
-        """Best-effort human label so the CRM list is not a wall of 'html'."""
         import re
         for pattern in (r"<h1[^>]*>(.*?)</h1>", r"<h2[^>]*>(.*?)</h2>",
                         r"<h3[^>]*>(.*?)</h3>"):

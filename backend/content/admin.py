@@ -5,7 +5,10 @@ heading, reorder these blocks, hide that one — is a single screen. The raw HTM
 box is always available because captured sections are the mirror's own markup.
 """
 from django.contrib import admin
+from django.http import Http404
 from django.db.models import Sum
+from django.template.response import TemplateResponse
+from django.urls import path
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -86,59 +89,28 @@ class SectionImageAdmin(MediaPickerFieldsMixin, StudioListMixin,
         return obj.section.page.path
 
 
-class SectionInline(admin.TabularInline):
-    model = Section
-    extra = 0
-    ordering = ["position"]
-    readonly_fields = ("preview",)
-    fieldsets = (
-        (None, {
-            "fields": ("position", "label", "type", "is_visible", "preview"),
-        }),
-        ("HTML", {
-            "fields": ("content_html",),
-            "description": (
-                "Rendered exactly as stored. Django tags are available: "
-                "<code>{% static 'img/x.jpg' %}</code>, "
-                "<code>{% url 'contact' %}</code>, "
-                "<code>{% csrf_token %}</code>."
-            ),
-        }),
-        ("Structure", {
-            "classes": ("collapse",),
-            "fields": ("is_locked",),
-        }),
-    )
-
-    def preview(self, obj):
-        if not obj.pk:
-            return "-"
-        return format_html(
-            '<div style="max-height:11em;overflow:auto;border:1px solid #ccc;'
-            'padding:6px;font-size:11px;background:#fafafa">{}</div>',
-            obj.content_html[:600])
-
-    preview.short_description = "Preview"
-
-
 @admin.register(Page)
 class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
                 admin.ModelAdmin):
     list_display = ("first_image", "path", "title", "summary", "is_published",
-                    "section_count", "image_count", "locked_count", "updated_at")
+                    "content_link", "image_count", "locked_count", "updated_at")
     list_display_links = ("path",)
     media_picker_fields = ("og_image",)
     list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
     search_fields = ("path", "title", "seo_title", "seo_description")
     ordering = ("path",)
-    readonly_fields = ("created_at", "updated_at", "preview_link")
-    inlines = [SectionInline]
+    readonly_fields = ("created_at", "updated_at", "preview_link",
+                       "edit_content")
     fieldsets = (
         (None, {"fields": ("title", "slug", "path", "is_published",
                            "show_in_menu", "sort_order")}),
         ("Page content", {
-            "fields": ("preview_link",),
-            "description": "Sections are listed below, in render order.",
+            "fields": ("preview_link", "edit_content"),
+            "description": (
+                "The page body lives in its own screen, as one card per "
+                "section, so this form stays about the page rather than about "
+                "its markup."
+            ),
         }),
         ("SEO", {
             "classes": ("collapse",),
@@ -159,6 +131,90 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
             "fields": ("created_at", "updated_at"),
         }),
     )
+
+    def get_urls(self):
+        """Add the page-content screen to the page admin's own namespace.
+
+        On PageAdmin rather than the AdminSite so it sits behind the same
+        change permission as the page it describes, and so `?page=<pk>` links
+        from the section add form resolve.
+        """
+        return [
+            path("<path:object_id>/content/",
+                 self.admin_site.admin_view(self.page_content_view),
+                 name="content_page_content"),
+        ] + super().get_urls()
+
+    def page_content_view(self, request, object_id, extra_context=None):
+        """One page's sections as cards: what each says, and what it looks like.
+
+        Replaces the sections table that used to be inlined on the page form.
+        The markup is still stored exactly as captured and still has to be --
+        the pages are a byte-exact mirror -- so this is a way of *reading* that
+        markup rather than a reformatting of it.
+        """
+        page = self.get_object(request, object_id)
+        if page is None or not self.has_view_or_change_permission(request, page):
+            raise Http404(
+                f"No page with id {object_id!r} or you cannot view it.")
+
+        sections = list(
+            page.sections.select_related().prefetch_related("images")
+            .order_by("position", "pk")
+        )
+        cards = []
+        for section in sections:
+            thumbs = [image.preview_src for image in section.images.all()
+                      if image.preview_src]
+            cards.append({
+                "section": section,
+                "text": section.plain_text(limit=220),
+                "thumbs": thumbs[:6],
+                "thumb_count": len(thumbs),
+            })
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Page content"),
+            "subtitle": page.path,
+            "page": page,
+            "cards": cards,
+            "opts": self.model._meta,
+            **(extra_context or {}),
+        }
+        return TemplateResponse(request, "admin/page_content.html", context)
+
+    @admin.display(description="Content")
+    def content_link(self, obj):
+        """Open the page's content screen from the list.
+
+        The list is where an editor starts -- "which page was that on?" -- so
+        the way into the body has to be here and not only on the page form.
+        """
+        if not obj or not obj.pk:
+            return ""
+        count = obj.sections.count()
+        return format_html(
+            '<a href="{}">{}</a>',
+            reverse("admin:content_page_content", args=[obj.pk]),
+            format_html("{} section{}", count, "" if count == 1 else "s"),
+        )
+
+    @admin.display(description="Edit content")
+    def edit_content(self, obj):
+        """The button to the page's content screen.
+
+        A readonly field rather than a plain link in the fieldset description,
+        because a link built here carries the page's own permission check and
+        cannot drift out of sync with the object's id.
+        """
+        if not obj or not obj.pk:
+            return ""
+        return format_html(
+            '<a class="button" href="{}">{}</a>',
+            reverse("admin:content_page_content", args=[obj.pk]),
+            _("Edit page content"),
+        )
 
     @admin.display(description="Image")
     def first_image(self, obj):
@@ -249,19 +305,57 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
         # rather than bundled, because only the section form needs it.
         js = ("admin/js/section_editor.js",)
 
-    list_display = ("page", "position", "label", "type", "is_visible",
-                    "is_locked", "image_count", "size")
+    list_display = ("page", "position", "label", "type", "excerpt",
+                    "is_visible", "is_locked", "image_count")
     list_filter = ("type", "is_visible", "is_locked", "page")
     list_editable = ("is_visible",)
     search_fields = ("label", "content_html", "key")
     ordering = ("page", "position")
     # key is system-managed so re-imports can match sections; page and position
     # stay editable so a section can be added to or moved within a page.
-    readonly_fields = ("key", "preview")
-    fields = ("page", "key", "position", "label", "type", "is_visible",
-              "is_locked", "content_html", "preview")
+    readonly_fields = ("key", "as_text", "preview")
+    fieldsets = (
+        (None, {"fields": ("page", "position", "label", "type", "is_visible")}),
+        # The words, so an editor can read the section without reading markup.
+        ("What this section says", {
+            "fields": ("as_text", "preview"),
+        }),
+        ("Images", {
+            # The rows themselves are the inline below; this is just the signpost,
+            # because an inline with no heading above it reads as part of the
+            # previous fieldset.
+            "fields": (),
+            "description": "Images for this section are in the table below.",
+        }),
+        # Markup last and collapsed. It still has to be here and still has to be
+        # the source of truth -- the pages are a byte-exact mirror -- but it is
+        # not what most edits are about, so it should not be the first thing on
+        # the screen or the loudest thing in it.
+        ("HTML (only if you need it)", {
+            "classes": ("collapse",),
+            "fields": ("key", "is_locked", "content_html"),
+            "description": (
+                "Rendered exactly as stored. Django tags are available: "
+                "<code>{% static 'img/x.jpg' %}</code>, "
+                "<code>{% url 'contact' %}</code>, "
+                "<code>{% csrf_token %}</code>. A live preview of this markup "
+                "appears below the editor."
+            ),
+        }),
+    )
     inlines = [SectionImageInline]
     actions = ["make_visible", "make_hidden"]
+
+    @admin.display(description="Text")
+    def excerpt(self, obj):
+        """The first line of the section's words, for the list."""
+        if not obj or not obj.pk:
+            return ""
+        text = obj.plain_text(limit=90)
+        if not text:
+            return format_html('<span class="muted">{}</span>',
+                               _("Image or layout only"))
+        return format_html('<span class="page-summary">{}</span>', text)
 
     @admin.display(description="Images")
     def image_count(self, obj):
@@ -286,14 +380,31 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
         return f"{len(obj.content_html or ''):,} B"
 
     def preview(self, obj):
-        if not obj.pk:
-            return "-"
-        return format_html(
-            '<pre style="max-height:16em;overflow:auto;border:1px solid #ccc;'
-            'padding:6px;font-size:11px;background:#fafafa">{}</pre>',
-            obj.content_html[:2000])
+        if obj.pk:
+            return format_html(
+                '<div class="section-preview-note">{}</div>', obj.plain_text(400))
+        return "-"
 
-    preview.short_description = "Preview"
+    preview.short_description = "Current text"
+
+    @admin.display(description="This section's text")
+    def as_text(self, obj):
+        """The section's words, rendered as prose rather than markup.
+
+        The two halves of editing a section are different jobs. Most edits are
+        "is this the right sentence, is it showing" -- answered by reading.
+        The rest are layout changes -- answered by the HTML box further down.
+        This is the reading half, and it is above the fold for that reason.
+        """
+        if not obj or not obj.pk:
+            return ""
+        text = obj.plain_text()
+        if not text:
+            return format_html(
+                '<p class="muted">{}</p>',
+                _("This section has no text — it is images and layout. "
+                  "Edit it in the HTML section below, or add an image above."))
+        return format_html('<div class="section-as-text">{}</div>', text)
 
     @admin.action(description="Show selected sections")
     def make_visible(self, request, queryset):
@@ -323,26 +434,52 @@ class ServiceAreaAdmin(StudioListMixin, admin.ModelAdmin):
 
 @admin.register(FAQ)
 class FAQAdmin(StudioListMixin, admin.ModelAdmin):
-    list_display = ("question", "page", "service", "is_published", "sort_order")
+    list_display = ("question", "answer_excerpt", "page", "service",
+                    "is_published", "sort_order")
     list_editable = ("is_published", "sort_order")
     list_filter = ("is_published", "page", "service")
     search_fields = ("question", "answer")
 
+    @admin.display(description="Answer")
+    def answer_excerpt(self, obj):
+        """The question is the title, so the answer is the description.
+
+        Truncated rather than shown whole: this column exists so a list of FAQs
+        can be scanned, and a column that wraps to four lines stops that.
+        """
+        if not obj or not obj.pk:
+            return ""
+        text = " ".join((obj.answer or "").split())
+        if not text:
+            return format_html('<span class="muted">—</span>')
+        if len(text) > 90:
+            text = text[:90].rsplit(" ", 1)[0] + "…"
+        return format_html('<span class="page-summary">{}</span>', text)
+
 
 @admin.register(Testimonial)
 class TestimonialAdmin(StudioListMixin, admin.ModelAdmin):
-    list_display = ("author", "location", "rating", "is_featured",
-                    "is_published", "sort_order")
+    list_display = ("author", "quote_excerpt", "location", "rating",
+                    "is_featured", "is_published", "sort_order")
     list_editable = ("is_featured", "is_published", "sort_order")
     list_filter = ("is_published", "is_featured", "rating")
     search_fields = ("author", "quote", "location")
+
+    @admin.display(description="Quote")
+    def quote_excerpt(self, obj):
+        if not obj or not obj.pk:
+            return ""
+        text = " ".join((obj.quote or "").split())
+        if len(text) > 100:
+            text = text[:100].rsplit(" ", 1)[0] + "…"
+        return format_html('<span class="page-summary">{}</span>', text)
 
 
 @admin.register(Project)
 class ProjectAdmin(MediaPickerFieldsMixin, StudioListMixin,
                    admin.ModelAdmin):
-    list_display = ("project_thumb", "title", "service", "area", "completed_on",
-                    "is_published")
+    list_display = ("project_thumb", "title", "summary_excerpt", "service",
+                    "area", "completed_on", "is_published")
     list_display_links = ("project_thumb", "title")
     media_picker_fields = ("image",)
     list_editable = ("is_published",)
@@ -363,6 +500,18 @@ class ProjectAdmin(MediaPickerFieldsMixin, StudioListMixin,
         return format_html(
             '<img src="{}" class="thumb" alt="{}" loading="lazy">',
             src, obj.title or "project")
+
+    @admin.display(description="Summary")
+    def summary_excerpt(self, obj):
+        """The project's own description, so the list is not just titles."""
+        if not obj or not obj.pk:
+            return ""
+        text = " ".join((obj.summary or "").split())
+        if not text:
+            return format_html('<span class="muted">—</span>')
+        if len(text) > 90:
+            text = text[:90].rsplit(" ", 1)[0] + "…"
+        return format_html('<span class="page-summary">{}</span>', text)
 
     @admin.display(description="Stored image reference")
     def image_reference(self, obj):

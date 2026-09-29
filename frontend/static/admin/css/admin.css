@@ -2285,3 +2285,171 @@ input:focus, select:focus, textarea:focus {
     color: var(--ink-soft, #5b6167);
 }
 
+/* ------------------------------------------------------------ page content
+   One page's sections as cards. Replaces the sections table that used to be
+   inlined on the page form, where the markup column was 3,000 characters wide
+   and the row you wanted was somewhere inside it. */
+
+.content-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.content-head-actions { display: flex; gap: 8px; }
+
+.content-note {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--ink-soft, #5b6167);
+}
+
+.content-note.is-warning {
+    padding: 9px 12px;
+    border-radius: 7px;
+    background: #fdf3e2;
+    color: #8A5A12;
+}
+
+.content-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.content-card {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+    padding: 13px 15px;
+    background: #fff;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 9px;
+}
+
+/* A hidden section is written but switched off. Dimming it says "this exists
+   but nobody sees it", which is the thing an editor has to remember. */
+.content-card.is-hidden-section { background: #f7f8f9; }
+.content-card.is-hidden-section .content-card-title { color: var(--ink-soft, #5b6167); }
+
+.content-card-order {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--ink-soft, #5b6167);
+}
+
+.content-card-position {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink, #1c2126);
+}
+
+.content-card-type { text-transform: capitalize; }
+
+.content-flag {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+.content-flag.is-on { background: #e7f3ec; color: #1F7A4D; }
+.content-flag.is-off { background: #f0f1f2; color: #5b6167; }
+
+.content-card-body { min-width: 0; }
+
+.content-card-title {
+    margin: 0 0 6px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink, #1c2126);
+}
+
+.content-card-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.content-card-thumbs img {
+    width: 76px;
+    height: 54px;
+    object-fit: cover;
+    border-radius: 5px;
+    border: 1px solid var(--line, #d6d9dd);
+    background: #eef0f2;
+}
+
+.content-card-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink, #1c2126);
+}
+
+.content-card-text.is-muted { color: var(--ink-soft, #5b6167); font-style: italic; }
+
+.content-card-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.content-empty {
+    padding: 26px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-soft, #5b6167);
+    background: #f7f8f9;
+    border: 1px dashed var(--line, #d6d9dd);
+    border-radius: 9px;
+}
+
+/* A section's own words, above the HTML box on its change form. */
+.section-as-text {
+    max-width: 68ch;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--ink, #1c2126);
+    background: #fbfbfc;
+    border: 1px solid var(--line-soft, #e6e8ea);
+    border-left: 3px solid var(--c-teal, #0E8F87);
+    border-radius: 6px;
+    padding: 11px 13px;
+}
+
+.section-preview-note {
+    max-width: 68ch;
+    font-size: 12.5px;
+    color: var(--ink-soft, #5b6167);
+}
+
+.page-summary {
+    display: inline-block;
+    max-width: 42ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-soft, #5b6167);
+    font-size: 12.5px;
+}
+
+@media (max-width: 860px) {
+    .content-card { grid-template-columns: 1fr; }
+    .content-card-actions { flex-direction: row; }
+}

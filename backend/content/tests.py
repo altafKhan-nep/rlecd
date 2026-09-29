@@ -17,7 +17,7 @@ from django.urls import reverse
 from content import importer
 from content.models import (
     FAQ, Page, Project, Section, SectionImage, ServiceArea, SiteSetting,
-    Testimonial, TrustBadge,
+    Testimonial, TrustBadge, visible_text,
 )
 from content import render as render_module
 from content.render import (
@@ -266,14 +266,20 @@ class AdminCrudTests(TestCase):
         area = ServiceArea.objects.get(name="Owings Mills")
         self.assertEqual(area.slug, "owings-mills")
 
-    def test_page_admin_rejects_post_without_inline_management_data(self):
-        """Documents why the formset data above is required."""
+    def test_a_page_can_be_created_without_any_sections(self):
+        """The page form no longer carries a sections inline.
+
+        The body moved to its own screen, so a page can be created from its
+        settings alone and written afterwards. Previously the form rejected any
+        POST that did not carry the inline's formset data, which made creating a
+        page and writing it a single all-or-nothing request.
+        """
         response = self.client.post(reverse("admin:content_page_add"), {
-            "title": "No inline", "slug": "no-inline", "path": "/no-inline/",
+            "title": "New", "slug": "new", "path": "/new/",
             "sort_order": 0,
-        })
+        }, follow=True)
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(Page.objects.filter(slug="no-inline").exists())
+        self.assertTrue(Page.objects.filter(slug="new").exists())
 
     def test_bulk_show_and_hide_actions(self):
         url = reverse("admin:content_section_changelist")
@@ -853,3 +859,286 @@ class SectionImageAdminTests(TestCase):
         self.image.save()
         response = self.client.get(reverse("admin:content_page_changelist"))
         self.assertEqual(response.status_code, 200)
+
+
+class PageContentScreenTests(TestCase):
+    """The page body gets its own screen, as cards.
+
+    It used to be a table of eight columns inlined on the page form, where the
+    markup cell was 3,000 characters and the row you wanted was somewhere
+    inside it. These tests pin what replaced it, and the two things that must
+    not have changed: the markup is still stored verbatim, and the screen is
+    still permission-checked against the page.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("e", "e@e.com", "pw")
+        cls.page = Page.objects.create(slug="p", title="P", path="/p/")
+        cls.hero = Section.objects.create(
+            page=cls.page, key="hero", label="Hero", position=0,
+            content_html=('<section><h1>Kitchen Portfolio</h1>'
+                          '<!--rlecd-image:1-->'
+                          '<p>Twenty of our finest remodels.</p></section>'))
+        cls.gallery = Section.objects.create(
+            page=cls.page, key="gallery", label="Gallery", position=1,
+            content_html='<div class="gallery"><!--rlecd-image:1--></div>')
+        cls.hidden = Section.objects.create(
+            page=cls.page, key="old", label="Retired", position=2,
+            content_html="<p>No longer shown</p>", is_visible=False)
+        SectionImage.objects.create(
+            section=cls.hero, position=0, image="img/hero.jpg", alt_text="Hero")
+        SectionImage.objects.create(
+            section=cls.gallery, position=0, image="img/g1.jpg")
+        SectionImage.objects.create(
+            section=cls.gallery, position=1, image="img/g2.jpg")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        self.url = reverse("admin:content_page_content", args=[self.page.pk])
+
+    def test_it_renders_a_card_per_section_in_order(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "admin/page_content.html")
+        self.assertEqual([c["section"].position for c in
+                          response.context["cards"]], [0, 1, 2])
+
+    def test_a_card_shows_the_sections_words_not_its_markup(self):
+        response = self.client.get(self.url)
+        card = response.context["cards"][0]
+        self.assertIn("Kitchen Portfolio", card["text"])
+        self.assertNotIn("<h1>", card["text"])
+        self.assertNotIn("rlecd-image", card["text"])
+
+    def test_a_card_shows_the_sections_pictures(self):
+        card = self.client.get(self.url).context["cards"][1]
+        self.assertEqual(card["thumbs"], ["/static/img/g1.jpg",
+                                          "/static/img/g2.jpg"])
+
+    def test_a_section_with_no_images_gets_no_strip(self):
+        """A blank strip is worse than none -- it reads as a broken image."""
+        card = self.client.get(self.url).context["cards"][2]
+        self.assertEqual(card["thumbs"], [])
+
+    def test_a_hidden_section_is_flagged_not_hidden(self):
+        """A section that was written and then switched off looks identical to
+        one that was never written, so it has to be said out loud."""
+        html = self.client.get(self.url).content.decode()
+        self.assertIn("is-hidden-section", html)
+        self.assertIn("Hidden", html)
+
+    def test_an_image_only_section_says_so_in_words(self):
+        card = self.client.get(self.url).context["cards"][1]
+        self.assertEqual(card["text"], "")
+        self.assertContains(self.client.get(self.url),
+                              "image or layout block")
+
+    def test_each_card_links_to_its_section(self):
+        html = self.client.get(self.url).content.decode()
+        for section in (self.hero, self.gallery, self.hidden):
+            self.assertIn(
+                reverse("admin:content_section_change", args=[section.pk]), html)
+
+    def test_a_page_with_no_sections_says_so(self):
+        empty = Page.objects.create(slug="empty", title="E", path="/empty/")
+        response = self.client.get(
+            reverse("admin:content_page_content", args=[empty.pk]))
+        self.assertContains(response, "no sections")
+
+    def test_a_page_with_no_content_is_called_out(self):
+        """It renders blank on the site, and the captured version is being used
+        instead. Saying so here beats an editor wondering why it looks empty."""
+        empty = Page.objects.create(slug="e2", title="E", path="/e2/")
+        self.assertContains(
+            self.client.get(reverse("admin:content_page_content",
+                                    args=[empty.pk])),
+            "renders blank")
+
+    def test_the_changelist_offers_a_way_in(self):
+        """The list is where an editor starts, so the way into the body has to
+        be on the list and not only on the page form."""
+        self.assertContains(
+            self.client.get(reverse("admin:content_page_changelist")),
+            reverse("admin:content_page_content", args=[self.page.pk]))
+
+    def test_the_page_form_offers_a_way_in(self):
+        self.assertContains(
+            self.client.get(reverse("admin:content_page_change",
+                                    args=[self.page.pk])),
+            reverse("admin:content_page_content", args=[self.page.pk]))
+
+    def test_the_page_form_no_longer_carries_the_sections_table(self):
+        """The wall of markup this replaced."""
+        html = self.client.get(
+            reverse("admin:content_page_change", args=[self.page.pk])).content.decode()
+        self.assertNotIn("sections-TOTAL_FORMS", html)
+        self.assertNotIn("field-content_html", html)
+
+    def test_it_needs_a_login(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+
+    def test_a_staff_member_without_permission_is_refused(self):
+        """It is a view of a page's body, so it obeys the page's permissions."""
+        from django.contrib.auth.models import Permission
+
+        staff = User.objects.create_user("s", "s@e.com", "pw", is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        staff.user_permissions.add(Permission.objects.get(
+            codename="view_page", content_type__app_label="content"))
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_a_missing_page_is_a_404_not_a_500(self):
+        self.assertEqual(
+            self.client.get(reverse("admin:content_page_content", args=[99999])
+                            ).status_code, 404)
+
+    def test_it_does_not_change_the_stored_markup(self):
+        """The screen is a way of reading the markup, not of rewriting it."""
+        before = list(self.page.sections.order_by("position")
+                      .values_list("content_html", flat=True))
+        self.client.get(self.url)
+        after = list(self.page.sections.order_by("position")
+                     .values_list("content_html", flat=True))
+        self.assertEqual(before, after)
+        self.assertIn("<!--rlecd-image:1-->", self.hero.content_html)
+
+
+class SectionFormReadabilityTests(TestCase):
+    """The section's own form: words first, markup last and collapsed."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("e", "e@e.com", "pw")
+        cls.page = Page.objects.create(slug="p", title="P", path="/p/")
+        cls.section = Section.objects.create(
+            page=cls.page, key="s", label="S", position=0,
+            content_html='<h1>Heading</h1><!--rlecd-image:1--><p>Body text.</p>')
+        SectionImage.objects.create(
+            section=cls.section, position=0, image="img/a.jpg", alt_text="A")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        self.html = self.client.get(
+            reverse("admin:content_section_change", args=[self.section.pk])
+        ).content.decode()
+
+    def test_the_words_are_shown_as_words(self):
+        self.assertIn("section-as-text", self.html)
+        self.assertIn("Heading Body text.", self.html)
+
+    def test_the_html_box_is_still_there(self):
+        """It has to be: the page is a byte-exact mirror, so the markup is the
+        source of truth. This is about where it sits, not whether it exists."""
+        self.assertIn("field-content_html", self.html)
+
+    def test_the_html_box_is_collapsed(self):
+        """Not what most edits are about, so it should not be the loudest
+        thing on the screen."""
+        box_at = self.html.index('name="content_html"')
+        heading_at = self.html.index("HTML (only if you need it)")
+        self.assertLess(heading_at, box_at)
+        # The class is on the wrapping fieldset, which opens before the
+        # heading, so the window has to start before it.
+        self.assertIn('class="module aligned collapse"',
+                      self.html[heading_at - 400:heading_at])
+
+    def test_the_images_table_is_on_this_form(self):
+        self.assertIn("images-TOTAL_FORMS", self.html)
+        self.assertIn("section-image-thumb", self.html)
+
+    def test_a_section_with_no_text_explains_itself(self):
+        """Otherwise an image-only section looks like a broken record."""
+        Section.objects.create(
+            page=self.page, key="g", label="Gallery", position=1,
+            content_html='<div><!--rlecd-image:1--></div>')
+        response = self.client.get(
+            reverse("admin:content_section_change", args=[self.section.pk]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_list_shows_the_words_not_the_byte_count(self):
+        """`size` was "3,597 B", which tells an editor nothing about the copy."""
+        html = self.client.get(
+            reverse("admin:content_section_changelist")).content.decode()
+        self.assertIn("Heading Body text.", html)
+        self.assertNotIn("size", html.split("<thead>")[1].split("</thead>")[0])
+
+
+class SimpleTabExcerptTests(TestCase):
+    """The other content tabs get the same treatment: a readable description."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("e", "e@e.com", "pw")
+        cls.page = Page.objects.create(slug="p", title="P", path="/p/")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_faq_shows_the_answer_next_to_the_question(self):
+        FAQ.objects.create(page=self.page, question="How long?",
+                           answer="Most kitchens take four to six weeks "
+                                  "from signed contract to completion.")
+        html = self.client.get(
+            reverse("admin:content_faq_changelist")).content.decode()
+        self.assertIn("How long?", html)
+        self.assertIn("Most kitchens take four to six weeks", html)
+
+    def test_testimonial_shows_the_quote_next_to_the_author(self):
+        Testimonial.objects.create(
+            author="Dana", location="Owings Mills",
+            quote="They turned a basement into a bar we actually use.")
+        html = self.client.get(
+            reverse("admin:content_testimonial_changelist")).content.decode()
+        self.assertIn("Dana", html)
+        self.assertIn("They turned a basement", html)
+
+    def test_project_shows_its_summary(self):
+        Project.objects.create(title="Kitchen", summary="A six-week gut "
+                                                     "renovation in Bethesda.")
+        html = self.client.get(
+            reverse("admin:content_project_changelist")).content.decode()
+        self.assertIn("A six-week gut renovation", html)
+
+    def test_a_blank_description_renders_a_dash_not_a_blank_cell(self):
+        FAQ.objects.create(page=self.page, question="Q", answer="")
+        html = self.client.get(
+            reverse("admin:content_faq_changelist")).content.decode()
+        self.assertIn('<span class="muted">—</span>', html)
+
+    def test_a_long_description_is_truncated_with_an_ellipsis(self):
+        FAQ.objects.create(page=self.page, question="Q",
+                           answer="word " * 80)
+        html = self.client.get(
+            reverse("admin:content_faq_changelist")).content.decode()
+        self.assertIn("…", html)
+
+
+class VisibleTextTests(TestCase):
+    def test_it_drops_markup_scripts_and_markers(self):
+        self.assertEqual(
+            visible_text("<style>a{color:red}</style><script>var x=1</script>"
+                         "<svg><path d='M0'/></svg>"
+                         "<!--rlecd-image:1--><p>Just  the words</p>"),
+            "Just the words")
+
+    def test_it_collapses_whitespace(self):
+        self.assertEqual(visible_text("<p>one\n\n  two</p>"), "one two")
+
+    def test_it_handles_empty_and_none(self):
+        self.assertEqual(visible_text(""), "")
+        self.assertEqual(visible_text(None), "")
+
+    def test_it_keeps_words_inside_attributes_out(self):
+        """An href's value is not something anybody reads as copy."""
+        self.assertEqual(visible_text('<a href="/very/long/path">Click</a>'),
+                         "Click")
+
+    def test_section_plain_text_truncates_on_a_word_boundary(self):
+        section = Section(content_html="<p>" + "word " * 40 + "</p>")
+        text = section.plain_text(limit=50)
+        self.assertTrue(text.endswith("…"))
+        self.assertLessEqual(len(text), 51)
+        self.assertFalse(text.endswith(" …"))

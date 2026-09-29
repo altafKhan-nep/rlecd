@@ -1,8 +1,10 @@
 {% load i18n %}
-{# The input stays a plain text input on purpose: the field holds a path, and
-   the picker only writes into it. An editor can still type a repo static path
-   or a CDN URL the library does not know about, and a captured row that
-   already holds one is never invalidated by this markup. #}
+{% comment %}
+The input stays a plain text input on purpose: the field holds a path, and the
+picker only writes into it. An editor can still type a repo static path or a
+CDN URL the library does not know about, and a captured row that already holds
+one is never invalidated by this markup.
+{% endcomment %}
 <div class="media-path" data-media-picker>
   <div class="media-path-field">{% include "django/forms/widgets/input.html" %}</div>
 
@@ -12,15 +14,19 @@
             title="{% translate 'Pick an image from the media library' %}">
       {% translate "Choose from library" %}
     </button>
-    {# Hidden until there is something to clear; a live button that always
-       wipes the field is one stray click away from data loss. #}
+    {% comment %}
+    Hidden until there is something to clear; a live button that always wipes
+    the field is one stray click away from data loss.
+    {% endcomment %}
     <button type="button" class="button media-picker-clear" data-picker-clear
             hidden title="{% translate 'Empty this field' %}">
       {% translate "Clear" %}
     </button>
   </div>
 
-  {# Filled in by the script with a thumbnail of the path currently in the
-       field, so a picked image is confirmed before the form is saved. #}
+  {% comment %}
+  Filled in by the script with a thumbnail of the path currently in the field,
+  so a picked image is confirmed before the form is saved.
+  {% endcomment %}
   <div class="media-picker-preview" data-picker-preview hidden></div>
 </div>

@@ -1,0 +1,115 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% comment %}
+One page's content, as cards.
+
+Replaces the sections table that used to sit on the Page form. That table
+showed position, label, type, visibility, a truncated copy of the markup, the
+markup itself and a lock flag in eight columns, and the markup won: editing a
+headline meant scrolling through 3,000 characters of HTML to find the row.
+
+Here each section is a card with the things an editor actually decides on --
+what it says, what it looks like, whether it shows -- and the HTML is one
+click away on the section's own form.
+
+The markup is not lost by this. It is still the source of truth and still has
+to be, because the pages are a byte-exact mirror and a section's HTML is
+reassembled verbatim. This screen is a way of *reading* that markup, not a
+replacement for it.
+{% endcomment %}
+
+{% block title %}{% blocktranslate with path=page.path %}Content of {{ path }}{% endblocktranslate %} | {{ title }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+  &rsaquo; <a href="{% url 'admin:content_page_changelist' %}">{% translate "Pages" %}</a>
+  &rsaquo; <a href="{% url 'admin:content_page_change' page.pk %}">{{ page.path }}</a>
+  &rsaquo; {% translate "Content" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main" class="page-content">
+
+  <div class="content-head">
+    <div>
+      <h1 class="dash-title">{{ page.title }}</h1>
+      <p class="dash-sub">
+        {{ page.path }} &middot;
+        {% blocktranslate count counter=cards|length %}{{ counter }} section{% plural %}{{ counter }} sections{% endblocktranslate %}
+        {% if not page.is_published %}
+          &middot; <strong>{% translate "Unpublished" %}</strong>
+        {% endif %}
+      </p>
+    </div>
+    <div class="content-head-actions">
+      <a class="button" href="{{ page.get_absolute_url }}">{% translate "Edit page settings" %}</a>
+      <a class="button" href="{% url 'admin:content_section_add' %}?page={{ page.pk }}">{% translate "Add section" %}</a>
+    </div>
+  </div>
+
+  {% if page.has_content %}
+    <p class="content-note">
+      {% translate "Each card is one block of the page, in the order shown. Edit one to change its text or images." %}
+    </p>
+  {% else %}
+    <p class="content-note is-warning">
+      {% translate "This page has no content yet, so it renders blank. The captured version is still being used as a fallback." %}
+    </p>
+  {% endif %}
+
+  <ol class="content-cards">
+    {% for card in cards %}
+      <li class="content-card{% if not card.section.is_visible %} is-hidden-section{% endif %}">
+        <div class="content-card-order">
+          <span class="content-card-position">{{ card.section.position }}</span>
+          <span class="content-card-type">{{ card.section.get_type_display }}</span>
+          {% if card.section.is_visible %}
+            <span class="content-flag is-on">{% translate "Shown" %}</span>
+          {% else %}
+            {% comment %}
+            Worth flagging rather than hiding: a section that was written and
+            then switched off looks identical to one that was never written.
+            {% endcomment %}
+            <span class="content-flag is-off">{% translate "Hidden" %}</span>
+          {% endif %}
+        </div>
+
+        <div class="content-card-body">
+          <h2 class="content-card-title">{{ card.section.label }}</h2>
+
+          {% if card.thumbs %}
+            <div class="content-card-thumbs">
+              {% for thumb in card.thumbs %}
+                <img src="{{ thumb }}" alt="" loading="lazy">
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          {% if card.text %}
+            <p class="content-card-text">{{ card.text }}</p>
+          {% else %}
+            <p class="content-card-text is-muted">
+              {% translate "No text in this section — it is an image or layout block." %}
+            </p>
+          {% endif %}
+        </div>
+
+        <div class="content-card-actions">
+          <a class="button"
+             href="{% url 'admin:content_section_change' card.section.pk %}">{% translate "Edit" %}</a>
+          <a class="button is-secondary"
+             href="{{ card.section.page.get_absolute_url }}"
+             target="_blank" rel="noopener">{% translate "View page" %}</a>
+        </div>
+      </li>
+    {% empty %}
+      <li class="content-empty">
+        {% translate "This page has no sections. Add one to start writing." %}
+      </li>
+    {% endfor %}
+  </ol>
+</div>
+{% endblock %}

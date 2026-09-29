@@ -1002,8 +1002,16 @@ class IconRegistryTests(TestCase):
     """
 
     def _templates(self):
-        root = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "admin"
-        return sorted(root.glob("*.html"))
+        """Every admin template the project owns.
+
+        Both roots, not just the frontend one. The main app has its own
+        `templates/admin/widgets/` because the form renderer cannot see
+        TEMPLATES["DIRS"] at all, so a widget template there is exactly the kind
+        of file a scan that only looks in frontend/ would miss -- and did.
+        """
+        base = Path(__file__).resolve().parents[2]
+        return sorted((base / "frontend" / "templates" / "admin").glob("**/*.html")) + sorted(
+            (base / "backend" / "main" / "templates" / "admin").glob("**/*.html"))
 
     def test_every_icon_name_used_in_a_template_exists(self):
         from main.icons import PATHS
@@ -1090,8 +1098,16 @@ class AdminTemplateHygieneTests(TestCase):
         self.client.force_login(self.user)
 
     def _templates(self):
-        root = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "admin"
-        return sorted(root.glob("*.html"))
+        """Every admin template the project owns.
+
+        Both roots, not just the frontend one. The main app has its own
+        `templates/admin/widgets/` because the form renderer cannot see
+        TEMPLATES["DIRS"] at all, so a widget template there is exactly the kind
+        of file a scan that only looks in frontend/ would miss -- and did.
+        """
+        base = Path(__file__).resolve().parents[2]
+        return sorted((base / "frontend" / "templates" / "admin").glob("**/*.html")) + sorted(
+            (base / "backend" / "main" / "templates" / "admin").glob("**/*.html"))
 
     def test_no_admin_template_uses_a_multi_line_hash_comment(self):
         """The source-level cause. `{% comment %}` is the multi-line form."""
