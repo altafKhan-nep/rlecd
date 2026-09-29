@@ -37,6 +37,24 @@
         if (!input || !preview) return;
 
         var path = (input.value || '').trim();
+
+        /* Rewriting the preview is a DOM mutation, and this function is reached
+           from a MutationObserver watching the whole document. A version that
+           always rewrote therefore retriggered itself forever: empty the
+           preview, append a fresh node, observe that, empty it again. The tab
+           never went idle, so the page never finished loading -- and because
+           the whole form sits inside the observed document it could not be
+           saved either. Any admin page holding a media path hung on open, which
+           is why the section form was unusable while the page form, whose only
+           picker was empty, looked fine.
+
+           So: touch the DOM only when what the preview should show has actually
+           changed. A second pass becomes a no-op and the observer settles after
+           one cycle. */
+        var signature = 'v1:' + path;
+        if (root.dataset.pickerSignature === signature) return;
+        root.dataset.pickerSignature = signature;
+
         if (clear) clear.hidden = !path;
         if (!path) {
             preview.hidden = true;

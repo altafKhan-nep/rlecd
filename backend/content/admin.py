@@ -420,7 +420,7 @@ class SectionAdmin(MediaPickerFieldsMixin, StudioListMixin,
                                _("Image or layout only"))
         return format_html('<span class="page-summary">{}</span>', text)
 
-    @admin.display(description="")
+    @admin.display(description="On the site")
     def edit_hint(self, obj):
         """Says plainly which copy will be live after saving.
 
