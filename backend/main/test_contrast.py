@@ -461,6 +461,43 @@ class DesignTokenTests(SimpleTestCase):
                         f"{selector.strip()[:40]} has a {track}px floor, which "
                         f"alone exceeds a phone")
 
+    def test_the_login_box_is_not_wider_than_the_screen(self):
+        """The login page had the same scrollbar, for the same kind of reason.
+
+        Django's vendored login.css gives the box a fixed `width: 28em` with a
+        `min-width: 300px` floor and 100px of top margin. On a 375px phone that
+        is wider than the viewport, and the margin plus the box is taller than a
+        short window, so the submit button fell below the fold -- which on a
+        login form is a dead end.
+        """
+        block = re.search(
+            r"body\.login #container\s*\{([^}]*)\}", self.responsive)
+        self.assertIsNotNone(
+            block, "no login container override in responsive.css")
+        body = block.group(1)
+        self.assertIn("min(28em, 100%)", body,
+                      "the fixed 28em width must become fluid")
+        self.assertIn("min-width: 0", body,
+                      "the 300px floor must go, or a narrow phone still scrolls")
+        # Equal specificity to Django's own rule and relying on link order
+        # would break the moment the template stopped double-loading us.
+        self.assertIn("margin: clamp(", body,
+                      "a fixed 100px top margin overflows a short window")
+
+    def test_no_login_rule_is_ordered_by_accident(self):
+        """`body.login` beats Django's `.login` on specificity, not by luck.
+
+        responsive.css is currently linked twice on the login page and only the
+        second copy is after login.css. If that ever changes, a same-specificity
+        override would silently stop applying.
+        """
+        for selector in re.findall(r"(body\.login [^{]+)\{", self.responsive):
+            with self.subTest(selector=selector.strip()):
+                self.assertTrue(
+                    selector.strip().startswith("body."),
+                    f"{selector.strip()!r} relies on stylesheet order, not "
+                    f"specificity, to beat Django's vendored login.css")
+
     def test_the_board_wraps_instead_of_scrolling(self):
         board = re.search(r"\.kanban-board\s*\{([^}]*)\}", self.admin)
         self.assertIsNotNone(board, "no .kanban-board rule")

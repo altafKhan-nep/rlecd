@@ -405,3 +405,69 @@
    single line. Scrolling inside the box is what a textarea is for, and it does
    not move the page. */
 textarea { max-width: 100%; }
+
+/* ==========================================================================
+   THE LOGIN PAGE
+   ==========================================================================
+
+   Django's own login.css -- vendored into backend/staticfiles/, which is a
+   build artifact and gitignored -- gives the login box a fixed `width: 28em`
+   with a `min-width: 300px` floor and a 100px top margin. 28em plus the
+   padding is wider than a 375px phone, and the margin plus the box is taller
+   than a short window, so the page grows a horizontal scrollbar and the form
+   is cut off at the bottom.
+
+   The overrides live here rather than in staticfiles/ for two reasons: that
+   directory is gitignored and would be blown away by the next collectstatic,
+   and this file already owns the breakpoints, so a login rule added
+   elsewhere would be a second scale to keep in step.
+
+   The box becomes fluid: a max-width for the comfortable case, a width that
+   fills a phone, and vertical margin that collapses on a short screen.
+*/
+
+body.login #container {
+    /* 28em is a fixed width, so a narrow window overflowed.
+       `body.login` rather than `.login` so this wins on specificity and not
+       on the order the two stylesheets happen to be linked in. */
+    width: min(28em, 100%);
+    min-width: 0;
+    box-sizing: border-box;
+    /* 100px of top margin on a short window pushes the submit button below
+     * the fold, which on a login form is a dead end. */
+    margin: clamp(16px, 12vh, 100px) auto;
+}
+
+.login #header {
+    flex-wrap: wrap;
+    padding: 15px 16px;
+}
+
+.login #content { padding: 20px 16px; }
+
+@media (max-width: 640px) {
+    body.login #container {
+        /* Full-bleed on a phone: the 20px #content padding plus a border eats
+         * most of a 375px screen. */
+        width: 100%;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .login #header { border-bottom: 0; }
+
+    .login #content { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+    .login .form-row { padding: 6px 0; }
+
+    .login .submit-row input[type="submit"] {
+        width: 100%;
+        padding: 12px;
+    }
+}
