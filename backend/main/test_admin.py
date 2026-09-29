@@ -17,7 +17,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from content.models import MediaItem
+from content.models import MediaItem, Page, Project, TrustBadge
 from crm.models import Lead, LeadStatus, Service
 from main.admin_site import (
     GAP_OK,
@@ -26,6 +26,7 @@ from main.admin_site import (
     _month_floor,
     _shift_month,
 )
+from main.widgets import MediaPathWidget
 
 MEDIA = tempfile.mkdtemp(prefix="studio-admin-tests-")
 
@@ -1356,3 +1357,225 @@ def _fake_request(user):
     request = RequestFactory().get("/admin/")
     request.user = user
     return request
+
+
+class MediaPickerTests(TestCase):
+    """The picker must decorate the path fields, never replace them.
+
+    `Page.og_image`, `Project.image` and `TrustBadge.image` are CharFields
+    holding paths, and `content.models.MediaItem` documents why. So the bar for
+    this feature is not "can pick an image" but "can pick an image without any
+    existing row or hand-typed value becoming invalid".
+    """
+
+    def setUp(self):
+        self.media_dir = tempfile.mkdtemp(prefix="studio-picker-tests-")
+        self.addCleanup(shutil.rmtree, self.media_dir, ignore_errors=True)
+        self.owner = User.objects.create_superuser("owner", "o@example.com", "pw")
+        self.client.force_login(self.owner)
+        # Every test that touches image.url needs the field patched to a real
+        # directory, since MEDIA_ROOT points nowhere useful under the test
+        # runner. Applied here rather than decorated so it cannot be forgotten
+        # on one test and half the class runs against a missing path.
+        patcher = override_settings(MEDIA_ROOT=self.media_dir)
+        patcher.enable()
+        self.addCleanup(patcher.disable)
+
+    def make_media(self, name, **kwargs):
+        kwargs.setdefault("is_published", True)
+        return MediaItem.objects.create(
+            title=kwargs.pop("title", name.rsplit(".", 1)[0].replace("-", " ").title()),
+            alt_text=kwargs.pop("alt_text", ""),
+            image=SimpleUploadedFile(name, png_bytes(), content_type="image/png"),
+            **kwargs,
+        )
+
+    def make_page(self, slug, og_image=""):
+        # `path` is unique and non-blank, and Page.__str__ includes it, so a
+        # page built without one is both ambiguous in output and a constraint
+        # violation waiting to happen across subTests.
+        return Page.objects.create(slug=slug, title=slug.replace("-", " ").title(),
+                                   path=f"/{slug}/", og_image=og_image)
+
+    def add_form(self, model, url_name):
+        response = self.client.get(reverse(f"admin:content_{url_name}_add"))
+        self.assertEqual(response.status_code, 200)
+        return response.context["adminform"].form
+
+    def picker_response(self):
+        return self.client.get(reverse("admin:media_picker"))
+
+    def picker_json(self):
+        response = self.picker_response()
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    # --- the widget is on the right fields, and only those --------------
+    def test_picker_lands_on_exactly_the_three_image_fields(self):
+        for model, url_name, field in (("Page", "page", "og_image"),
+                                       ("Project", "project", "image"),
+                                       ("TrustBadge", "trustbadge", "image")):
+            with self.subTest(model=model):
+                widget = self.add_form(model, url_name).fields[field].widget
+                self.assertIsInstance(widget, MediaPathWidget)
+
+    def test_plain_text_fields_do_not_get_a_picker(self):
+        """The mixin names fields, so a CharField override cannot leak.
+
+        `formfield_overrides` is keyed by field type; reaching for it would put
+        a picker on every slug, title and SEO field on the form.
+        """
+        for model, field in (("Page", "title"), ("Page", "slug"),
+                             ("Page", "seo_title"), ("Project", "title"),
+                             ("TrustBadge", "label")):
+            with self.subTest(model=model, field=field):
+                widget = self.add_form(model, model.lower()).fields[field].widget
+                self.assertNotIsInstance(widget, MediaPathWidget)
+
+    def test_widget_keeps_a_working_text_input(self):
+        """The escape hatch has to survive: still text, still bound."""
+        widget = self.add_form("Page", "page").fields["og_image"].widget
+        rendered = widget.render("og_image", "/static/img/x.png")
+        self.assertIn('type="text"', rendered)
+        self.assertIn("/static/img/x.png", rendered)
+        self.assertIn("vTextField", rendered)
+        self.assertIn("data-picker-open", rendered)
+
+    def test_widget_ships_its_own_script(self):
+        self.assertIn("admin/js/media_picker.js",
+                      [str(path) for path in MediaPathWidget().media._js])
+
+    def test_widget_points_at_the_picker_endpoint(self):
+        widget = self.add_form("Page", "page").fields["og_image"].widget
+        self.assertIn(reverse("admin:media_picker"),
+                      widget.render("og_image", ""))
+
+    # --- the endpoint ---------------------------------------------------
+    def test_endpoint_returns_published_media_newest_first(self):
+        older = self.make_media("older.png")
+        newer = self.make_media("newer.png")
+        paths = [item["path"] for item in self.picker_json()["images"]]
+        self.assertIn(newer.public_path, paths)
+        self.assertIn(older.public_path, paths)
+        self.assertLess(paths.index(newer.public_path), paths.index(older.public_path))
+
+    def test_endpoint_hides_unpublished_media(self):
+        """Retiring an image must not break a page already storing its path."""
+        draft = self.make_media("draft.png", is_published=False)
+        self.assertNotIn(draft.public_path,
+                         [i["path"] for i in self.picker_json()["images"]])
+
+    def test_endpoint_payload_carries_only_what_the_grid_needs(self):
+        item = self.make_media("grid.png")
+        entry = self.picker_json()["images"][0]
+        self.assertEqual(set(entry), {"id", "title", "path", "alt", "thumb", "size"})
+        self.assertEqual(entry["path"], item.public_path)
+        self.assertTrue(entry["thumb"].startswith("/media/"))
+
+    def test_endpoint_truncates_rather_than_growing_without_bound(self):
+        with mock.patch.object(StudioAdminSite, "MEDIA_PICKER_LIMIT", 2):
+            for i in range(3):
+                self.make_media(f"cap-{i}.png")
+            payload = self.picker_json()
+            self.assertEqual(len(payload["images"]), 2)
+            self.assertTrue(payload["truncated"])
+
+    def test_endpoint_skips_an_item_whose_file_is_gone(self):
+        """A row emptied server-side must not 500 the grid, and must not be
+        offered at all -- picking it would write an empty path."""
+        MediaItem.objects.create(title="no file", image="")
+        self.assertEqual(self.picker_json()["images"], [])
+
+    # --- permissions ---------------------------------------------------
+    def test_endpoint_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self.picker_response().status_code, 302)
+
+    def test_endpoint_denies_staff_without_view_permission(self):
+        staff = User.objects.create_user("staffer", "s@example.com", "pw",
+                                          is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.picker_response().status_code, 403)
+
+    def test_endpoint_allows_view_only_staff(self):
+        """View alone must be enough, or the picker is shut to exactly the
+        editors with the most fields to fill in. Writing a path is guarded by
+        the change permission on the field's own form, not here."""
+        staff = User.objects.create_user("viewer", "v@example.com", "pw", is_staff=True)
+        staff.user_permissions.add(Permission.objects.get(
+            codename="view_mediaitem", content_type__app_label="content"))
+        self.client.force_login(staff)
+        self.assertEqual(self.picker_response().status_code, 200)
+
+    # --- reference visibility ------------------------------------------
+    def test_references_finds_pages_projects_and_badges(self):
+        item = self.make_media("shared.png")
+        self.make_page("landing", item.public_path)
+        Project.objects.create(title="Kitchen", image=item.public_path)
+        TrustBadge.objects.create(label="Warranty", image=item.public_path)
+        self.make_page("unrelated")
+
+        found = item.references()
+        self.assertEqual(len(found), 3)
+        self.assertEqual({row["model"] for row in found},
+                         {"Page", "Project", "TrustBadge"})
+        for row in found:
+            self.assertTrue(row["url"].startswith("/admin/"))
+
+    def test_references_also_match_the_bare_storage_name(self):
+        """A hand-typed `uploads/...` is as real as a served URL.
+
+        The field is text, so both spellings occur in the data and the lookup
+        has to try both or it will under-report and hide a live reference.
+        """
+        item = self.make_media("byname.png")
+        self.make_page("hand-typed", item.image.name)
+        self.assertEqual(len(item.references()), 1)
+
+    def test_references_are_empty_for_an_unused_image(self):
+        self.assertEqual(self.make_media("unused.png").references(), [])
+
+    def test_references_tolerate_an_item_with_no_file(self):
+        self.assertEqual(MediaItem(title="blank", image="").references(), [])
+
+    def test_change_form_lists_what_uses_the_image(self):
+        item = self.make_media("reported.png")
+        url = reverse("admin:content_mediaitem_change", args=[item.pk])
+        self.assertIn("Not referenced yet", self.client.get(url).content.decode())
+
+        page = self.make_page("uses-it", item.public_path)
+        html = self.client.get(url).content.decode()
+        self.assertIn("Used by", html)
+        self.assertIn(page.title, html)
+        # The link is the point: a reference you cannot click is a claim you
+        # have to go and verify by hand.
+        self.assertIn(
+            reverse("admin:content_page_change", args=[page.pk]), html)
+        # Real list items, not a run-together paragraph. format_html on a bare
+        # join produces a valid-looking <ul> with no <li> in it, which renders
+        # as one solid block of text.
+        self.assertIn('<ul class="used-by-list"><li>', html)
+
+    # --- the static half -------------------------------------------------
+    def test_picker_script_is_served_from_the_project_static_dir(self):
+        """The widget's Media declares a path; the file has to be there.
+
+        A missing file is not a render error -- the browser just 404s it
+        silently and the field looks like a plain text input -- so it is
+        asserted here rather than left to a manual click.
+        """
+        from django.contrib.staticfiles import finders
+
+        for js in MediaPathWidget().media._js:
+            self.assertTrue(finders.find(str(js)), f"{js} is not on the static path")
+
+    def test_picker_styles_are_shipped(self):
+        from django.contrib.staticfiles import finders
+
+        self.assertIsNotNone(finders.find("admin/css/admin.css"))
+        css = finders.find("admin/css/admin.css")
+        with open(css, encoding="utf-8") as handle:
+            body = handle.read()
+        for selector in (".media-path", ".media-picker-modal", ".media-picker-grid"):
+            self.assertIn(selector, body, f"{selector} has no styles")
+        self.assertEqual(body.count("{"), body.count("}"), "unbalanced CSS braces")

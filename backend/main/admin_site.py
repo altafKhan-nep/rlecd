@@ -10,6 +10,7 @@ from django.apps import apps
 from django.contrib.admin import AdminSite
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -283,13 +284,14 @@ class StudioAdminSite(AdminSite):
         return counts
 
     def get_urls(self):
-        """Add the cross-model search view to the admin's own URL namespace.
+        """Add the admin's own utility views to its URL namespace.
 
         Django's admin has no global search endpoint (a changelist's `?q=` is
         per-model), so the topbar's field needs a real target. Subclassing
         get_urls puts it behind admin: where `admin_view` already applies the
         login check, instead of a bare project URL that would sit outside the
-        admin's own security.
+        admin's own security. The media picker's data source is added for the
+        same reason.
         """
         extra = [
             path(
@@ -297,8 +299,64 @@ class StudioAdminSite(AdminSite):
                 self.admin_view(self.studio_search),
                 name="studio_search",
             ),
+            path(
+                "media-picker/",
+                self.admin_view(self.media_picker),
+                name="media_picker",
+            ),
         ]
         return extra + super().get_urls()
+
+    #: The picker asks for the whole library at once and filters in the
+    #: browser, so the payload is capped rather than left unbounded. Raised if
+    #: a library ever grows past it, because a silently truncated picker looks
+    #: to an editor like a missing image.
+    MEDIA_PICKER_LIMIT = 300
+
+    def media_picker(self, request):
+        """JSON for the image picker's grid, newest first.
+
+        Permission is on *viewing* the library, not editing it: choosing an
+        image writes a path into a field the caller is already allowed to
+        change, and that check belongs to the form being submitted, not to a
+        read-only endpoint. Requiring `add`/`change` here would lock the
+        picker out for exactly the editors who have the most to fill in.
+
+        Unpublished items are omitted, which is what `is_published` is for on
+        this model. Retiring an image this way cannot break a page that
+        already stores the path as text -- the field keeps working, the image
+        simply stops being offered for new choices.
+        """
+        media = apps.get_model("content", "MediaItem")
+        # The permission check belongs to the model's ModelAdmin, not to the
+        # site: AdminSite has no has_view_permission of its own.
+        media_admin = self._registry.get(media)
+        if media_admin is None or not media_admin.has_view_permission(request, media):
+            return JsonResponse({"images": []}, status=403)
+
+        # A row whose file was removed server-side has no path, and offering a
+        # cell that writes an empty string would quietly blank the field it was
+        # meant to fill. Such rows are skipped rather than rendered broken.
+        library = media.objects.filter(is_published=True).exclude(image="")
+        items = [
+            {
+                "id": obj.pk,
+                "title": obj.title or obj.filename,
+                "path": obj.public_path,
+                "alt": obj.alt_text or obj.title or obj.filename,
+                # url is safe on a non-empty image; the empty case is already
+                # excluded above, so this cannot raise.
+                "thumb": obj.image.url,
+                "size": obj.size_display,
+            }
+            for obj in library.order_by("-created_at")[:self.MEDIA_PICKER_LIMIT]
+        ]
+        return JsonResponse({
+            "images": items,
+            # Counted from the same queryset, so a library full of file-less
+            # rows cannot inflate this into a permanent "+ images" warning.
+            "truncated": library.count() > len(items),
+        })
 
     # Rows shown per model, and models shown, keep one keystroke cheap even
     # though the query fans out across every registered model.

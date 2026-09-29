@@ -7,6 +7,8 @@ box is always available because captured sections are the mirror's own markup.
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 
 from content.models import (
     FAQ, MediaItem, Page, Project, Section, ServiceArea, SiteSetting,
@@ -14,6 +16,7 @@ from content.models import (
 )
 from content.render import clear_template_cache
 from main.listview import StudioListMixin
+from main.widgets import MediaPickerFieldsMixin
 
 
 class SectionInline(admin.TabularInline):
@@ -52,10 +55,12 @@ class SectionInline(admin.TabularInline):
 
 
 @admin.register(Page)
-class PageAdmin(StudioListMixin, admin.ModelAdmin):
+class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
+                admin.ModelAdmin):
     list_display = ("path", "title", "is_published", "section_count",
                     "locked_count", "updated_at")
     list_display_links = ("path",)
+    media_picker_fields = ("og_image",)
     list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
     search_fields = ("path", "title", "seo_title", "seo_description")
     ordering = ("path",)
@@ -203,10 +208,12 @@ class TestimonialAdmin(StudioListMixin, admin.ModelAdmin):
 
 
 @admin.register(Project)
-class ProjectAdmin(StudioListMixin, admin.ModelAdmin):
+class ProjectAdmin(MediaPickerFieldsMixin, StudioListMixin,
+                   admin.ModelAdmin):
     list_display = ("project_thumb", "title", "service", "area", "completed_on",
                     "is_published")
     list_display_links = ("project_thumb", "title")
+    media_picker_fields = ("image",)
     list_editable = ("is_published",)
     list_filter = ("is_published", "service", "area")
     search_fields = ("title", "summary", "image")
@@ -254,9 +261,11 @@ class ProjectAdmin(StudioListMixin, admin.ModelAdmin):
 
 
 @admin.register(TrustBadge)
-class TrustBadgeAdmin(StudioListMixin, admin.ModelAdmin):
+class TrustBadgeAdmin(MediaPickerFieldsMixin, StudioListMixin,
+                      admin.ModelAdmin):
     list_display = ("badge_thumb", "label", "issuer", "sort_order", "is_published")
     list_display_links = ("badge_thumb", "label")
+    media_picker_fields = ("image",)
     list_editable = ("sort_order", "is_published")
     list_filter = ("is_published",)
     search_fields = ("label", "issuer", "image")
@@ -330,14 +339,16 @@ class MediaItemAdmin(StudioListMixin, admin.ModelAdmin):
     list_editable = ("is_published",)
     list_filter = ("is_published", "created_at")
     search_fields = ("title", "alt_text", "image")
-    readonly_fields = ("path_display", "size_display", "created_at", "updated_at")
+    readonly_fields = ("path_display", "size_display", "used_by", "created_at",
+                       "updated_at")
     ordering = ("-created_at",)
     actions = ("action_unpublish", "action_publish")
     fieldsets = (
         (None, {"fields": ("image", "title", "alt_text", "is_published")}),
         ("Details", {
             "classes": ("collapse",),
-            "fields": ("path_display", "size_display", "created_at", "updated_at"),
+            "fields": ("path_display", "size_display", "used_by",
+                       "created_at", "updated_at"),
         }),
     )
 
@@ -356,6 +367,32 @@ class MediaItemAdmin(StudioListMixin, admin.ModelAdmin):
         return format_html(
             '<code class="mono" style="background:#f4f4f2;padding:3px 7px;'
             'border-radius:5px;display:inline-block">{}</code>', obj.public_path)
+
+    @admin.display(description="Used by")
+    def used_by(self, obj):
+        """The content rows that currently point at this image.
+
+        The references are paths in text fields, so the database cannot stop a
+        deletion that breaks a live page. Listing them is what makes "retire
+        this" and "delete this" distinguishable at the moment of the click.
+        """
+        if not obj or not obj.pk:
+            return ""
+        rows = obj.references()
+        if not rows:
+            return format_html('<span class="muted">{}</span>',
+                               _("Not referenced yet."))
+        items = []
+        for row in rows:
+            text = format_html("{}: {}", row["model"], row["label"])
+            items.append(
+                format_html('<li><a href="{}">{}</a></li>', row["url"], text)
+                if row["url"] else format_html("<li>{}</li>", text)
+            )
+        # Each item is already escaped by format_html, so joining them is the
+        # one place that must not escape a second time.
+        return format_html('<ul class="used-by-list">{}</ul>',
+                           mark_safe("".join(items)))
 
     @admin.display(description="Size", ordering="image")
     def size_display(self, obj):

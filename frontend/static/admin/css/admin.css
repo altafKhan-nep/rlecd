@@ -1888,3 +1888,186 @@ input:focus, select:focus, textarea:focus {
         animation-duration: .01ms !important;
     }
 }
+
+/* ---------------------------------------------------------------- media path
+   The image-bearing content fields are text inputs holding a path. The picker
+   sits beside the input rather than replacing it, because the input has to
+   stay usable for a repo static path or a CDN URL the library does not hold. */
+
+.media-path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.media-path-field { flex: 1 1 320px; min-width: 0; }
+.media-path-field input { width: 100%; }
+
+.media-path-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding-top: 1px;
+}
+
+.media-path-tools .button { white-space: nowrap; }
+
+/* A wrong pick is much cheaper to catch here than on the live site, so the
+   current value is always echoed back as an image or as its literal text. */
+.media-picker-preview {
+    flex: 1 0 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 2px;
+}
+
+.media-picker-thumb {
+    max-height: 68px;
+    max-width: 140px;
+    width: auto;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface, #fff);
+}
+
+.media-picker-path {
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 11.5px;
+    color: var(--ink-soft, #5b6167);
+    word-break: break-all;
+}
+
+/* ------------------------------------------------------------------- modal */
+
+.media-picker-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 20, 25, .55);
+}
+
+.media-picker-modal[hidden] { display: none; }
+
+.media-picker-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(880px, 100%);
+    max-height: min(720px, 100%);
+    background: var(--body-bg, #fff);
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(15, 20, 25, .3);
+    overflow: hidden;
+}
+
+.media-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line-soft, #e6e8ea);
+}
+
+.media-picker-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink, #1c2126);
+}
+
+.media-picker-x {
+    border: 0;
+    background: none;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--ink-soft, #5b6167);
+    padding: 0 4px;
+}
+
+.media-picker-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 14px 18px 18px;
+}
+
+.media-picker-search {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 7px;
+    font-size: 13.5px;
+}
+
+.media-picker-status {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--ink-soft, #5b6167);
+}
+
+.media-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.media-picker-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+}
+
+.media-picker-cell:hover,
+.media-picker-cell:focus-visible {
+    border-color: var(--c-teal, #0E8F87);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-teal, #0E8F87) 22%, transparent);
+}
+
+.media-picker-cell-img {
+    width: 100%;
+    height: 92px;
+    object-fit: cover;
+    border-radius: 5px;
+    background: #eef0f2;
+}
+
+.media-picker-cell-title {
+    font-size: 11.5px;
+    color: var(--ink, #1c2126);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-picker-empty {
+    grid-column: 1 / -1;
+    margin: 8px 0;
+    font-size: 13px;
+    color: var(--ink-soft, #5b6167);
+}
+
+/* "Used by" on the media change form. */
+.used-by-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+}
+
+.used-by-list li { margin: 2px 0; }

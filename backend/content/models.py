@@ -387,6 +387,61 @@ class MediaItem(models.Model):
         """The value to paste into Page.og_image, Project.image, etc."""
         return self.image.url if self.image else ""
 
+    def reference_candidates(self):
+        """Every spelling of this image that a path field might hold.
+
+        The picker writes `public_path`, but these fields are text that an
+        editor can also fill by hand, so a lookup has to try the forms that
+        actually occur in practice -- the served URL, and the bare storage
+        name -- instead of only the one this code writes.
+        """
+        return {value for value in (self.public_path, self.image.name or "") if value}
+
+    def references(self):
+        """Rows that point at this image, as dicts for the change form.
+
+        Retiring an image is safe; deleting one that a live page references is
+        the destructive mistake this library invites, because the reference is
+        a path stored as text and nothing at the database level stops it. The
+        change form lists these so the blast radius is visible first.
+        """
+        from django.apps import apps
+        from django.urls import NoReverseMatch, reverse
+
+        targets = (
+            ("content", "Page", "og_image"),
+            ("content", "Project", "image"),
+            ("content", "TrustBadge", "image"),
+        )
+        candidates = self.reference_candidates()
+        if not candidates:
+            return []
+
+        found = []
+        for app_label, model_name, field in targets:
+            try:
+                model = apps.get_model(app_label, model_name)
+                rows = model.objects.filter(**{f"{field}__in": candidates})
+            except Exception:
+                # A missing table or an unmigrated app must not take the change
+                # form down; an incomplete list is better than a 500.
+                continue
+            for row in rows:
+                try:
+                    url = reverse(
+                        # Admin URL names are lowercased: the model is `Page`
+                        # but the route is `content_page_change`. Using the
+                        # class name here raises NoReverseMatch silently and
+                        # drops every link.
+                        f"admin:{app_label}_{model_name.lower()}_change",
+                        args=[row.pk],
+                    )
+                except NoReverseMatch:
+                    url = None
+                found.append({"model": model_name, "label": str(row), "url": url})
+        found.sort(key=lambda row: (row["model"], row["label"]))
+        return found
+
     @property
     def size_display(self):
         try:
