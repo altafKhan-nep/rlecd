@@ -3,8 +3,10 @@
 Kept as filters rather than logic in the view so rules live in one place and
 the dashboard, the sidebar and any list view can share them.
 """
+import re
+
 from django import template
-from django.utils.html import format_html
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 
 from main.icons import icon
@@ -108,6 +110,12 @@ def cell_label(cell, header_text):
     The header text is stripped of its surrounding whitespace and truncated:
     "Position" is useful, a full sentence is not, and this string is repeated
     once per cell on every row.
+
+    The attribute has to go *inside* the opening tag. Appending it after the
+    cell -- which is the obvious way to write this -- closes the cell first and
+    leaves the attribute sitting in the row as text, and since the filter runs
+    once per cell per row a changelist then renders a wall of
+    `data-label="Image" data-label="path" ...` in place of its contents.
     """
     if not cell:
         return cell
@@ -116,4 +124,10 @@ def cell_label(cell, header_text):
         return cell
     if len(label) > 24:
         label = label[:24].rsplit(" ", 1)[0] + "…"
-    return format_html('{} data-label="{}"', mark_safe(cell), label)
+    attribute = ' data-label="%s"' % escape(label)
+    # Only the first tag, and only an opening <td>/<th>: the cell is a
+    # complete element, so its own attributes are already closed.
+    return mark_safe(re.sub(
+        r"^\s*<(t[dh])\b",
+        lambda m: "<%s%s" % (m.group(1), attribute),
+        str(cell), count=1))

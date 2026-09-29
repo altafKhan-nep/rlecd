@@ -23,8 +23,12 @@ the site's own style.css, which the admin never loads.
 {% block extrastyle %}{{ block.super }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap">
-<link rel="stylesheet" href="{% static "admin/css/login.css" %}">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+{% comment %}
+No admin/css/login.css here on purpose: this layout is styled by the block
+below, and the file does not exist, so the tag only ever bought a 404 on every
+sign-in. It was left over from when the page was a centred 28em card.
+{% endcomment %}
 <style>
   .rlecd-login {
     --rl-primary: #1B3022;
@@ -291,18 +295,28 @@ the site's own style.css, which the admin never loads.
     text-align: center;
   }
 
-  @media (max-width: 860px) {
-    .rl-shell { grid-template-columns: 1fr; }
+  /* 900px, not a width of its own: that is where the shell drops its sidebar
+     to a drawer, and the login page should change shape on the same beat. */
+  @media (max-width: 900px) {
+    /* Stacked, the brand row shrinks to what it actually shows and the form
+       row takes the rest, centred in it. Left as `space-between` with the
+       points and legal line hidden, the wordmark was pushed to the bottom of a
+       tall empty panel and the form appeared to float under a gap. */
+    .rl-shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
     .rl-brand {
-      padding: 34px 26px;
-      gap: 22px;
+      justify-content: flex-start;
+      padding: 30px 26px;
+      gap: 18px;
     }
     .rl-brand::after { display: none; }
-    .rl-wordmark { font-size: 1.6rem; margin-top: 18px; }
+    .rl-wordmark { font-size: 1.6rem; margin-top: 0; }
     .rl-tagline { display: none; }
     .rl-points, .rl-legal { display: none; }
     .rl-logo-chip { width: 56px; height: 56px; border-radius: 14px; }
-    .rl-form-panel { padding: 36px 24px 56px; }
+    .rl-form-panel { padding: 32px 24px 44px; }
     .rl-form-card h1 { font-size: 1.7rem; }
   }
 

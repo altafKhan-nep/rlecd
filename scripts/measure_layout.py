@@ -219,10 +219,16 @@ def run(path, width=2000, height=1300, widths=None):
         shutil.rmtree(profile, ignore_errors=True)
 
 
-def run_all(pages, widths, height=900):
+def run_all(pages, widths, height=900, auth=True):
     """Sweep every page at every width from a single logged-in session.
 
     Returns one probe result per (page, width) pair, each tagged with both.
+
+    `auth=False` skips the sign-in. That matters for /admin/login/: an
+    authenticated request is redirected to the dashboard, so auditing it with
+    a session measures the dashboard and quietly misses the login page
+    entirely -- which is how a 254px band of dead space survived a sweep that
+    reported the page clean.
     """
     port = free_port()
     profile = tempfile.mkdtemp(prefix="brave-sweep-")
@@ -254,17 +260,19 @@ def run_all(pages, widths, height=900):
         cdp.cmd("Runtime.enable")
         cdp.cmd("Network.enable")
         time.sleep(1.2)
-        cdp.cmd("Runtime.evaluate", {"expression": f"""
-            (() => {{
-              const f = document.querySelector('form');
-              if (!f) return false;
-              f.username.value = {json.dumps(USER)};
-              f.password.value = {json.dumps(PASSWORD)};
-              f.submit();
-              return true;
-            }})()
-        """, "returnByValue": True})
-        time.sleep(2.0)
+        if auth:
+            # Log in through the real form, so the session cookie is genuine.
+            cdp.cmd("Runtime.evaluate", {"expression": f"""
+                (() => {{
+                  const f = document.querySelector('form');
+                  if (!f) return false;
+                  f.username.value = {json.dumps(USER)};
+                  f.password.value = {json.dumps(PASSWORD)};
+                  f.submit();
+                  return true;
+                }})()
+            """, "returnByValue": True})
+            time.sleep(2.0)
 
         out = []
         for path in pages:
@@ -304,6 +312,117 @@ def run_all(pages, widths, height=900):
 
 
 WIDTHS = [1920, 1600, 1500, 1441, 1440, 1366, 1280, 1152, 1024, 900, 768, 640, 480, 390, 360]
+
+def capture(pages, width, outdir, height=1000, auth=True, theme=None):
+    """Screenshot pages from one session, for looking at rather than measuring.
+
+    Kept beside run_all on purpose: a second hand-rolled copy of the login
+    dance is how the first attempt ended up photographing the sign-in page
+    while believing it had captured the dashboard.
+    """
+    os.makedirs(outdir, exist_ok=True)
+    port = free_port()
+    profile = tempfile.mkdtemp(prefix="brave-shot-")
+    proc = subprocess.Popen(
+        [CHROME, "--headless=new", f"--remote-debugging-port={port}",
+         f"--user-data-dir={profile}", f"--window-size={width},{height}",
+         "--no-first-run", "--no-default-browser-check", "--disable-gpu",
+         "--disable-dev-shm-usage", "--hide-scrollbars",
+         f"{BASE}/admin/login/"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        ws = None
+        for _ in range(90):
+            try:
+                for tab in json.loads(urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/json", timeout=1).read()):
+                    if tab.get("type") == "page" and tab.get("webSocketDebuggerUrl"):
+                        ws = tab["webSocketDebuggerUrl"]
+                        break
+                if ws:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        if not ws:
+            raise RuntimeError("devtools did not come up")
+        cdp = CDP(ws)
+        cdp.cmd("Page.enable")
+        cdp.cmd("Runtime.enable")
+        cdp.cmd("Network.enable")
+        cdp.cmd("Emulation.setDeviceMetricsOverride", {
+            "width": width, "height": height,
+            "deviceScaleFactor": 1, "mobile": width < 900})
+        time.sleep(1.2)
+        if auth:
+            cdp.cmd("Runtime.evaluate", {"expression": f"""
+                (() => {{
+                  const f = document.querySelector('form');
+                  if (!f) return false;
+                  f.username.value = {json.dumps(USER)};
+                  f.password.value = {json.dumps(PASSWORD)};
+                  f.submit();
+                  return true;
+                }})()
+            """, "returnByValue": True})
+            time.sleep(2.0)
+            # Confirm the session actually took before shooting anything. A
+            # silently-unauthenticated run produces a tidy screenshot of the
+            # sign-in page and calls it the dashboard, which is worse than
+            # failing: it looks like a result.
+            probe = cdp.cmd("Runtime.evaluate", {"expression":
+                "location.pathname.indexOf('/login/') === -1", "returnByValue": True})
+            if not probe.get("result", {}).get("result", {}).get("value"):
+                for attempt in range(3):
+                    cdp.cmd("Page.navigate", {"url": f"{BASE}/admin/login/"})
+                    time.sleep(1.2)
+                    cdp.cmd("Runtime.evaluate", {"expression": f"""
+                        (() => {{
+                          const f = document.querySelector('form');
+                          if (!f) return false;
+                          f.username.value = {json.dumps(USER)};
+                          f.password.value = {json.dumps(PASSWORD)};
+                          f.submit();
+                          return true;
+                        }})()
+                    """, "returnByValue": True})
+                    time.sleep(2.5)
+                    probe = cdp.cmd("Runtime.evaluate", {"expression":
+                        "location.pathname.indexOf('/login/') === -1",
+                        "returnByValue": True})
+                    if probe.get("result", {}).get("result", {}).get("value"):
+                        break
+                else:
+                    raise RuntimeError(
+                        "could not authenticate; refusing to screenshot the "
+                        "sign-in page and call it the requested page")
+
+        written = []
+        for path in pages:
+            cdp.cmd("Page.navigate", {"url": BASE + path})
+            time.sleep(2.0)
+            if theme:
+                cdp.cmd("Runtime.evaluate", {"expression":
+                    "document.documentElement.setAttribute('data-theme', %s)"
+                    % json.dumps(theme)})
+                time.sleep(0.6)
+            data = cdp.cmd("Page.captureScreenshot",
+                           {"format": "png"})["result"]["data"]
+            name = (path.strip("/").replace("/", "-") or "root")
+            out = os.path.join(outdir, f"{name}-{width}{'-' + theme if theme else ''}.png")
+            with open(out, "wb") as fh:
+                fh.write(base64.b64decode(data))
+            written.append(out)
+            print("wrote", out)
+        return written
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+        shutil.rmtree(profile, ignore_errors=True)
+
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "/admin/"

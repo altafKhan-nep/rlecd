@@ -99,11 +99,25 @@ PROBE = r"""
     seen.add(k);
     return true;
   });
+
+  // A dead gutter does not overflow, so the sweep above would call it clean.
+  // The login page has no sidebar, so #container must sit flush at the left
+  // edge; when the shell's sidebar offset leaked onto it, the whole design was
+  // pushed right behind a band of blank white and every measurement here still
+  // read "no overflow".
+  let deadGutter = null;
+  const container = document.getElementById('container');
+  if (container && document.body.classList.contains('rlecd-login')) {
+    const left = Math.round(container.getBoundingClientRect().left);
+    if (left > 1) deadGutter = { left, what: '#container on the login page' };
+  }
+
   return {
     viewport: vw,
     scrollWidth: document.documentElement.scrollWidth,
     scrolls: document.documentElement.scrollWidth > vw + 1,
     path: location.pathname,
+    deadGutter,
     bad: uniq.slice(0, 6),
     count: uniq.length,
   };
@@ -126,19 +140,27 @@ def main():
     # Batched so a dropped websocket costs one batch, not the whole sweep, and
     # so no single session is asked to drive hundreds of navigations.
     BATCH = 6
+    # The login page is measured signed out. With a session it redirects to the
+    # dashboard, so it would be "audited" as a page it never rendered.
+    ANONYMOUS = {"/admin/login/"}
     results = []
-    for i in range(0, len(pages), BATCH):
-        chunk = pages[i:i + BATCH]
-        results.extend(m.run_all(chunk, widths))
-        done = min(i + BATCH, len(pages))
-        print("  ...%d/%d pages measured" % (done, len(pages)))
+    signed_in, signed_out = [], []
+    for page in pages:
+        (signed_out if page in ANONYMOUS else signed_in).append(page)
+
+    for group, auth in ((signed_in, True), (signed_out, False)):
+        for i in range(0, len(group), BATCH):
+            results.extend(m.run_all(group[i:i + BATCH], widths, auth=auth))
+    print("  ...%d pages measured (%d signed out)"
+          % (len(pages), len(signed_out)))
 
     errors = [r for r in results if r.get("error")]
     if errors:
         print("\n%d measurement(s) lost to a dropped session; rerun for those"
               % len(errors))
     results = [r for r in results if not r.get("error")]
-    failures = [r for r in results if r.get("count") or r.get("scrolls")]
+    failures = [r for r in results
+                if r.get("count") or r.get("scrolls") or r.get("deadGutter")]
 
     width_fail = {}
     for f in failures:
@@ -152,6 +174,11 @@ def main():
     if failures:
         print("\n--- detail ---")
         for f in failures:
+            if f.get("deadGutter"):
+                print("  %-34s %5dpx  dead gutter  %s at %dpx"
+                      % (f["path"], f["requestedWidth"],
+                         f["deadGutter"]["what"], f["deadGutter"]["left"]))
+                continue
             head = f["bad"][0] if f["bad"] else {}
             what = head.get("cls") or head.get("tag") or "?"
             amt = head.get("over") or head.get("clippedBy")

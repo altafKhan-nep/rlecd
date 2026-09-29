@@ -62,15 +62,22 @@ class AdminStylesheetContrastTests(SimpleTestCase):
             f"missing design tokens at {TOKENS_PATH}; run scripts/build_tokens.py")
 
     def _series_gradient(self, tone):
-        """Pull both colour stops out of a .stat-card.t-* gradient."""
-        match = re.search(
-            rf"\.stat-card\.{re.escape(tone)}\s*\{{[^}}]*?--card-bg:\s*"
-            rf"linear-gradient\(135deg,\s*#([0-9A-Fa-f]{{6}})\s*0%,\s*"
-            rf"#([0-9A-Fa-f]{{6}})\s*100%\)",
-            self.css,
-        )
-        self.assertIsNotNone(match, f"could not parse .stat-card.{tone}")
-        return "#" + match.group(1), "#" + match.group(2)
+        """Pull both colour stops out of a stat card's gradient.
+
+        The gradient used to be declared per tone class; it is now declared once
+        on `.stat-card` and inherited, so fall back to that when a tone carries
+        no gradient of its own.
+        """
+        for selector in (rf"\.stat-card\.{re.escape(tone)}", r"\.stat-card\b"):
+            match = re.search(
+                rf"{selector}\s*\{{[^}}]*?--card-bg:\s*"
+                rf"linear-gradient\(135deg,\s*#([0-9A-Fa-f]{{6}})\s*0%,\s*"
+                rf"#([0-9A-Fa-f]{{6}})\s*100%\)",
+                self.css,
+            )
+            if match:
+                return "#" + match.group(1), "#" + match.group(2)
+        self.fail(f"could not parse a stat card gradient for {tone}")
 
     def _declaration(self, selector, prop="background"):
         """Read a property from a rule, ignoring colour shorthand fallbacks.
@@ -143,19 +150,33 @@ class AdminStylesheetContrastTests(SimpleTestCase):
                 match.group(0), theme_vars.get(prop, defined[-1]).strip())
         return value
 
-    def test_card_gradients_have_colourful_distinct_stops(self):
-        """Six different, saturated cards. Guards against someone flattening
-        them back to one hue."""
+    def test_card_gradients_share_one_hue(self):
+        """One card colour, not six.
+
+        The dashboard used to paint six saturated gradients side by side --
+        green, red, purple, blue, brown, teal. That reads as a toy rather than a
+        product, and it puts red and purple on screen beside buttons where red
+        means delete. The tone classes are kept because they are how a screen
+        reader learns what a card is; they no longer paint six walls.
+
+        The guard is here so a future change has to argue with the decision
+        rather than drift back into a rainbow one card at a time.
+        """
         tones = ("t-leads", "t-hot", "t-today", "t-tasks", "t-pages", "t-media")
-        series = {}
+        painted = []
         for tone in tones:
-            series[tone] = self._series_gradient(tone)
-            self.assertNotEqual(
-                series[tone][0], series[tone][1],
-                f"{tone} gradient has a single flat colour",
-            )
-        distinct = {series[t][0] for t in series}
-        self.assertEqual(len(distinct), 6, "card gradients are not distinct")
+            with self.subTest(card=tone):
+                painted.extend(self._series_gradient(tone))
+        self.assertTrue(painted, "no stat card gradient found at all")
+        self.assertEqual(
+            len(set(painted)), 2,
+            f"stat cards paint {len(set(painted))} different colours "
+            f"({sorted(set(painted))}); they should share one gradient")
+        for tone in tones:
+            with self.subTest(card=tone):
+                start, end = self._series_gradient(tone)
+                self.assertNotEqual(start, end,
+                                    f"{tone} gradient is a single flat colour")
 
     def test_stat_card_labels_are_readable_on_every_gradient(self):
         for tone in ("t-leads", "t-hot", "t-today", "t-tasks", "t-pages", "t-media"):
@@ -239,13 +260,43 @@ class AdminStylesheetContrastTests(SimpleTestCase):
                         ratio, minimum,
                         f"{theme}: {fg} on {bg} is {ratio:.2f}:1")
 
-    def test_panel_titles_are_readable_on_white(self):
-        for accent in ("panel-crm", "panel-pipeline", "panel-content",
-                       "panel-service", "panel-tasks", "panel-trend",
-                       "panel-services"):
-            value = self._declaration(f".{accent}", prop="--panel-accent")
+    def test_every_panel_shares_one_accent(self):
+        """One accent for the whole dashboard.
+
+        The panels used to take seven different hues between them, which put
+        seven coloured titles and edges on one screen. The old comment argued
+        that a repeated hue made the edge bar stop identifying its panel, and
+        that holds for a bar -- it does not hold for a panel, which already has
+        a title, a position and a heading level. The accent is the brand
+        terracotta, and it still has to clear 4.5:1 on white for the title text.
+        """
+        panels = ("panel-crm", "panel-pipeline", "panel-content", "panel-service",
+                  "panel-tasks", "panel-trend", "panel-services")
+        # The accent is declared once for a selector list, not per panel, so
+        # this reads the list rather than looking up one rule per class.
+        # Comments are stripped first: this file explains itself in prose that
+        # mentions the old hues, and prose parses happily as a selector list.
+        css = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        declarations = {}
+        for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+            selectors = [s.strip() for s in match.group(1).split(",")]
+            prop = re.search(r"--panel-accent:\s*([^;]+);", match.group(2))
+            if not prop:
+                continue
+            for selector in selectors:
+                declarations[selector] = prop.group(1).strip()
+
+        seen = {}
+        for accent in panels:
+            self.assertIn(
+                f".{accent}", declarations,
+                f".{accent} no longer sets --panel-accent")
+            value = declarations[f".{accent}"]
             colours = re.findall(r"#[0-9A-Fa-f]{6}", value)
-            self.assertTrue(colours, f".{accent} resolved to {value!r}")
+            resolved = re.search(r"var\(--([\w-]+)\)", value)
+            self.assertTrue(
+                colours or resolved,
+                f".{accent} resolved to {value!r}, which names no colour")
             for colour in colours:
                 with self.subTest(panel=accent, colour=colour):
                     ratio = contrast_ratio(colour, "#FFFFFF")
@@ -253,6 +304,12 @@ class AdminStylesheetContrastTests(SimpleTestCase):
                         ratio, 4.5,
                         f".{accent} title on {colour} is {ratio:.2f}:1",
                     )
+                    seen.setdefault(colour, []).append(accent)
+        # A var() accent is fine as long as every panel names the same one.
+        named = {d for d in (declarations.get(f".{p}") for p in panels) if d}
+        self.assertEqual(
+            len(named), 1,
+            f"panels resolve to {len(named)} different accents: {sorted(named)}")
 
     def test_neutral_pills_use_dark_ink_on_light_fill(self):
         for pill in ("neutral", "low", "no"):
@@ -596,42 +653,183 @@ class DesignTokenTests(SimpleTestCase):
                         f"{selector.strip()[:40]} has a {track}px floor, which "
                         f"alone exceeds a phone")
 
-    def test_the_login_box_is_not_wider_than_the_screen(self):
-        """The login page had the same scrollbar, for the same kind of reason.
+    def test_anchor_colours_carry_the_link_pseudo_class(self):
+        """Django's blanket `a:link` rule outranks a single-class component.
 
-        Django's vendored login.css gives the box a fixed `width: 28em` with a
-        `min-width: 300px` floor and 100px of top margin. On a 375px phone that
-        is wider than the viewport, and the margin plus the box is taller than a
-        short window, so the submit button fell below the fold -- which on a
-        login form is a dead end.
+        base.css:107 sets `a:link, a:visited { color: var(--link-fg) }`, which is
+        (0,1,1). A component written as one class is (0,1,0) and loses, so the
+        colour it declares never applies and the anchor silently takes
+        --link-fg. On the dark sidebar that measured 1.9:1 and the navigation
+        was invisible until hover, because the hover rules carry a second class
+        and did win.
+
+        These are the components that sit on a surface where --link-fg is wrong,
+        so each has to name the pseudo-classes explicitly.
+        """
+        components = [
+            ".nav-item",              # dark green sidebar
+            ".sidebar-link",          # dark green sidebar footer
+            ".topbar-add",            # dark green button needs white ink
+            ".topbar-icon-btn",       # page surface
+            ".topbar-link",           # page surface
+        ]
+        for cls in components:
+            with self.subTest(component=cls):
+                escaped = re.escape(cls)
+                pattern = (
+                    r"[^{}]*" + escaped + r"[^{}]*:link[^{}]*\{[^{}]*color")
+                self.assertRegex(
+                    self.admin, pattern,
+                    f"{cls} colours an anchor without :link, so Django's "
+                    f"blanket a:link at (0,1,1) wins and the declared colour "
+                    f"is never used")
+
+    def test_sidebar_text_clears_contrast_on_the_sidebar_background(self):
+        """The number that made the navigation unreadable.
+
+        The sidebar is a fixed dark green panel, so every ink painted on it has
+        to be measured against that panel and not against the page. These are
+        the values the design actually uses, asserted here so a tweak to the
+        panel or the ink cannot quietly drop the list below AA.
+        """
+        panel = "#1B3022"  # .studio-sidebar's linear-gradient midpoint
+
+        def ratio(foreground, background=panel):
+            def channel(value):
+                value = value.lstrip("#")
+                out = []
+                for i in (0, 2, 4):
+                    c = int(value[i:i + 2], 16) / 255
+                    out.append(c / 12.92 if c <= 0.04045
+                               else ((c + 0.055) / 1.055) ** 2.4)
+                return out
+
+            def lum(value):
+                r, g, b = channel(value)
+                return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+            a, b = lum(foreground), lum(background)
+            hi, lo = max(a, b), min(a, b)
+            return (hi + 0.05) / (lo + 0.05)
+
+        def over_white(alpha, background=panel):
+            """Flatten rgba(255,255,255,alpha) onto the panel."""
+            bg = tuple(int(background.lstrip("#")[i:i + 2], 16)
+                       for i in (0, 2, 4))
+            return "#%02x%02x%02x" % tuple(
+                round(alpha * 255 + (1 - alpha) * c) for c in bg)
+
+        cases = {
+            "nav item idle": over_white(0.82),
+            "nav item active": "#ffffff",
+            "sidebar footer link": over_white(0.78),
+        }
+        for name, colour in cases.items():
+            with self.subTest(surface=name):
+                self.assertGreaterEqual(
+                    ratio(colour), 4.5,
+                    f"{name} is {colour} on {panel}, which is only "
+                    f"{ratio(colour):.1f}:1")
+
+        # The regression itself: the value Django's blanket rule was forcing.
+        self.assertLess(
+            ratio("#1a5c7a"), 4.5,
+            "if --link-fg now clears AA on the sidebar the premise of this "
+            "test has changed and the overrides should be re-examined")
+
+    def test_the_login_page_does_not_inherit_the_sidebar_offset(self):
+        """The blank white band down the left of the login page.
+
+        The shell offsets #container by the sidebar width to clear a fixed
+        sidebar. The login page has no sidebar at all -- base_site does not
+        render one there -- so the offset had nothing to sit beside, and the
+        whole two-panel design was pushed right behind a 254px band of nothing.
+
+        Nothing overflowed, so the layout sweep called the page clean: a dead
+        gutter is a placement fault, not an overflow. The check for it lives in
+        scripts/audit_layout.py; this pins the rule that causes it.
         """
         block = re.search(
-            r"body\.login #container\s*\{([^}]*)\}", self.responsive)
+            r"body\.rlecd-login #container,\s*\n\s*"
+            r"body\.rlecd-login html\.sidebar-collapsed #container\s*"
+            r"\{([^}]*)\}", self.responsive)
         self.assertIsNotNone(
-            block, "no login container override in responsive.css")
+            block,
+            "no login container override in responsive.css; the shell's "
+            "sidebar margin is leaking onto a page that has no sidebar")
         body = block.group(1)
-        self.assertIn("min(28em, 100%)", body,
-                      "the fixed 28em width must become fluid")
-        self.assertIn("min-width: 0", body,
-                      "the 300px floor must go, or a narrow phone still scrolls")
-        # Equal specificity to Django's own rule and relying on link order
-        # would break the moment the template stopped double-loading us.
-        self.assertIn("margin: clamp(", body,
-                      "a fixed 100px top margin overflows a short window")
+        self.assertRegex(
+            body, r"margin-left:\s*0",
+            "the login page must not reserve room for a sidebar it does not "
+            "have")
+        # The collapsed variant is named above or a reader who has collapsed
+        # the sidebar keeps a 68px band down the side.
+        self.assertIn("sidebar-collapsed", block.group(0))
+        self.assertIn("min-width: 0", body)
+
+    def test_login_rules_target_the_class_the_template_emits(self):
+        """`body.login` is Django's convention, not this template's.
+
+        admin/login.html extends base_site, not Django's login.html, so the
+        only body classes it ever renders are `studio-admin` and `rlecd-login`.
+        Rules scoped to `body.login` match nothing -- which is exactly how a set
+        of overrides for a centred 28em card sat in the stylesheet, looking
+        like coverage of a layout that had already been replaced, and never
+        ran.
+        """
+        stray = re.findall(r"body\.login\s[^{]+\{", self.responsive)
+        self.assertEqual(
+            stray, [],
+            "rules target body.login, which admin/login.html never emits")
+        self.assertIn("rlecd-login", self.responsive)
+
+    def test_the_login_page_is_styled_by_a_file_that_exists(self):
+        """A <link> to a stylesheet that is not there is a 404 on every sign-in.
+
+        The page carries its layout in an inline block; the old login.css tag
+        was left over from the centred-card design and the file was never
+        committed.
+        """
+        login = (pathlib.Path(__file__).resolve().parents[2]
+                 / "frontend" / "templates" / "admin" / "login.html")
+        html = login.read_text()
+        self.assertIn(".rl-shell", html, "the inline layout styles are gone")
+        # Only real <link> tags count. A filename mentioned in a comment is
+        # documentation, not a request the browser makes.
+        links = re.findall(r"<link[^>]+admin/css/([\w.-]+\.css)", html)
+        for sheet in links:
+            with self.subTest(sheet=sheet):
+                path = (pathlib.Path(__file__).resolve().parents[2]
+                        / "frontend" / "static" / "admin" / "css" / sheet)
+                self.assertTrue(
+                    path.exists(),
+                    f"login.html links admin/css/{sheet}, which does not exist")
+
+    def test_the_login_breakpoint_is_on_the_project_scale(self):
+        """The login page changed shape at 860px while the shell drew its
+        drawer at 900px, so between the two the two halves of the product
+        disagreed about what a narrow screen was."""
+        login = (pathlib.Path(__file__).resolve().parents[2]
+                 / "frontend" / "templates" / "admin" / "login.html")
+        queries = re.findall(r"@media[^\n{]*", login.read_text())
+        widths = {int(w) for q in queries for w in re.findall(r"(\d{3,4})px", q)}
+        self.assertTrue(
+            widths <= {640, 900, 1180, 1280, 1440, 1600},
+            f"login.html has breakpoints off the shared scale: {widths}")
 
     def test_no_login_rule_is_ordered_by_accident(self):
-        """`body.login` beats Django's `.login` on specificity, not by luck.
+        """Every login selector must outrank a bare class.
 
-        responsive.css is currently linked twice on the login page and only the
-        second copy is after login.css. If that ever changes, a same-specificity
-        override would silently stop applying.
+        Relying on which stylesheet happens to be linked last is not a
+        property worth having: it changes the moment a template stops
+        double-loading a file.
         """
-        for selector in re.findall(r"(body\.login [^{]+)\{", self.responsive):
+        for selector in re.findall(r"(body\.rlecd-login [^{]+)\{", self.responsive):
             with self.subTest(selector=selector.strip()):
                 self.assertTrue(
                     selector.strip().startswith("body."),
                     f"{selector.strip()!r} relies on stylesheet order, not "
-                    f"specificity, to beat Django's vendored login.css")
+                    f"specificity")
 
     def test_the_board_wraps_instead_of_scrolling(self):
         board = re.search(r"\.kanban-board\s*\{([^}]*)\}", self.admin)

@@ -43,8 +43,80 @@ h1, h2, h3, h4, h5, h6, .module caption, .module h2 {
     letter-spacing: -.01em;
 }
 
-a:link, a:visited { color: var(--primary-soft); }
-a:hover, a:focus { color: var(--accent); }
+/* Links must look like links, and this rule must not outrank the components
+   that style their own anchors.
+
+   It used to be `a:link, a:visited`, which is (0,1,1) -- one pseudo-class plus
+   one type. That beats a plain `.nav-item` at (0,1,0), so every sidebar link
+   inherited the dark brand green and sat dark-on-dark, invisible until
+   `.nav-item:hover` at (0,2,0) finally won. Text that only becomes legible on
+   hover is not a hover state, it is a bug.
+
+   `:where()` contributes no specificity, so this is purely a default: any
+   component that colours its own links keeps that colour, and everything else
+   gets a link colour that reads as one. */
+:where(a:link, a:visited) {
+    color: var(--link);
+    text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent);
+}
+
+:where(a:hover, a:focus) { color: var(--link-hover); }
+
+/* --------------------------------------------------------------------------
+   Anchor colours that Django's blanket rule would otherwise take away.
+
+   base.css:107 sets `a:link, a:visited { color: var(--link-fg) }`. That is
+   (0,1,1) -- one pseudo-class plus one type -- and it outranks every rule
+   written as a single class, (0,1,0). So a component that colours its own
+   anchors does not get its colour; it gets --link-fg. On the light surfaces
+   that is merely a slightly different blue. On the sidebar, where --link-fg is
+   a dark teal on a dark green panel, it measured 1.9:1 and the navigation became
+   unreadable -- visible only on hover, because the hover rules carry an extra
+   class and so did win.
+
+   Rather than raise the specificity of every future component and hope, the
+   anchors that must differ from the document default are named here, once,
+   with the :link/:visited variants spelled out so the comparison is on
+   specificity and not on the order two stylesheets happen to be linked in.
+   Measured against #1B3022: white 82% is 8.9:1, white 68% is 5.6:1.
+   -------------------------------------------------------------------------- */
+
+.studio-sidebar a:link,
+.studio-sidebar a:visited { color: rgba(255, 255, 255, .82); }
+
+.studio-sidebar .nav-item:link,
+.studio-sidebar .nav-item:visited { color: rgba(255, 255, 255, .82); }
+
+.studio-sidebar .nav-item.is-active:link,
+.studio-sidebar .nav-item.is-active:visited,
+.studio-sidebar .nav-item.is-active { color: #fff; }
+
+.studio-sidebar .sidebar-link:link,
+.studio-sidebar .sidebar-link:visited { color: rgba(255, 255, 255, .72); }
+
+.studio-sidebar .sidebar-link:hover,
+.studio-sidebar .nav-item:hover { color: #fff; }
+
+/* The topbar sits on the page surface, so its controls take the dark ink that
+   the button backgrounds were designed around. */
+.topbar-add:link,
+.topbar-add:visited { color: #fff; }
+
+.topbar-add + .topbar-add:link,
+.topbar-add + .topbar-add:visited { color: var(--primary-soft); }
+
+.topbar-icon-btn:link,
+.topbar-icon-btn:visited,
+.topbar-link:link,
+.topbar-link:visited { color: var(--primary-soft); }
+
+/* A link in running text is underlined outright; one in a table of values or a
+   card is left clean and picks up the underline on hover. */
+.content :where(a) { text-decoration: underline; }
+.content :where(.result-list, .dash-table, .panel, .card, .studio-list-summary)
+:where(a) { text-decoration: none; }
+.content :where(.result-list, .dash-table, .panel, .card, .studio-list-summary)
+:where(a:hover) { text-decoration: underline; }
 
 /* ==========================================================================
    LAYOUT — fixed sidebar on the left, content column to the right
@@ -215,13 +287,22 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     color: rgba(255, 255, 255, .52);
 }
 
-.nav-item {
+/* Sidebar links live on a dark green panel, so they need a light ink of their
+   own rather than the document's link colour. The :link/:visited variants are
+   spelled out so the rule beats the document default on specificity instead of
+   depending on which of the two happens to be more specific.
+
+   White at 68% over #1B3022 measures 1.9:1, which is the number that made this
+   list unreadable; 82% measures 8.9:1 and clears AA with room to spare. */
+.nav-item,
+.nav-item:link,
+.nav-item:visited {
     display: flex;
     align-items: center;
     gap: 11px;
     padding: 9px 10px;
     border-radius: 10px;
-    color: rgba(255, 255, 255, .68);
+    color: rgba(255, 255, 255, .82);
     font-size: 13.5px;
     font-weight: 500;
     text-decoration: none;
@@ -323,7 +404,7 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     gap: 10px;
     padding: 7px 10px;
     border-radius: 8px;
-    color: rgba(255, 255, 255, .62);
+    color: rgba(255, 255, 255, .78);
     font-size: 12.5px;
     font-weight: 500;
     text-decoration: none;
@@ -780,7 +861,10 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     gap: 12px;
     padding: 13px 16px;
     border-bottom: 1px solid var(--line-soft);
-    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAF8 100%);
+    /* A hard-coded white gradient here left every panel header cream in dark
+       mode while its own body went dark, which is the sort of half-themed
+       surface that makes a dark theme look unfinished. Both stops are tokens. */
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
 }
 
 .search-group-head h2 {
@@ -1039,13 +1123,17 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
 }
 
-/* Tone → gradient. Each series keeps one hue across the UI. */
-.stat-card.t-leads { --card-bg: linear-gradient(135deg, #1B3022 0%, #2E5540 100%); }
-.stat-card.t-hot   { --card-bg: linear-gradient(135deg, #A8352B 0%, #C9483B 100%); }
-.stat-card.t-today { --card-bg: linear-gradient(135deg, #08564F 0%, #0B6E68 100%); }
-.stat-card.t-tasks { --card-bg: linear-gradient(135deg, #6A3C8C 0%, #8A4FB0 100%); }
-.stat-card.t-pages { --card-bg: linear-gradient(135deg, #1F5E8C 0%, #2F7BB5 100%); }
-.stat-card.t-media { --card-bg: linear-gradient(135deg, #8A4F0A 0%, #A8620F 100%); }
+/* One card, one colour.
+
+   These were six saturated gradients -- green, red, purple, blue, brown, teal --
+   side by side, which reads as a toy rather than a product, and puts a red and
+   a purple on screen next to buttons where red means delete. A number is
+   already legible from its label and its value; the fill does not need to
+   carry meaning twice.
+
+   The tone classes stay, because they are how the dashboard says what a card
+   *is* to a screen reader. They just no longer paint six different walls. */
+.stat-card { --card-bg: linear-gradient(135deg, #1B3022 0%, #2E5540 100%); }
 
 /* ------------------------------------------------------------- dash grid */
 .dash-grid {
@@ -1073,7 +1161,10 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     padding: 15px 18px;
     border-bottom: 1px solid var(--line-soft);
     border-left: 4px solid var(--panel-accent, var(--c-teal));
-    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAF8 100%);
+    /* A hard-coded white gradient here left every panel header cream in dark
+       mode while its own body went dark, which is the sort of half-themed
+       surface that makes a dark theme look unfinished. Both stops are tokens. */
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
 }
 
 .panel-title {
@@ -1104,18 +1195,26 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     flex: none;
 }
 
-.panel-crm     { --panel-accent: var(--c-sky); }
-.panel-tasks   { --panel-accent: var(--c-violet); }
-.panel-pipeline{ --panel-accent: var(--c-violet-deep); }
-.panel-content { --panel-accent: var(--c-mint-deep); }
-.panel-service { --panel-accent: var(--c-amber-deep); }
+/* One accent for every panel.
 
-/* Panels added alongside the originals. Each needs its own accent: reusing
-   one hue put two identical colour bars in the same column, so the bar stopped
-   identifying which panel it belonged to. The deep variants are the ones that
-   clear 4.5:1 for the title text on white, which the contrast tests pin. */
-.panel-trend   { --panel-accent: var(--c-teal-deep); }
-.panel-services{ --panel-accent: var(--c-rose-deep); }
+   Each panel used to take its own hue -- sky, violet, teal, mint, amber, rose --
+   so the dashboard showed six coloured titles and seven coloured left-edges on
+   one screen. The comment above the old rules argued that reusing a hue made
+   the edge bar stop identifying its panel, and that is true of a *bar*; it is
+   not true of a panel, because the panel already has a title, a position and a
+   heading level. What it cost was a screen that looked assembled rather than
+   designed.
+
+   The accent is the brand terracotta, the same one the public site uses, and
+   it clears 4.5:1 on white so the title text stays readable -- which the
+   contrast tests pin. */
+.panel-crm,
+.panel-tasks,
+.panel-pipeline,
+.panel-content,
+.panel-service,
+.panel-trend,
+.panel-services { --panel-accent: var(--c-clay); }
 
 /* ----------------------------------------------------------------- tables */
 .dash-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -1433,7 +1532,10 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 }
 
 .module caption, .module h2 {
-    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAF8 100%);
+    /* A hard-coded white gradient here left every panel header cream in dark
+       mode while its own body went dark, which is the sort of half-themed
+       surface that makes a dark theme look unfinished. Both stops are tokens. */
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
     color: var(--ink);
     font-family: var(--font-display);
     font-size: 16px;
@@ -1582,28 +1684,50 @@ input:focus, select:focus, textarea:focus {
     box-shadow: 0 6px 18px rgba(27, 48, 34, .30);
 }
 
-.button.addlink, .addlink {
-    background: linear-gradient(135deg, #A8352B 0%, #C9483B 100%) !important;
-    box-shadow: 0 2px 10px rgba(201, 72, 59, .40) !important;
+/* One "add" treatment, not two.
+
+   This file used to paint the same anchor twice: `.button.addlink` in a red
+   gradient and `.object-tools a` in a teal one. They are the same specificity
+   fight the anchor rules lost, and `.button.addlink` won, so the primary
+   "Add page" on a list was a different colour from every other primary button
+   in the product -- and red, which reads as destructive.
+
+   Primary actions are the brand green. Clay is reserved for delete, so red on
+   screen always means the same thing. */
+.button.addlink,
+.addlink,
+.object-tools a {
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    color: var(--primary-fg);
+    box-shadow: 0 2px 8px rgba(27, 48, 34, .18);
 }
 
-.button.addlink:hover { box-shadow: 0 8px 22px rgba(201, 72, 59, .50) !important; }
+.button.addlink:link,
+.button.addlink:visited,
+.addlink:link,
+.addlink:visited,
+.object-tools a:link,
+.object-tools a:visited { color: var(--primary-fg); }
+
+.button.addlink:hover,
+.addlink:hover,
+.object-tools a:hover {
+    background: var(--primary-mid);
+    border-color: var(--primary-mid);
+    color: var(--primary-fg);
+    box-shadow: 0 6px 16px rgba(27, 48, 34, .26);
+}
 
 .object-tools a {
-    background: linear-gradient(135deg, #0E8F87, #14A79D);
     border-radius: var(--radius-sm);
     font-size: 12px;
     font-weight: 600;
     letter-spacing: .03em;
     text-transform: uppercase;
     padding: 8px 13px;
-    box-shadow: 0 2px 8px rgba(14, 143, 135, .30);
+    text-decoration: none;
     transition: background .16s ease, box-shadow .16s ease;
-}
-
-.object-tools a:hover {
-    background: linear-gradient(135deg, #0B6E68, #0E8F87);
-    box-shadow: 0 6px 18px rgba(14, 143, 135, .40);
 }
 
 .submit-row {
@@ -2362,9 +2486,169 @@ input:focus, select:focus, textarea:focus {
    the click and the next frame, and would flash on load.
 */
 
-.theme-toggle { position: relative; }
+/* ==========================================================================
+   THE CHANGELIST SEARCH ROW
+   ==========================================================================
 
-.theme-toggle .theme-icon {
+   #toolbar is the element Django wraps the changelist search form in, and
+   changelists.css:80 paints it `background: var(--darkened-bg)`. Our tokens
+   point that variable at the 55%-black modal overlay, so a search field was
+   rendering as a dark slab across the top of every list. It is a field, not a
+   scrim: it takes the surface, the line and the radius the panels use.
+*/
+
+#toolbar {
+    padding: 0;
+    margin-bottom: 18px;
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+#changelist-search {
+    display: block;
+}
+
+/* Django wraps the controls in a bare div "needed for valid HTML", and that div
+   is the real layout box: styling the form itself leaves the label, field and
+   button stacked as inline-blocks, which is how the magnifier ended up
+   stranded on a line of its own above a half-width input. */
+#changelist-search > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#changelist-search label {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+}
+
+#changelist-search label img {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    opacity: .55;
+}
+
+#changelist-search #searchbar {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13.5px;
+}
+
+#changelist-search #searchbar::placeholder { color: var(--muted); }
+
+#changelist-search #searchbar:focus {
+    border-color: var(--link);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 18%, transparent);
+    outline: 0;
+}
+
+#changelist-search input[type="submit"] {
+    flex: none;
+    height: 40px;
+    padding: 0 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--primary-soft);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#changelist-search input[type="submit"]:hover {
+    background: var(--surface-3);
+    border-color: var(--link);
+    color: var(--link);
+}
+
+/* "0 of 19 selected" is noise until something is actually selected, and it
+   sits on every list. Revealed once a row is ticked.
+
+   The @supports guard matters: without :has() support the counter would
+   simply never appear, so the fallback keeps it visible rather than silently
+   dropping the only confirmation of how many rows a bulk action will hit. */
+#changelist .action-counter { display: none; }
+
+@supports selector(:has(*)) {
+    #changelist:has(#result_list input[type="checkbox"]:checked)
+    .action-counter { display: block; }
+}
+
+/* ==========================================================================
+   BULK ACTIONS
+   ========================================================================== */
+
+#changelist .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+}
+
+#changelist .actions label { color: var(--muted); font-size: 12.5px; }
+
+#changelist .actions select {
+    max-width: 260px;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+}
+
+#changelist .actions input[type="submit"] {
+    height: 34px;
+    padding: 0 16px;
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#changelist .actions input[type="submit"]:hover { background: var(--primary-mid); }
+
+#changelist .object-tools {
+    /* Django floats this list, and the float was resolving against the top of
+       the content column -- which is under the sticky topbar -- so the list's
+       own "Add" button rendered behind the bar with only its bottom edge
+       showing. Back into normal flow, right-aligned, above the search row. */
+    position: static;
+    float: none;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    list-style: none;
+}
+
+.studio-theme-toggle { position: relative; }
+
+.studio-theme-toggle .theme-icon {
     display: none;
     align-items: center;
     justify-content: center;
@@ -2374,7 +2658,7 @@ input:focus, select:focus, textarea:focus {
 :root[data-theme="light"] .theme-icon-light,
 [data-theme="dark"] .theme-icon-dark { display: inline-flex; }
 
-.theme-toggle svg { width: 17px; height: 17px; }
+.studio-theme-toggle svg { width: 17px; height: 17px; display: block; }
 
 /* The sun reads as "switch to light" and the moon as "switch to dark", so the
    icon shown is the *other* theme, not the current one. A user who is in dark

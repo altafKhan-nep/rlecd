@@ -12,28 +12,41 @@ sorting, the bulk-action checkboxes, the table itself -- is untouched, so
 there is exactly one implementation of list behaviour in the project.
 {% endcomment %}
 
-{% block result_list %}
-  <div class="studio-list-summary">
-    <div class="list-count">
-      {% if studio_shown == studio_all %}
-        <strong>{{ studio_all }}</strong>
-        {% blocktranslate count counter=studio_all %}item{% plural %}items{% endblocktranslate %}
-      {% else %}
-        {% comment %}
-`counter` is reserved by blocktranslate when `count` is used, so the
-        unfiltered total is passed in under its own name instead.
-        {% endcomment %}
-        <strong>{{ studio_shown }}</strong>
-        {% blocktranslate %}of {{ studio_all }} in total{% endblocktranslate %}
-      {% endif %}
-    </div>
+{% comment %}
+Django titles a changelist "Select page to change", which is an instruction to
+nobody in particular and reads as an error. The list's own name is what the
+person on this screen is actually looking at.
+{% endcomment %}
+{% block content_title %}{{ cl.opts.verbose_name_plural|capfirst }}{% endblock %}
 
-    {% comment %}
+{% block result_list %}
+  {% comment %}
+  Only when the list has been narrowed. Unfiltered, "19 items" repeats the
+  count already on the sidebar badge and tells the reader nothing they did not
+  know; narrowed, the same strip is how you find out why the list is short and
+  put it back.
+  {% endcomment %}
+  {% if studio_filters %}
+    <div class="studio-list-summary">
+      <div class="list-count">
+        {% if studio_shown == studio_all %}
+          <strong>{{ studio_all }}</strong>
+          {% blocktranslate count counter=studio_all %}item{% plural %}items{% endblocktranslate %}
+        {% else %}
+          {% comment %}
+`counter` is reserved by blocktranslate when `count` is used, so the
+unfiltered total is passed in under its own name instead.
+          {% endcomment %}
+          <strong>{{ studio_shown }}</strong>
+          {% blocktranslate %}of {{ studio_all }} in total{% endblocktranslate %}
+        {% endif %}
+      </div>
+
+      {% comment %}
 The filters that are actually narrowing the list. A count alone does not
-    say why the list is short, so each applied filter is named and can be
-    removed on its own without resetting the others.
-    {% endcomment %}
-    {% if studio_filters %}
+say why the list is short, so each applied filter is named and can be
+removed on its own without resetting the others.
+      {% endcomment %}
       <div class="list-filters">
         {% for chip in studio_filters %}
           <a class="list-filter-chip" href="{{ chip.remove_url }}"
@@ -47,8 +60,8 @@ The filters that are actually narrowing the list. A count alone does not
           {% translate "Clear all" %}
         </a>
       </div>
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 
   {{ block.super }}
 

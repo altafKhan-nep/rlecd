@@ -486,64 +486,48 @@ textarea { max-width: 100%; }
    THE LOGIN PAGE
    ==========================================================================
 
-   Django's own login.css -- vendored into backend/staticfiles/, which is a
-   build artifact and gitignored -- gives the login box a fixed `width: 28em`
-   with a `min-width: 300px` floor and a 100px top margin. 28em plus the
-   padding is wider than a 375px phone, and the margin plus the box is taller
-   than a short window, so the page grows a horizontal scrollbar and the form
-   is cut off at the bottom.
+   The login screen carries its own styles inline in admin/login.html: a
+   full-bleed two-panel layout, brand on the left and the form on the right.
+   What it does not carry is anything that undoes the admin shell, and the
+   shell offsets #container by the width of the sidebar to clear it.
 
-   The overrides live here rather than in staticfiles/ for two reasons: that
-   directory is gitignored and would be blown away by the next collectstatic,
-   and this file already owns the breakpoints, so a login rule added
-   elsewhere would be a second scale to keep in step.
+   The login page has no sidebar -- base_site does not render one there -- so
+   that offset stayed, and the result was a 254px band of blank white down the
+   left edge with the whole design pushed right of it. The container has to go
+   back to flush on this page and only this page.
 
-   The box becomes fluid: a max-width for the comfortable case, a width that
-   fills a phone, and vertical margin that collapses on a short screen.
+   These rules replace an earlier set written for a centred 28em card that no
+   longer exists. They never ran: they were scoped to `body.login`, and
+   admin/login.html extends base_site rather than Django's login.html, so the
+   only body classes ever rendered were `studio-admin` and `rlecd-login`. Dead
+   rules for a dead layout are worse than none -- they read as coverage.
 */
 
-body.login #container {
-    /* 28em is a fixed width, so a narrow window overflowed.
-       `body.login` rather than `.login` so this wins on specificity and not
-       on the order the two stylesheets happen to be linked in. */
-    width: min(28em, 100%);
+/* Scoped to rlecd-login, not to Django's conventional `login`: that class is
+   the one this template actually emits, so it is the one that can be relied
+   on. The collapsed variant needs naming too, or a reader who has collapsed
+   the sidebar keeps a 68px band down the side. */
+body.rlecd-login #container,
+body.rlecd-login html.sidebar-collapsed #container {
+    margin-left: 0;
+    width: auto;
     min-width: 0;
     box-sizing: border-box;
-    /* 100px of top margin on a short window pushes the submit button below
-     * the fold, which on a login form is a dead end. */
-    margin: clamp(16px, 12vh, 100px) auto;
 }
 
-.login #header {
-    flex-wrap: wrap;
-    padding: 15px 16px;
+/* #content and .content both carry horizontal padding. The login layout does
+   its own spacing on .rl-brand and .rl-form-panel, so the inherited padding
+   just narrows the panels and shifts the fold left of centre. */
+body.rlecd-login #content,
+body.rlecd-login .content {
+    padding: 0;
+    max-width: none;
 }
 
-.login #content { padding: 20px 16px; }
-
-@media (max-width: 640px) {
-    body.login #container {
-        /* Full-bleed on a phone: the 20px #content padding plus a border eats
-         * most of a 375px screen. */
-        width: 100%;
-        margin: 0;
-        border: 0;
-        border-radius: 0;
-        min-height: 100vh;
-        min-height: 100dvh;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-
-    .login #header { border-bottom: 0; }
-
-    .login #content { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-
-    .login .form-row { padding: 6px 0; }
-
-    .login .submit-row input[type="submit"] {
-        width: 100%;
-        padding: 12px;
-    }
+/* The panel owns the full height itself; #container's flex column would
+   otherwise let the grid collapse short of the fold on a tall window. */
+body.rlecd-login #container {
+    min-height: 100vh;
+    min-height: 100dvh;
 }
+
