@@ -413,6 +413,26 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 
 .sidebar-link svg { width: 15px; height: 15px; stroke: currentColor; }
 
+/* The logout control is a real <button> inside a form, because signing out is
+   a POST. It has to look and behave exactly like the anchors beside it, which
+   means taking back the UA's button chrome -- including the focus ring, so
+   keyboard users still get one. */
+.sidebar-logout { margin: 0; }
+
+.sidebar-logout-button {
+    width: 100%;
+    border: 0;
+    background: none;
+    font-family: var(--font);
+    text-align: left;
+    cursor: pointer;
+}
+
+.sidebar-logout-button:focus-visible {
+    outline: 2px solid var(--accent-soft);
+    outline-offset: 2px;
+}
+
 .sidebar-link:hover { background: rgba(255, 255, 255, .07); color: #fff; }
 
 /* The collapse control is a <button> so it can be triggered by keyboard, which
@@ -2827,6 +2847,158 @@ a.deletelink:focus,
    visibility in JS instead would leave a blank button for the moment between
    the click and the next frame, and would flash on load.
 */
+
+/* ==========================================================================
+   THE FILTER PANEL
+   ==========================================================================
+
+   Django renders a filter sidebar as a stack of small-caps headings with
+   "All / Yes / No" links under each. The links are the problem: they are
+   unstyled inline text, so a group reads as a sentence rather than as a set of
+   choices, and the selected one is not distinguishable from the rest without
+   hunting for colour.
+
+   Each option becomes a real control: a row that reads as one item, takes the
+   brand fill when it is the active filter, and keeps a visible focus ring.
+   Headings lose the "By" Django prepends, which the filter classes now supply
+   in words a person would use.
+*/
+
+#changelist-filter {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 4px 0;
+}
+
+#changelist-filter h2 {
+    margin: 0;
+    padding: 12px 16px 8px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+/* Django wraps each facet in <details><summary>, not an <h3>, so the
+   disclosure arrow comes from the marker rather than from anything we draw. */
+#changelist-filter details {
+    border-top: 1px solid var(--line-soft);
+    padding: 2px 0 4px;
+}
+
+#changelist-filter details:first-of-type { border-top: 0; }
+
+#changelist-filter summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px 6px;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    cursor: pointer;
+    list-style: none;
+}
+
+#changelist-filter summary::-webkit-details-marker { display: none; }
+
+#changelist-filter summary::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 5px solid var(--muted);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform .16s ease;
+}
+
+#changelist-filter details[open] > summary::before { transform: rotate(90deg); }
+#changelist-filter summary:hover { color: var(--link); }
+#changelist-filter summary:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+
+#changelist-filter h3 {
+    margin: 0;
+    padding: 10px 16px 6px;
+    background: none;
+    border: 0;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+#changelist-filter ul {
+    margin: 0;
+    padding: 0 8px 6px;
+    list-style: none;
+}
+
+#changelist-filter li { margin: 0; padding: 0; }
+
+#changelist-filter li a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    line-height: 1.35;
+    text-decoration: none;
+    transition: background .14s ease, color .14s ease;
+}
+
+#changelist-filter li a:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+}
+
+#changelist-filter li a.selected {
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-weight: 600;
+}
+
+#changelist-filter li a.selected:hover { background: var(--primary-mid); }
+
+#changelist-filter li a:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 1px;
+}
+
+/* The count Django puts in a <span> next to each option, and the "Show counts"
+   switch, are the only things in the panel that are not a choice. */
+#changelist-filter .show-counts {
+    padding: 10px 16px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+#changelist-filter .show-counts a {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--ink-soft);
+    text-decoration: none;
+}
+
+#changelist-filter .show-counts a:hover { color: var(--link); }
+
+/* An empty group -- a filter with nothing to choose from -- should say so
+   quietly rather than render a bare heading. */
+#changelist-filter ul:empty { display: none; }
+
 
 /* ==========================================================================
    THE CHANGELIST SEARCH ROW

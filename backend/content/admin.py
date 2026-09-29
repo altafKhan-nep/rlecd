@@ -96,7 +96,12 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
                     "content_link", "image_count", "locked_count", "updated_at")
     list_display_links = ("path",)
     media_picker_fields = ("og_image",)
-    list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
+    # nav_variant and footer_variant are deliberately absent. They name which
+    # captured navbar and footer partial a page renders with -- values like
+    # "partials/_nav_1.html" -- and an editor filtering pages by them is not a
+    # task anyone has. Both are shown read-only on the change form under "Page
+    # settings", which is where a value that is really a build detail belongs.
+    list_filter = ("is_published", "show_in_menu")
     search_fields = ("path", "title", "seo_title", "seo_description")
     ordering = ("path",)
     # slug, path and sort_order decide the public URL; the shell variants

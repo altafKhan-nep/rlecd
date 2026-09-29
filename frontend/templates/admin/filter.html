@@ -1,0 +1,21 @@
+{% load i18n %}
+{% comment %}
+Django's filter.html wraps every heading in "By {{ title }}". That preposition
+was doing no work: these are the names of the facets, not sentences, and once
+the boolean filters supply a plain word the result reads "By Published", which
+is worse than the "By is published" it replaced.
+
+Only that one line differs from Django's version. The <details>/<summary>
+structure, the data-filter-title attribute that the search and JS rely on, the
+selected class and the query strings are all left exactly as Django renders
+them, so filtering, faceting and the changelist's own behaviour are unchanged.
+{% endcomment %}
+<details data-filter-title="{{ title }}" open>
+  <summary>{{ title }}</summary>
+  <ul>
+  {% for choice in choices %}
+    <li{% if choice.selected %} class="selected"{% endif %}>
+    <a href="{{ choice.query_string|iriencode }}">{{ choice.display }}</a></li>
+  {% endfor %}
+  </ul>
+</details>

@@ -22,6 +22,7 @@ Set on a subclass:
 """
 import threading
 
+from django.contrib import admin
 from django.db.models import Sum
 from django.urls import reverse
 from django.utils.html import format_html
@@ -43,6 +44,38 @@ def _current_request():
     return getattr(_request_local, "request", None)
 
 
+class FriendlyBooleanFilter(admin.BooleanFieldListFilter):
+    """A boolean filter that asks a question instead of naming a column.
+
+    "By is published" is the database's name for the field with a preposition
+    bolted on. "Published" is what a person is actually being asked. The leading
+    "is" goes because every boolean in this project is a state rather than a
+    comparison, and nobody needs to be told that twice.
+
+    The title is assigned rather than overridden in a method: Django declares
+    `title` as a plain attribute and FieldListFilter.__init__ sets it from the
+    field's verbose_name, so an instance attribute shadows any `title()` method
+    defined here. Overriding the method looked right and did nothing, which is
+    how this filter kept reading "By is published" after being "fixed".
+    """
+
+    def __init__(self, field, request, params, model, model_admin, **kwargs):
+        # field_path arrives as a keyword from the ChangeList, and the signature
+        # has moved between Django releases, so it is passed through rather than
+        # named here.
+        super().__init__(field, request, params, model, model_admin, **kwargs)
+        self.title = self._friendly_title(self.field)
+
+    @staticmethod
+    def _friendly_title(field):
+        label = str(field.verbose_name or "").replace("_", " ").strip()
+        for prefix in ("is ", "has ", "can "):
+            if label.lower().startswith(prefix):
+                label = label[len(prefix):]
+                break
+        return label[:1].upper() + label[1:] or field.name
+
+
 class StudioListMixin:
     """Thumbnail, row actions, counts and totals on Django's changelist."""
 
@@ -56,6 +89,34 @@ class StudioListMixin:
     studio_public_url = None
     #: Opt out of the trailing actions column.
     studio_hide_actions = False
+
+    def get_list_filter(self, request):
+        """Give every boolean filter a heading a person would say out loud.
+
+        Django titles a field filter from the field's own verbose_name and
+        prefixes it with "By", so `is_published` reads "By is published" and
+        `show_in_menu` reads "By show in menu". Those are column names, not
+        questions, and they appear on seven lists in this project plus every
+        is_visible, is_locked, is_active, is_featured and done.
+
+        Wrapping them here rather than in each ModelAdmin means the whole
+        project gets the same wording for free, and a model added later gets it
+        too. Only the heading changes: the field name is still right on the
+        form, where it is next to the box it labels.
+        """
+        filters = super().get_list_filter(request)
+        friendly = []
+        for entry in filters or ():
+            if isinstance(entry, str):
+                try:
+                    field = self.model._meta.get_field(entry)
+                except Exception:
+                    field = None
+                if field is not None and field.get_internal_type() == "BooleanField":
+                    friendly.append((entry, FriendlyBooleanFilter))
+                    continue
+            friendly.append(entry)
+        return friendly
 
     def get_list_display(self, request):
         """Insert the thumbnail first and the actions last, once.

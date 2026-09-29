@@ -11,7 +11,10 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission, User
+
+from main.listview import FriendlyBooleanFilter
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -1274,8 +1277,11 @@ class ChangelistFurnitureTests(TestCase):
 
     # ---------------------------------------------------------- filter chips
     def test_applied_filter_becomes_a_named_chip(self):
-        """A chip is read by a person, so it says "Is published: Yes" rather
-        than echoing `is_published__exact=1` back at them."""
+        """A chip is read by a person, so it says "Published: Yes" rather
+        than echoing `is_published__exact=1` back at them. The chip takes the
+        filter's own title, so it inherits the friendly wording the boolean
+        filters now supply -- the chip and the panel agree, which is the point
+        of that wording living in one place."""
         from content.models import Page
 
         Page.objects.create(title="Pub", path="/pub/", slug="pub",
@@ -1285,7 +1291,7 @@ class ChangelistFurnitureTests(TestCase):
         )
         chips = response.context["studio_filters"]
         self.assertEqual([chip["label"] for chip in chips],
-                         ["Is published: Yes"])
+                         ["Published: Yes"])
 
     def test_no_filters_means_no_chips(self):
         response = self.client.get(reverse("admin:content_page_changelist"))
@@ -1304,7 +1310,7 @@ class ChangelistFurnitureTests(TestCase):
         response = self.client.get(url)
         chips = response.context["studio_filters"]
         self.assertEqual(sorted(chip["label"] for chip in chips),
-                         ["Is published: Yes", "Show in menu: Yes"])
+                         ["Published: Yes", "Show in menu: Yes"])
 
         # Each chip's URL drops exactly the parameter it is named for and keeps
         # the other one, so the two chips are genuinely independent.
@@ -1595,3 +1601,141 @@ class MediaPickerTests(TestCase):
         for selector in (".media-path", ".media-picker-modal", ".media-picker-grid"):
             self.assertIn(selector, body, f"{selector} has no styles")
         self.assertEqual(body.count("{"), body.count("}"), "unbalanced CSS braces")
+
+
+class LogoutTests(TestCase):
+    """Signing out has to be a POST, and it has to actually sign you out.
+
+    The sidebar's "Log out" was an anchor pointing at the logout view. Django
+    answers a GET there with 405, so the one control in the sidebar that looked
+    like it worked took the user to Django's error page and left them signed in.
+    """
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            username="logout-tester", email="logout@example.com",
+            password="Studio!Local2026")
+        self.client.force_login(self.user)
+
+    def test_logout_is_a_post_form_with_a_csrf_token(self):
+        html = self.client.get("/admin/").content.decode()
+        match = re.search(
+            r'<form[^>]*action="/admin/logout/"[^>]*>(.*?)</form>', html, re.S)
+        self.assertIsNotNone(
+            match, "no POST form pointing at the logout view; a plain link "
+                   "gets 405 from Django and signs nobody out")
+        self.assertIn("csrfmiddlewaretoken", match.group(1))
+        self.assertIn('type="submit"', html)
+
+    def test_there_is_no_get_link_to_logout(self):
+        """The exact shape that was broken, so it cannot come back."""
+        html = self.client.get("/admin/").content.decode()
+        self.assertNotRegex(
+            html, r'<a[^>]*href="/admin/logout/"',
+            "'Log out' is an anchor again. Django only accepts POST and "
+            "answers a GET with 405, so the user stays signed in.")
+
+    def test_posting_it_ends_the_session(self):
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+        self.client.post("/admin/logout/")
+        after = self.client.get("/admin/")
+        self.assertEqual(
+            after.status_code, 302,
+            "still able to reach the admin after logging out")
+        self.assertIn("/admin/login/", after["Location"])
+
+    def test_a_get_cannot_log_anybody_out(self):
+        """Documented Django behaviour, pinned because our link relied on it
+        being otherwise."""
+        self.assertEqual(self.client.get("/admin/logout/").status_code, 405)
+
+
+class FilterWordingTests(TestCase):
+    """Filter headings are read by people, not by the database.
+
+    Django titles a facet from the field's verbose_name and its template wraps
+    that in "By", so `is_published` shipped as "By is published". Worse, the
+    pages filter offered `nav_variant` and `footer_variant`, whose only values
+    are captured template paths like "partials/_nav_1.html" -- build details
+    presented as something an editor could choose between.
+    """
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            username="filter-tester", email="f@example.com",
+            password="Studio!Local2026")
+        self.client.force_login(self.user)
+
+    def headings(self, url):
+        html = self.client.get(url).content.decode()
+        start = html.find('id="changelist-filter"')
+        self.assertNotEqual(start, -1, f"no filter panel on {url}")
+        segment = html[start:start + 3000]
+        return [re.sub(r"<[^>]+>", "", t).strip()
+                for t in re.findall(r"<summary>\s*(.*?)\s*</summary>",
+                                    segment, re.S)]
+
+    def test_boolean_filters_read_as_plain_words(self):
+        for field, expected in (("is_published", "Published"),
+                                ("show_in_menu", "Show in menu"),
+                                ("is_visible", "Visible"),
+                                ("is_locked", "Locked"),
+                                ("done", "Done")):
+            with self.subTest(field=field):
+                self.assertEqual(
+                    FriendlyBooleanFilter._friendly_title(
+                        _field_named(field)),
+                    expected)
+
+    def test_no_heading_starts_with_by(self):
+        for url in ("/admin/content/page/", "/admin/crm/lead/",
+                    "/admin/crm/task/", "/admin/content/section/"):
+            with self.subTest(url=url):
+                for heading in self.headings(url):
+                    self.assertFalse(
+                        heading.lower().startswith("by "),
+                        f"{url}: {heading!r} still carries Django's 'By'")
+
+    def test_no_heading_leaks_a_template_path(self):
+        html = self.client.get("/admin/content/page/").content.decode()
+        self.assertNotIn("_nav_", html)
+        self.assertNotIn("_foot_", html)
+
+    def test_the_build_detail_fields_are_still_visible_on_the_form(self):
+        """Removed from the filter, not from the record.
+
+        They decide the address and the head, so they are shown read-only
+        under "Page settings" -- a value that is really a build detail belongs
+        on the form, not in a list of things to filter by.
+        """
+        page = self._page()
+        form = self.client.get(
+            f"/admin/content/page/{page.pk}/change/").content.decode()
+        self.assertIn("nav_variant", form)
+        self.assertIn("footer_variant", form)
+
+    def _page(self):
+        from content.models import Page
+        return Page.objects.create(title="Filter", path="/f/", slug="f")
+
+    def test_a_filter_still_narrows_the_list(self):
+        """The wording changed; the behaviour must not have."""
+        from content.models import Page
+        Page.objects.create(title="Shown", path="/a/", slug="a",
+                            is_published=True)
+        Page.objects.create(title="Hidden", path="/b/", slug="b",
+                            is_published=False)
+        url = "/admin/content/page/?is_published__exact=1"
+        html = self.client.get(url).content.decode()
+        self.assertIn("Shown", html)
+        self.assertNotIn("Hidden", html)
+        self.assertIn("Published: Yes", html)
+
+
+def _field_named(name):
+    """A stand-in field object, so the wording helper can be tested directly."""
+    class _Field:
+        def __init__(self, verbose_name):
+            self.verbose_name = verbose_name
+            self.name = name
+    return _Field(name.replace("_", " "))

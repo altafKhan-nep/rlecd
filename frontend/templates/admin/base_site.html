@@ -150,11 +150,22 @@ Collapse is a pure view preference, so it lives in localStorage rather
         <span class="nav-text">{% translate "Change password" %}</span>
       </a>
     {% endif %}
-    <a class="sidebar-link" href="{% url 'admin:logout' %}"
-       title="{% translate 'Log out' %}" aria-label="{% translate 'Log out' %}">
-      {% studio_icon "external-link" %}
-      <span class="nav-text">{% translate "Log out" %}</span>
-    </a>
+    {% comment %}
+    A POST form, not a link. Django's logout view accepts POST only and answers
+    a GET with 405, so this used to be an anchor that took the user to Django's
+    "Method Not Allowed" page and left them signed in -- the one button in the
+    sidebar that looked like it worked and did not. Signing out is a state
+    change, so it should not be a GET that a prefetcher, a crawler or a
+    bookmark can trigger.
+    {% endcomment %}
+    <form method="post" action="{% url 'admin:logout' %}" class="sidebar-logout">
+      {% csrf_token %}
+      <button type="submit" class="sidebar-link sidebar-logout-button"
+              title="{% translate 'Log out' %}">
+        {% studio_icon "external-link" %}
+        <span class="nav-text">{% translate "Log out" %}</span>
+      </button>
+    </form>
   </div>
 </aside>
 
