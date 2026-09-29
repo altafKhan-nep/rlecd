@@ -11,6 +11,7 @@ from django.contrib.admin import AdminSite
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
+from django.template.response import TemplateResponse
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -56,9 +57,14 @@ NAV_GROUPS = (
     )),
     ("CRM", (
         ("Leads", "users", "admin:crm_lead_changelist", "new_leads"),
+        ("Pipeline board", "columns", "admin:pipeline_board", None),
         ("Tasks", "check-square", "admin:crm_task_changelist", "open_tasks"),
         ("Contacts", "user", "admin:crm_contact_changelist", None),
         ("Activity log", "bar-chart", "admin:crm_leadactivity_changelist", None),
+        # Round-robin has to be maintainable from the sidebar, not from a
+        # guessed URL. A member that goes inactive silently stops receiving
+        # leads otherwise.
+        ("Team", "users-round", "admin:crm_teammember_changelist", None),
     )),
     # auth.User and auth.Group are auto-registered by django.contrib.auth.
     # Without these entries the only route to them is a hand-typed URL.
@@ -76,6 +82,23 @@ def _nav_labels():
         for _group, rows in NAV_GROUPS
         for label, _icon, url_name, _count in rows
     }
+
+
+def _ago(moment, *, now=None):
+    """Human age of a timestamp: "3h", "2d", "5w".
+
+    Compact on purpose -- a card has room for one short word, and "23 hours"
+    would push the owner's name off the card.
+    """
+    now = now or timezone.now()
+    seconds = (now - moment).total_seconds()
+    if seconds < 0:
+        return "now"
+    for limit, divisor, unit in ((60, 1, "m"), (3600, 60, "h"),
+                                (86400, 3600, "d"), (604800, 86400, "w")):
+        if seconds < limit:
+            return f"{int(seconds // divisor)}{unit}"
+    return f"{int(seconds // 604800)}w"
 
 
 def _shift_month(year, month, delta):
@@ -308,8 +331,89 @@ class StudioAdminSite(AdminSite):
                 self.admin_view(self.media_picker),
                 name="media_picker",
             ),
+            path(
+                "pipeline/",
+                self.admin_view(self.pipeline_board),
+                name="pipeline_board",
+            ),
         ]
         return extra + super().get_urls()
+
+    #: Cards per column. A board that renders four hundred rows is a list
+    #: with extra steps, and the point of a board is the shape of the pipeline
+    #: rather than every lead in it.
+    BOARD_LIMIT = 40
+
+    def pipeline_board(self, request, extra_context=None):
+        """The lead pipeline as one column per stage.
+
+        Read-only. A changelist answers "show me these rows"; this answers
+        "what is stuck", which is the question a salesperson actually has and
+        which a sorted table makes them answer by eye. Moving a lead stays a
+        deliberate, confirmed action on the changelist -- a board that silently
+        moved a card on drag would be a worse thing to hand someone than a
+        list they have to read.
+        """
+        from crm import services
+        # LeadStatus is a TextChoices in crm.models, not an attribute of the
+        # Lead class, so it is imported rather than read off the model.
+        from crm.models import LeadStatus as statuses
+
+        lead_model = apps.get_model("crm", "Lead")
+
+        owner_name = (
+            lambda user: user.get_username() if user else ""
+        )
+
+        columns = []
+        total = unassigned = hot = 0
+        for key, label in statuses.choices:
+            rows = (
+                lead_model.objects.filter(status=key)
+                .select_related("owner", "service")
+                .order_by("-score", "-created_at")[:self.BOARD_LIMIT]
+            )
+            cards = []
+            for lead in rows:
+                total += 1
+                if not lead.owner_id:
+                    unassigned += 1
+                is_hot = lead.is_hot
+                if is_hot:
+                    hot += 1
+                cards.append({
+                    "url": reverse("admin:crm_lead_change", args=[lead.pk]),
+                    "name": lead.name,
+                    "service_label": (
+                        lead.service.name if lead.service
+                        else (lead.service_raw or "—")
+                    ),
+                    "score": lead.score,
+                    "score_band": (
+                        "hot" if lead.score >= services.HOT_THRESHOLD
+                        else "warm" if lead.score >= 40 else "cold"
+                    ),
+                    "is_hot": is_hot,
+                    "owner": owner_name(lead.owner),
+                    "age": _ago(lead.created_at),
+                    "created_at_iso": lead.created_at.isoformat(),
+                })
+            columns.append({"key": key, "label": label, "count": len(cards),
+                            "leads": cards})
+
+        context = {
+            **self.each_context(request),
+            "title": _("Pipeline board"),
+            "subtitle": None,
+            "board": {
+                "columns": columns,
+                "total": total,
+                "unassigned": unassigned,
+                "hot": hot,
+            },
+            **(extra_context or {}),
+        }
+        return TemplateResponse(request, "admin/kanban.html", context)
 
     #: The picker asks for the whole library at once and filters in the
     #: browser, so the payload is capped rather than left unbounded. Raised if

@@ -53,6 +53,14 @@ PATHS = {
         '<path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/>'
         '<path d="M17.5 14.2A6.5 6.5 0 0 1 21.5 20"/>'
     ),
+    # Three upright columns, for the pipeline board. Distinct from "layers"
+    # (stacked) and "panel-left" (a collapsed sidebar): this one has to read as
+    # a board of stages at a glance.
+    "columns": (
+        '<rect x="3" y="4" width="5" height="16" rx="1.2"/>'
+        '<rect x="9.5" y="4" width="5" height="11" rx="1.2"/>'
+        '<rect x="16" y="4" width="5" height="7" rx="1.2"/>'
+    ),
     "pencil": (
         '<path d="M12 20h9"/>'
         '<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>'

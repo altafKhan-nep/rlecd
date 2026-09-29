@@ -2135,3 +2135,153 @@ input:focus, select:focus, textarea:focus {
 
 .section-image-inline .field-thumb { width: 100px; }
 .section-image-inline textarea { min-height: 52px; }
+
+/* ------------------------------------------------------------------- kanban
+   One column per pipeline stage. Read-only by design: the board exists to show
+   what is stuck, and the moves stay on the changelist where they are
+   deliberate and confirmable. */
+
+.kanban-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.kanban-head-actions { display: flex; gap: 8px; }
+
+.kanban-board {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(230px, 1fr);
+    gap: 14px;
+    align-items: start;
+    overflow-x: auto;
+    padding-bottom: 12px;
+}
+
+.kanban-col {
+    background: #f4f5f6;
+    border: 1px solid var(--line-soft, #e6e8ea);
+    border-radius: 10px;
+    min-width: 0;
+}
+
+.kanban-col-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-soft, #e6e8ea);
+}
+
+.kanban-col-title {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink, #1c2126);
+}
+
+.kanban-col-count {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ink-soft, #5b6167);
+    background: #fff;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 999px;
+    padding: 1px 8px;
+    text-decoration: none;
+}
+
+.kanban-col-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    max-height: 62vh;
+    overflow-y: auto;
+}
+
+.kanban-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 11px;
+    background: #fff;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.kanban-card:hover,
+.kanban-card:focus-visible {
+    border-color: var(--c-teal, #0E8F87);
+    box-shadow: 0 1px 4px rgba(15, 20, 25, .09);
+}
+
+.kanban-card-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink, #1c2126);
+}
+
+.kanban-card-service {
+    font-size: 12px;
+    color: var(--ink-soft, #5b6167);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kanban-card-meta,
+.kanban-card-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--ink-soft, #5b6167);
+}
+
+.kanban-card-foot { justify-content: space-between; }
+
+.kanban-chip {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 5px;
+    padding: 1px 6px;
+    background: #eef0f2;
+}
+
+.kanban-chip.score-hot { background: #fdecea; color: #9B2C1C; }
+.kanban-chip.score-warm { background: #fdf3e2; color: #8A5A12; }
+
+.kanban-owner {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The one thing the board should interrupt you for. */
+.kanban-owner.is-unowned {
+    color: #9B2C1C;
+    font-weight: 600;
+}
+
+.kanban-hot {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #9B2C1C;
+}
+
+.kanban-empty {
+    margin: 4px 2px;
+    font-size: 11.5px;
+    color: var(--ink-soft, #5b6167);
+}
+

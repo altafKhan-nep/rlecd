@@ -171,6 +171,11 @@ def capture_lead(*, name, email, message="", phone="", city_or_zip="",
         "Lead captured lead=%s service=%s score=%s",
         lead.pk, service or raw or "-", score,
     )
+    # Assign after the row exists, so an owner is never recorded against a
+    # lead that failed to save. Deliberately outside the create transaction:
+    # assign() writes an activity row and takes a row lock, and neither
+    # should be able to roll back the enquiry itself.
+    auto_assign(lead)
     return lead
 
 
@@ -276,3 +281,192 @@ def convert_to_contact(lead, *, actor=None):
         summary=f"Converted to contact #{contact.pk}", actor=actor,
     )
     return contact
+
+
+def assign_round_robin(*, service=None, territory="", actor=None):
+    """Pick the team member who should take the next matching lead.
+
+    Fewest assignments first, then the member's own ordering, so a tie breaks
+    deterministically and the same person is not picked twice in a row when the
+    counts are level.
+
+    A member whose `service` matches the lead's is preferred over a generalist
+    at equal counts, which is the point of recording a service at all: a
+    bathroom lead should reach the bathroom fitter rather than being handed to
+    whoever happens to be least busy. Within the preferred tier it is still
+    round-robin, so the load stays even.
+
+    Returns None when nobody is available, which is a normal state for a young
+    team rather than an error. The lead stays unassigned and the dashboard's
+    unassigned count says so, which is honest; force-assigning to someone who
+    does not cover the work would be worse.
+
+    The row is locked for the duration so two enquiries arriving together
+    cannot both read the same lowest count and land on the same person, which
+    is the one way a naive round-robin stops being round-robin.
+    """
+    from django.db.models import Case, F, IntegerField, Q, Value, When
+
+    from .models import TeamMember
+
+    candidates = TeamMember.objects.filter(
+        is_active=True, user__isnull=False,
+    ).select_related("user")
+    if service is not None:
+        # A member with no service covers everything, so they stay eligible
+        # alongside the specialist for that service.
+        candidates = candidates.filter(Q(service=service) | Q(service__isnull=True))
+    territory = (territory or "").strip()
+    if territory:
+        candidates = candidates.filter(
+            Q(territory__iexact=territory) | Q(territory=""))
+    if not candidates.exists():
+        logger.info("Round-robin found no eligible team member (service=%s, territory=%r)",
+                    service, territory)
+        return None
+
+    # 0 for a specialist on this service, 1 for a generalist, so the specialist
+    # sorts first. Written as a Case rather than a boolean annotation because a
+    # boolean cannot be negated in an ordering on some backends.
+    specificity = Case(
+        When(service=service, then=Value(0)) if service is not None
+        else When(pk__in=[], then=Value(0)),
+        default=Value(1),
+        output_field=IntegerField(),
+    )
+
+    with transaction.atomic():
+        member = (
+            candidates.select_for_update()
+            .order_by(specificity, "assignment_count", "sort_order", "pk")
+            .first()
+        )
+        if member is None:
+            return None
+        TeamMember.objects.filter(pk=member.pk).update(
+            assignment_count=F("assignment_count") + 1)
+    # Read the new total back so a caller showing the assignment does not need
+    # a second query.
+    member.assignment_count += 1
+    return member
+
+
+def auto_assign(lead, *, actor=None):
+    """Give a freshly captured lead an owner by round-robin.
+
+    Called from capture_lead so the pipeline's "a lead submitted at 2pm is in
+    the pipeline *with an owner*" holds without anyone touching the admin. Does
+    nothing when nobody is eligible, leaving the lead visibly unassigned.
+    """
+    member = assign_round_robin(service=lead.service, territory=lead.city_or_zip,
+                                actor=actor)
+    if member is None:
+        return None
+    assign(lead, member.user, actor=actor)
+    logger.info("Round-robin assigned lead=%s to member=%s user=%s",
+                lead.pk, member.name, member.user.get_username())
+    return member
+
+
+class MergeError(Exception):
+    """Raised when two leads cannot be merged."""
+
+
+#: Priority is a CharField, so "the higher priority wins" cannot be a string
+#: comparison -- alphabetically "high" sorts before "normal". Ranked here
+#: instead, and only ever read, never written.
+_PRIORITY_RANK = {Priority.LOW: 0, Priority.NORMAL: 1,
+                  Priority.HIGH: 2, Priority.URGENT: 3}
+
+
+def merge_leads(primary, duplicates, *, actor=None):
+    """Fold `duplicates` into `primary` and return the primary.
+
+    A repeat enquiry is the most likely way this business loses track of
+    someone. `match_duplicate()` finds the earlier row, but finding it is only
+    half of it: without a merge, two people sit in the pipeline for the same
+    job and whichever is not followed up is a lead that never got a call.
+
+    Nothing is deleted. A duplicate that is mid-conversation may hold the only
+    record of what the customer said, so its message, notes and activity are
+    copied onto the primary and the row is kept and marked merged -- an
+    irreversible delete on a lead pipeline is not a safe default.
+
+    The primary wins on every field where the two disagree, except score,
+    which takes the higher of the two because a repeat enquiry with more detail
+    is the more engaged of the pair. Any field blank on the primary is filled
+    from the duplicate, since a phone number captured on the second submission
+    is data, not a conflict.
+    """
+    from .models import LeadActivity
+
+    if not duplicates:
+        raise MergeError("No leads selected to merge.")
+    if primary.pk in {lead.pk for lead in duplicates}:
+        raise MergeError("A lead cannot be merged into itself.")
+
+    # Prefetched once: merging must not re-query per field per duplicate.
+    duplicates = list(duplicates)
+    for lead in duplicates:
+        if lead.pk == primary.pk:
+            raise MergeError("A lead cannot be merged into itself.")
+
+    merged_fields = []
+    for source in duplicates:
+        for field, value in _mergeable_fields(primary, source):
+            setattr(primary, field, value)
+            if field not in merged_fields:
+                merged_fields.append(field)
+
+        # The activity trail is the record of what happened, so it moves with
+        # the lead rather than being summarised.
+        for activity in source.activities.select_related("actor"):
+            activity.pk = None
+            activity.id = None
+            activity.lead = primary
+            activity.save()
+
+        # Tasks follow the primary: an open follow-up owed on the duplicate is
+        # still owed, and re-pointing keeps it on the board rather than
+        # stranding it against a lead nobody looks at.
+        source.tasks.update(lead=primary)
+
+        LeadActivity.objects.create(
+            lead=primary,
+            kind=LeadActivity.Kind.MERGED,
+            summary=f"Merged lead #{source.pk} ({source.name})",
+            detail=(
+                f"Kept lead #{source.pk} for the record. "
+                f"Carried over {source.activities.count()} activities and "
+                f"{source.tasks.count()} tasks."
+            ),
+            actor=actor,
+        )
+        # Tombstone rather than delete, so the duplicate stops appearing in
+        # the pipeline and stop being assignable, but its id stays resolvable
+        # from a URL or an old email thread.
+        source.status = LeadStatus.LOST
+        source.notes = (f"[merged into lead #{primary.pk}] {source.notes}"
+                        ).strip()
+        source.save(update_fields=["status", "notes", "updated_at"])
+
+    primary.save()
+    logger.info("Merged %s lead(s) into lead=%s; fields touched: %s",
+                len(duplicates), primary.pk, ", ".join(merged_fields) or "none")
+    return primary
+
+
+def _mergeable_fields(primary, source):
+    """Yield (field, value) pairs to move from `source` onto `primary`."""
+    if primary.score < source.score:
+        yield "score", source.score
+    if _PRIORITY_RANK.get(primary.priority, 0) < _PRIORITY_RANK.get(source.priority, 0):
+        yield "priority", source.priority
+    # Blank-on-primary fields are filled rather than fought over: a phone number
+    # captured on the second submission is data the primary is missing.
+    for field in ("phone", "city_or_zip", "service", "message", "owner",
+                  "service_raw", "referrer", "landing_page", "utm_source",
+                  "utm_medium", "utm_campaign", "notes", "contacted_at"):
+        if getattr(primary, field) in (None, "") and getattr(source, field) not in (None, ""):
+            yield field, getattr(source, field)
+

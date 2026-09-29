@@ -238,3 +238,111 @@ class Contact(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AuditLog(models.Model):
+    """Who changed what, and when, across the CRM.
+
+    `LeadActivity` is the *business* timeline of a lead -- what happened to it,
+    written by the services that act on it. This table is the *accounting* of
+    the CRM itself: every create, update and delete of a CRM row, with the
+    actor and the request it came from. The two are deliberately separate. A
+    lead's activity trail is meaningless if you cannot also answer "who moved
+    this lead to Lost last Tuesday", and the answer to that question is not
+    something the business timeline should be trusted to carry.
+
+    Wired by signals rather than by hand, so a new code path cannot forget to
+    log. Note the limit of that guarantee: `QuerySet.update()` and
+    `bulk_create()` emit no save signals, so a bulk update is not recorded.
+    See the "Known gap" note in `crm/audit.py`.
+
+    `object_id` is a CharField rather than a FK because the row may be gone by
+    the time anyone reads this, and a FK would either cascade away the evidence
+    or refuse to store it.
+    """
+
+    class Action(models.TextChoices):
+        CREATE = "create", "Created"
+        UPDATE = "update", "Updated"
+        DELETE = "delete", "Deleted"
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="audit_entries",
+    )
+    action = models.CharField(max_length=10, choices=Action.choices, db_index=True)
+    # "crm.lead", "crm.task", ... -- the model label, not the class, so a
+    # rename does not orphan history.
+    model = models.CharField(max_length=100, db_index=True)
+    object_id = models.CharField(max_length=64, db_index=True)
+    object_repr = models.CharField(max_length=300, blank=True)
+    # Field-level diff for updates: {"status": {"from": "new", "to": "won"}}.
+    # Bounded to a handful of fields per model by the signal, so a large text
+    # field cannot turn one edit into a megabyte of audit rows.
+    changes = models.JSONField(default=dict, blank=True)
+    summary = models.CharField(max_length=300, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    path = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "audit log entry"
+        verbose_name_plural = "audit log entries"
+        indexes = [
+            models.Index(fields=["model", "object_id", "-created_at"]),
+        ]
+
+    def __str__(self):
+        actor = self.actor.get_username() if self.actor else "system"
+        return f"{actor} {self.get_action_display().lower()} {self.model} #{self.object_id}"
+
+
+class TeamMember(models.Model):
+    """Someone who can own leads, and the work they cover.
+
+    Round-robin assignment is by service and territory: a lead for a given
+    service in a given area goes to the member covering it who has been
+    assigned the fewest leads. Nobody has to watch a queue for the load to stay
+    even, and a lead that arrives at 2pm still gets an owner.
+
+    `assignment_count` is the round-robin cursor. It is incremented atomically
+    when a lead is assigned, and is what makes the rotation fair without
+    needing a timestamp comparison or a per-lead query.
+    """
+
+    name = models.CharField(max_length=160)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="team_membership",
+        help_text="The staff account that owns the lead. A member without one "
+                  "cannot be assigned leads and is skipped by round-robin.",
+    )
+    service = models.ForeignKey(
+        Service, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="team_members",
+        help_text="Service this member covers. Blank covers every service.",
+    )
+    territory = models.CharField(
+        max_length=120, blank=True,
+        help_text="City or ZIP this member covers, matched against "
+                  "Lead.city_or_zip. Blank covers everywhere.",
+    )
+    is_active = models.BooleanField(
+        default=True, db_index=True,
+        help_text="Untick to stop assigning new leads. Existing ones are kept.",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+    assignment_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Running total of leads assigned. The round-robin cursor.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+        verbose_name = "team member"
+        verbose_name_plural = "team members"
+
+    def __str__(self):
+        return self.name

@@ -20,6 +20,7 @@ from .models import (
     LeadStatus,
     Service,
     Task,
+    TeamMember,
 )
 from main.listview import StudioListMixin
 
@@ -77,7 +78,8 @@ class LeadAdmin(StudioListMixin, admin.ModelAdmin):
     actions = (
         "action_mark_contacted", "action_mark_qualified", "action_mark_won",
         "action_mark_lost", "action_assign_to_me", "action_create_followup",
-        "action_convert_to_contact",
+        "action_convert_to_contact", "action_merge_leads",
+        "action_assign_round_robin",
     )
     fieldsets = (
         (None, {"fields": ("name", "email", "phone", "city_or_zip")}),
@@ -217,6 +219,60 @@ class LeadAdmin(StudioListMixin, admin.ModelAdmin):
             request, f"{queryset.count()} lead(s) converted.", messages.SUCCESS,
         )
 
+    @admin.action(description="Merge selected leads into the oldest one")
+    def action_merge_leads(self, request, queryset):
+        """Fold repeats into one lead.
+
+        A repeat enquiry is the likeliest way this business loses someone: two
+        rows for the same job, and whichever is not followed up is a lead that
+        never got a call. `match_duplicate` finds the earlier row; this acts on
+        it.
+
+        The oldest selected row wins, so a merge always converges on one lead
+        without the operator having to decide which to keep. Nothing is
+        deleted -- see services.merge_leads.
+        """
+        leads = list(queryset.order_by("created_at", "pk"))
+        if len(leads) < 2:
+            self.message_user(
+                request,
+                "Select at least two leads to merge. One lead cannot be "
+                "merged into itself.",
+                messages.WARNING,
+            )
+            return
+        primary, duplicates = leads[0], leads[1:]
+        try:
+            services.merge_leads(primary, duplicates, actor=request.user)
+        except services.MergeError as exc:
+            self.message_user(request, str(exc), messages.ERROR)
+            return
+        self.message_user(
+            request,
+            f"Merged {len(duplicates)} lead(s) into #{primary.pk} "
+            f"{primary.name}. The merged rows are kept and marked Lost.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Re-assign selected by round-robin")
+    def action_assign_round_robin(self, request, queryset):
+        """Re-run assignment on selected leads, ignoring current owners."""
+        assigned = 0
+        for lead in queryset:
+            member = services.assign_round_robin(
+                service=lead.service, territory=lead.city_or_zip,
+                actor=request.user)
+            if member is None:
+                continue
+            services.assign(lead, member.user, actor=request.user)
+            assigned += 1
+        skipped = queryset.count() - assigned
+        note = f" {skipped} had no eligible team member." if skipped else ""
+        self.message_user(
+            request, f"{assigned} lead(s) assigned by round-robin.{note}",
+            messages.SUCCESS if assigned else messages.WARNING,
+        )
+
     def save_model(self, request, obj, form, change):
         """Keep the activity trail honest when status is changed on the form."""
         previous = Lead.objects.filter(pk=obj.pk).first() if change else None
@@ -228,6 +284,43 @@ class LeadAdmin(StudioListMixin, admin.ModelAdmin):
                 summary=f"{obj.get_status_display()} (was {old_label})",
                 actor=request.user,
             )
+
+
+@admin.register(TeamMember)
+class TeamMemberAdmin(StudioListMixin, admin.ModelAdmin):
+    """Who can own a lead, and what they cover.
+
+    Assignment is round-robin by service and territory, so the only thing that
+    has to be right here is that a member exists, is active, and has a user
+    account to own the lead with.
+    """
+
+    list_display = ("name", "user", "service", "territory", "is_active",
+                    "assignment_count", "open_leads")
+    list_editable = ("is_active",)
+    list_filter = ("is_active", "service")
+    search_fields = ("name", "territory", "user__username")
+    ordering = ("sort_order", "name")
+    fieldsets = (
+        (None, {"fields": ("name", "user", "is_active", "sort_order")}),
+        ("Coverage", {
+            "description": (
+                "Leave the service blank to cover every service, and the "
+                "territory blank to cover everywhere. Round-robin prefers the "
+                "specialist for the lead's service, then the fewest "
+                "assignments."
+            ),
+            "fields": ("service", "territory", "assignment_count", "open_leads"),
+        }),
+    )
+
+    @admin.display(description="Open leads")
+    def open_leads(self, obj):
+        if not obj or not obj.user_id:
+            return "—"
+        return obj.user.owned_leads.filter(
+            status__in=[LeadStatus.NEW, LeadStatus.CONTACTED,
+                        LeadStatus.QUALIFIED]).count()
 
 
 @admin.register(LeadActivity)

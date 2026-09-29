@@ -246,6 +246,11 @@ CONTENT_ALLOW_TEMPLATES = _bool_env('CONTENT_ALLOW_TEMPLATES', True)
 
 
 MIDDLEWARE = [
+    # First, so every later middleware and the view can see the request
+    # on the audit thread-local. It must also be outside
+    # WhiteNoiseMiddleware, which short-circuits static requests before
+    # they reach anything else.
+    'crm.middleware.AuditContextMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # Added first so it can respond to static requests before any database or
     # session access, keeping cached assets off the request path entirely.

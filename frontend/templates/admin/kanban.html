@@ -1,0 +1,95 @@
+{% extends "admin/base_site.html" %}
+{% load i18n studio_tags %}
+
+{% comment %}
+The lead pipeline as a board, one column per stage.
+
+A changelist answers "show me these rows". This answers "what is stuck", which
+is the question a salesperson actually has, and which a sorted table makes you
+answer by eye. It is a read-only view on purpose: dragging a card would be
+nicer, but a drag that silently changes a lead's status is a worse thing to
+hand someone than a link. Moving a lead stays a deliberate, confirmed action
+on the changelist.
+{% endcomment %}
+
+{% block title %}{% translate "Pipeline board" %} | {{ title }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+  &rsaquo; <a href="{% url 'admin:crm_lead_changelist' %}">{% translate "Leads" %}</a>
+  &rsaquo; {% translate "Pipeline board" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main" class="kanban">
+
+  <div class="kanban-head">
+    <div>
+      <h1 class="dash-title">{% translate "Pipeline board" %}</h1>
+      <p class="dash-sub">
+        {% blocktranslate count counter=board.total %}{{ counter }} open lead{% plural %}{{ counter }} open leads{% endblocktranslate %}
+        &middot;
+        {% blocktranslate count counter=board.unassigned %}{{ counter }} unassigned{% plural %}{{ counter }} unassigned{% endblocktranslate %}
+        {% if board.hot %}
+          &middot; {{ board.hot }} {% translate "hot" %}
+        {% endif %}
+      </p>
+    </div>
+    <div class="kanban-head-actions">
+      <a class="button" href="{% url 'admin:crm_lead_changelist' %}">{% translate "List view" %}</a>
+      <a class="button addlink" href="{% url 'admin:crm_lead_add' %}">{% translate "New lead" %}</a>
+    </div>
+  </div>
+
+  {% if not board.total %}
+    <p class="empty">
+      {% translate "No open leads. Submissions from the website will appear here." %}
+    </p>
+  {% else %}
+    <div class="kanban-board">
+      {% for column in board.columns %}
+        <section class="kanban-col" data-status="{{ column.key }}">
+          <header class="kanban-col-head">
+            <h2 class="kanban-col-title">{{ column.label }}</h2>
+            <a class="kanban-col-count" href="{% url 'admin:crm_lead_changelist' %}?status__exact={{ column.key }}">
+              {{ column.count }}
+            </a>
+          </header>
+
+          <div class="kanban-col-body">
+            {% for lead in column.leads %}
+              <a class="kanban-card{% if lead.is_overdue_task %} is-stale{% endif %}"
+                 href="{{ lead.url }}">
+                <span class="kanban-card-name">{{ lead.name }}</span>
+                <span class="kanban-card-service">{{ lead.service_label }}</span>
+                <span class="kanban-card-meta">
+                  <span class="kanban-chip score-{{ lead.score_band }}">{{ lead.score }}</span>
+                  {% if lead.owner %}
+                    <span class="kanban-owner" title="Owner">{{ lead.owner }}</span>
+                  {% else %}
+                    {% comment %}
+                    Unassigned is the one thing worth interrupting the board
+                    for: the lead exists but nobody owns it, which is how it
+                    gets forgotten.
+                    {% endcomment %}
+                    <span class="kanban-owner is-unowned"
+                          title="Nobody owns this lead">{% translate "Unassigned") }}</span>
+                  {% endif %}
+                </span>
+                <span class="kanban-card-foot">
+                  <time datetime="{{ lead.created_at_iso }}">{{ lead.age }}</time>
+                  {% if lead.is_hot %}<span class="kanban-hot">{% translate "hot" %}</span>{% endif %}
+                </span>
+              </a>
+            {% empty %}
+              <p class="kanban-empty">{% translate "Nothing here" %}</p>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

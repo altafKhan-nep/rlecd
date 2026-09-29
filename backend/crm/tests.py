@@ -19,9 +19,12 @@ from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from content.models import Section
 from crm import services
 from crm.admin import LeadAdmin
+from crm.audit import AUDIT_FIELDS
 from crm.models import (
+    AuditLog,
     Contact,
     Lead,
     LeadActivity,
@@ -30,6 +33,7 @@ from crm.models import (
     Priority,
     Service,
     Task,
+    TeamMember,
 )
 
 PUBLIC_PAGES = [
@@ -1006,3 +1010,523 @@ class NoConfiguredDomainTests(TestCase):
             )
         self.assertNotEqual(response.status_code, 403)
         self.assertTrue(Lead.objects.filter(email="a@b.c").exists())
+
+
+class AuditLogTests(TestCase):
+    """Who changed what, and when.
+
+    The activity trail is the *business* history of a lead. This is the
+    *accounting* of the CRM: every create, update and delete of a CRM row, with
+    the actor and the request behind it. The two are separate because a lead's
+    activity trail cannot be trusted to answer "who moved this to Lost".
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("staff", "s@example.com", "pw",
+                                             is_staff=True)
+        self.lead = Lead.objects.create(name="Ann", email="a@e.com",
+                                        message="kitchen")
+
+    def test_create_is_recorded(self):
+        row = AuditLog.objects.get(model="crm.lead", object_id=str(self.lead.pk))
+        self.assertEqual(row.action, AuditLog.Action.CREATE)
+        self.assertEqual(row.object_repr, str(self.lead))
+
+    def test_update_records_only_the_fields_that_moved(self):
+        self.lead.status = LeadStatus.QUALIFIED
+        self.lead.save()
+        row = AuditLog.objects.filter(action=AuditLog.Action.UPDATE).get()
+        self.assertEqual(row.changes,
+                         {"status": {"from": LeadStatus.NEW,
+                                     "to": LeadStatus.QUALIFIED}})
+
+    def test_a_save_that_changes_nothing_is_not_recorded(self):
+        """Otherwise the useful rows drown in rows saying "nothing happened"."""
+        before = AuditLog.objects.count()
+        self.lead.save()
+        self.assertEqual(AuditLog.objects.count(), before)
+
+    def test_delete_is_recorded_after_the_row_is_gone(self):
+        """The object_id is a string precisely so the evidence outlives the row."""
+        pk = self.lead.pk
+        self.lead.delete()
+        row = AuditLog.objects.filter(action=AuditLog.Action.DELETE).get()
+        self.assertEqual(row.object_id, str(pk))
+
+    def test_actor_comes_from_the_request(self):
+        from crm import audit
+        from django.test import RequestFactory
+
+        request = RequestFactory().post("/admin/crm/lead/1/change/")
+        request.user = self.user
+        request.META["REMOTE_ADDR"] = "203.0.113.9"
+        audit.audit_context(request)
+        try:
+            self.lead.phone = "410-555-0100"
+            self.lead.save()
+        finally:
+            audit.clear_audit_context()
+        row = AuditLog.objects.filter(action=AuditLog.Action.UPDATE).get()
+        self.assertEqual(row.actor, self.user)
+        self.assertEqual(row.ip_address, "203.0.113.9")
+        self.assertEqual(row.path, "/admin/crm/lead/1/change/")
+
+    def test_no_request_means_no_actor_rather_than_an_error(self):
+        """capture_lead runs outside any request; that must not break logging."""
+        self.lead.status = LeadStatus.CONTACTED
+        self.lead.save()
+        row = AuditLog.objects.filter(action=AuditLog.Action.UPDATE).get()
+        self.assertIsNone(row.actor)
+
+    def test_forwarded_for_wins_behind_a_proxy(self):
+        """Render terminates TLS in front of the app, so REMOTE_ADDR is the proxy."""
+        from crm import audit
+        from django.test import RequestFactory
+
+        request = RequestFactory().post("/x/")
+        request.user = self.user
+        request.META["REMOTE_ADDR"] = "10.0.0.1"
+        request.META["HTTP_X_FORWARDED_FOR"] = "198.51.100.4, 10.0.0.1"
+        audit.audit_context(request)
+        try:
+            self.assertEqual(audit._ip(request), "198.51.100.4")
+        finally:
+            audit.clear_audit_context()
+
+    def test_a_bulk_update_is_NOT_recorded(self):
+        """Documents a real limitation, so nobody relies on a false guarantee.
+
+        `QuerySet.update()` emits no save signals, so it is invisible here. This
+        test is named to make that unmistakable rather than to assert coverage:
+        it will keep passing after someone wires bulk updates up, and whoever
+        does that should delete or invert it.
+        """
+        self.assertEqual(self.lead.status, LeadStatus.NEW)
+        Lead.objects.filter(pk=self.lead.pk).update(status=LeadStatus.WON)
+        self.assertFalse(
+            AuditLog.objects.filter(action=AuditLog.Action.UPDATE).exists())
+
+    def test_looping_and_saving_is_recorded(self):
+        """The pattern the admin's bulk actions use, and the one to copy."""
+        self.lead.status = LeadStatus.WON
+        self.lead.save()
+        row = AuditLog.objects.filter(action=AuditLog.Action.UPDATE).get()
+        self.assertEqual(row.changes["status"]["to"], LeadStatus.WON)
+
+    def test_the_customers_submission_is_not_diffed(self):
+        """A lead's message is paragraphs; one edit must not become a wall."""
+        self.assertNotIn("message", AUDIT_FIELDS["crm.lead"])
+
+    def test_staff_notes_are_diffed(self):
+        """The opposite decision to `message`, on purpose: notes are short, and
+        "who edited the note" is a question worth being able to answer."""
+        self.assertIn("notes", AUDIT_FIELDS["crm.lead"])
+
+    def test_the_audit_log_never_audits_itself(self):
+        self.assertNotIn("crm.auditlog", AUDIT_FIELDS)
+
+
+class RoundRobinTests(TestCase):
+    """A lead that arrives at 2pm has to end up with an owner.
+
+    The plan's exit criterion is "a lead submitted at 2pm is in the pipeline
+    with an owner". Nothing assigned leads before this, so every lead sat
+    unassigned until somebody noticed.
+    """
+
+    def setUp(self):
+        self.users = [
+            User.objects.create_user(f"u{i}", f"u{i}@e.com", "pw")
+            for i in range(3)
+        ]
+        self.smith = User.objects.create_user("smith", "s@e.com", "pw")
+        self.bath = Service.objects.create(name="Bathroom", slug="bathroom")
+        self.kitchen = Service.objects.create(name="Kitchen", slug="kitchen")
+
+    def member(self, name, user, **kwargs):
+        return TeamMember.objects.create(name=name, user=user, **kwargs)
+
+    def lead(self, **kwargs):
+        defaults = dict(name="Ann", email="a@e.com", message="hello there")
+        defaults.update(kwargs)
+        return Lead.objects.create(**defaults)
+
+    # --- rotation -------------------------------------------------------
+    def test_leads_rotate_rather_than_piling_on_one_person(self):
+        for user in self.users:
+            self.member(user.username, user)
+        picked = [services.assign_round_robin().user for _ in range(6)]
+        self.assertEqual(len(set(picked)), 3)
+        # Two each after six, in the configured order.
+        self.assertEqual([u.username for u in picked],
+                         ["u0", "u1", "u2", "u0", "u1", "u2"])
+
+    def test_the_counter_is_incremented_atomically(self):
+        member = self.member("solo", self.users[0])
+        for _ in range(3):
+            services.assign_round_robin()
+        member.refresh_from_db()
+        self.assertEqual(member.assignment_count, 3)
+
+    def test_a_tie_breaks_on_sort_order_not_arbitrarily(self):
+        """Two members at zero must not both be 'first' on every call."""
+        self.member("b", self.users[0], sort_order=1)
+        self.member("a", self.users[1], sort_order=0)
+        picked = [services.assign_round_robin().name for _ in range(2)]
+        self.assertEqual(picked, ["a", "b"])
+
+    # --- eligibility ----------------------------------------------------
+    def test_inactive_members_are_skipped(self):
+        self.member("gone", self.users[0], is_active=False)
+        self.member("here", self.users[1])
+        self.assertEqual(services.assign_round_robin().name, "here")
+
+    def test_a_member_without_a_user_is_skipped(self):
+        """There is nobody to own the lead, so assigning to them is a no-op
+        that would leave the lead unassigned and the counter burned."""
+        self.member("no account", None)
+        self.member("real", self.users[0])
+        self.assertEqual(services.assign_round_robin().name, "real")
+
+    def test_a_specialist_is_preferred_for_their_service(self):
+        """Recording a service has to mean something.
+
+        At equal assignment counts the bathroom fitter gets the bathroom lead,
+        not whoever was created first.
+        """
+        self.member("general", self.users[0])
+        plumber = self.member("bath fitter", self.users[1], service=self.bath)
+        self.assertEqual(services.assign_round_robin(service=self.bath).name,
+                         "bath fitter")
+        # Still round-robin within the specialist tier, so the load stays even.
+        self.assertEqual(services.assign_round_robin(service=self.bath).name,
+                         "bath fitter")
+        plumber.refresh_from_db()
+        self.assertEqual(plumber.assignment_count, 2)
+
+    def test_deactivating_the_specialist_routes_to_the_generalist(self):
+        """Coverage has to have an off switch, or a holiday stops intake."""
+        self.member("general", self.users[0])
+        plumber = self.member("bath fitter", self.users[1], service=self.bath)
+        plumber.is_active = False
+        plumber.save()
+        self.assertEqual(services.assign_round_robin(service=self.bath).name,
+                         "general")
+
+    def test_a_specialist_does_not_take_another_services_lead(self):
+        self.member("bath fitter", self.users[0], service=self.bath)
+        general = self.member("general", self.users[1])
+        self.assertEqual(services.assign_round_robin(service=self.kitchen).name,
+                         general.name)
+
+    def test_a_service_mismatch_still_falls_back_to_a_generalist(self):
+        """Better a generalist than nobody: the lead exists either way."""
+        self.member("bath only", self.users[0], service=self.bath)
+        self.member("general", self.users[1])
+        self.assertEqual(services.assign_round_robin(service=self.kitchen).name,
+                         "general")
+
+    def test_territory_matching_is_exact_not_partial(self):
+        """A member covering 'Baltimore' must not silently take 'Baltimore County'
+        -- or, worse, a lead from anywhere else."""
+        balt = self.member("balt", self.users[0], territory="Baltimore")
+        self.member("everywhere", self.users[1])
+        self.assertEqual(services.assign_round_robin(territory="Baltimore").name,
+                         balt.name)
+        self.assertEqual(services.assign_round_robin(territory="Owings Mills").name,
+                         "everywhere")
+
+    def test_no_eligible_member_returns_none_rather_than_raising(self):
+        """A young team is a normal state. The lead stays visibly unassigned
+        and the dashboard says so, which beats force-assigning."""
+        self.assertIsNone(services.assign_round_robin())
+        self.assertIsNone(services.assign_round_robin(service=self.bath))
+
+    def test_an_empty_team_is_not_an_error(self):
+        lead = self.lead()
+        self.assertIsNone(services.auto_assign(lead))
+        lead.refresh_from_db()
+        self.assertIsNone(lead.owner)
+        # No activity invented for an assignment that did not happen.
+        self.assertFalse(
+            lead.activities.filter(kind=LeadActivity.Kind.ASSIGNED).exists())
+
+    # --- wired into capture ---------------------------------------------
+    def test_capture_lead_assigns_an_owner_automatically(self):
+        self.member("owner", self.users[0])
+        lead = services.capture_lead(
+            name="Ann", email="a@e.com", message="I want a kitchen",
+            service_raw="kitchen")
+        self.assertEqual(lead.owner, self.users[0])
+        self.assertTrue(
+            lead.activities.filter(kind=LeadActivity.Kind.ASSIGNED).exists())
+
+    def test_capture_still_works_with_no_team_configured(self):
+        """The whole point of the 'a lead is never lost' rule: assignment is
+        additive and must not be able to fail the capture."""
+        lead = services.capture_lead(
+            name="Ann", email="a@e.com", message="I want a kitchen")
+        self.assertIsNotNone(lead.pk)
+        self.assertIsNone(lead.owner)
+
+    def test_rotation_spans_separate_captures(self):
+        for user in self.users:
+            self.member(user.username, user)
+        owners = [
+            services.capture_lead(name=f"n{i}", email=f"{i}@e.com",
+                                  message="hello there").owner
+            for i in range(3)
+        ]
+        self.assertEqual([u.username for u in owners], ["u0", "u1", "u2"])
+
+
+class MergeLeadsTests(TestCase):
+    """A repeat enquiry is the likeliest way this business loses someone.
+
+    Two rows for the same job, and whichever is not followed up is a lead that
+    never got a call. `match_duplicate` already found the earlier row; these
+    tests cover acting on it.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user("o", "o@e.com", "pw")
+        self.old = Lead.objects.create(
+            name="Ann", email="ann@e.com", message="first enquiry", score=40)
+        self.new = Lead.objects.create(
+            name="Ann Smith", email="ann@e.com", message="second, with more",
+            phone="410-555-0100", score=80)
+        for lead in (self.old, self.new):
+            LeadActivity.objects.create(
+                lead=lead, kind=LeadActivity.Kind.NOTED, summary="note")
+
+    def test_the_duplicate_is_kept_not_deleted(self):
+        """An irreversible delete on a lead pipeline is not a safe default: the
+        duplicate may hold the only record of what the customer said."""
+        services.merge_leads(self.old, [self.new])
+        self.assertTrue(Lead.objects.filter(pk=self.new.pk).exists())
+
+    def test_the_duplicate_is_taken_out_of_the_pipeline(self):
+        services.merge_leads(self.old, [self.new])
+        self.new.refresh_from_db()
+        self.assertEqual(self.new.status, LeadStatus.LOST)
+        self.assertIn(f"merged into lead #{self.old.pk}", self.new.notes)
+
+    def test_a_blank_field_is_filled_from_the_duplicate(self):
+        """A phone number captured on the second submission is data the primary
+        is missing, not a conflict to resolve."""
+        services.merge_leads(self.old, [self.new])
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.phone, "410-555-0100")
+
+    def test_the_primary_wins_when_both_have_a_value(self):
+        self.old.phone = "410-555-9999"
+        self.old.save()
+        services.merge_leads(self.old, [self.new])
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.phone, "410-555-9999")
+
+    def test_the_higher_score_wins(self):
+        """A repeat enquiry with more detail is the more engaged of the pair."""
+        services.merge_leads(self.old, [self.new])
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.score, 80)
+
+    def test_priority_is_ranked_not_string_compared(self):
+        """'high' sorts before 'normal' alphabetically, so a string comparison
+        would pick the wrong one."""
+        self.old.priority, self.old.score = Priority.NORMAL, 40
+        self.old.save()
+        self.new.priority, self.new.score = Priority.URGENT, 90
+        self.new.save()
+        services.merge_leads(self.old, [self.new])
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.priority, Priority.URGENT)
+
+    def test_activities_are_carried_across(self):
+        services.merge_leads(self.old, [self.new])
+        summaries = list(self.old.activities.values_list("summary", flat=True))
+        self.assertIn("note", summaries)
+        self.assertTrue(any("Merged lead" in s for s in summaries))
+        # The duplicate keeps its own copy too: nothing is destroyed.
+        self.assertEqual(self.new.activities.filter(summary="note").count(), 1)
+
+    def test_open_tasks_follow_the_primary(self):
+        """A follow-up owed on the duplicate is still owed, and re-pointing
+        keeps it on the board instead of stranding it."""
+        task = Task.objects.create(lead=self.new, title="call back")
+        services.merge_leads(self.old, [self.new])
+        task.refresh_from_db()
+        self.assertEqual(task.lead, self.old)
+
+    def test_merging_into_itself_is_refused(self):
+        with self.assertRaises(services.MergeError):
+            services.merge_leads(self.old, [self.old])
+
+    def test_merging_nothing_is_refused(self):
+        with self.assertRaises(services.MergeError):
+            services.merge_leads(self.old, [])
+
+    def test_several_duplicates_at_once(self):
+        third = Lead.objects.create(name="Ann", email="ann@e.com",
+                                    message="third")
+        services.merge_leads(self.old, [self.new, third])
+        self.assertEqual(self.old.activities.filter(
+            kind=LeadActivity.Kind.MERGED).count(), 2)
+        self.assertFalse(Lead.objects.filter(
+            pk__in=[self.new.pk, third.pk], status=LeadStatus.NEW).exists())
+
+    def test_match_duplicate_finds_the_earlier_lead(self):
+        """The discovery half of the flow, which merge_leads then acts on."""
+        matches = self.new.match_duplicate()
+        self.assertEqual([lead.pk for lead in matches], [self.old.pk])
+
+
+class PipelineBoardTests(TestCase):
+    """The board answers "what is stuck", which a sorted table does not.
+
+    Read-only by design: moving a lead stays a deliberate, confirmed action on
+    the changelist, because a card that silently moved on drag would be a worse
+    thing to hand a salesperson than a link.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.client.force_login(self.admin)
+
+    def lead(self, name="Ann", **kwargs):
+        defaults = dict(name=name, email=f"{name}@e.com", message="hello there")
+        defaults.update(kwargs)
+        return Lead.objects.create(**defaults)
+
+    def test_the_board_renders_one_column_per_stage(self):
+        response = self.client.get(reverse("admin:pipeline_board"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "admin/kanban.html")
+        self.assertEqual(len(response.context["board"]["columns"]),
+                         len(LeadStatus.choices))
+
+    def test_a_lead_appears_as_a_card_linking_to_it(self):
+        lead = self.lead("Ann")
+        response = self.client.get(reverse("admin:pipeline_board"))
+        self.assertContains(
+            response,
+            reverse("admin:crm_lead_change", args=[lead.pk]))
+
+    def test_columns_are_ordered_by_pipeline_stage(self):
+        """Won and Lost come last, so the board reads left to right as the
+        journey does."""
+        labels = [c["label"] for c in self.client.get(
+            reverse("admin:pipeline_board")).context["board"]["columns"]]
+        self.assertEqual(labels[0], dict(LeadStatus.choices)[LeadStatus.NEW])
+        self.assertEqual(labels[-2:], ["Won", "Lost"])
+
+    def test_an_unowned_lead_is_called_out(self):
+        """The lead exists but nobody owns it, which is how it gets forgotten.
+        This is the one thing the board should interrupt you for."""
+        self.lead()
+        response = self.client.get(reverse("admin:pipeline_board"))
+        self.assertContains(response, "is-unowned")
+
+    def test_an_owned_lead_shows_the_owner(self):
+        owner = User.objects.create_user("sam", "sam@e.com", "pw")
+        self.lead(owner=owner)
+        response = self.client.get(reverse("admin:pipeline_board"))
+        self.assertContains(response, "sam")
+
+    def test_hot_leads_are_badged_and_counted(self):
+        self.lead(score=services.HOT_THRESHOLD)
+        board = self.client.get(reverse("admin:pipeline_board")).context["board"]
+        self.assertEqual(board["hot"], 1)
+
+    def test_the_totals_add_up(self):
+        self.lead("A")
+        self.lead("B")
+        board = self.client.get(reverse("admin:pipeline_board")).context["board"]
+        self.assertEqual(board["total"], 2)
+        self.assertEqual(board["unassigned"], 2)
+
+    def test_a_column_is_capped_so_the_board_stays_a_board(self):
+        """A board rendering four hundred rows is a list with extra steps."""
+        for i in range(5):
+            self.lead(f"P{i}")
+        with mock.patch.object(
+                __import__("main.admin_site", fromlist=["StudioAdminSite"]
+                           ).StudioAdminSite, "BOARD_LIMIT", 2):
+            board = self.client.get(
+                reverse("admin:pipeline_board")).context["board"]
+        self.assertEqual(board["columns"][0]["count"], 2)
+
+    def test_an_empty_pipeline_says_so_rather_than_rendering_blanks(self):
+        response = self.client.get(reverse("admin:pipeline_board"))
+        self.assertContains(response, "No open leads")
+
+    def test_it_needs_a_login(self):
+        self.client.logout()
+        self.assertEqual(
+            self.client.get(reverse("admin:pipeline_board")).status_code, 302)
+
+    def test_the_nav_offers_the_board(self):
+        response = self.client.get(reverse("admin:index"))
+        self.assertContains(response, reverse("admin:pipeline_board"))
+
+
+class TeamAdminTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.client.force_login(self.admin)
+        self.user = User.objects.create_user("sam", "sam@e.com", "pw")
+
+    def test_changelist_loads(self):
+        TeamMember.objects.create(name="Sam", user=self.user)
+        self.assertEqual(
+            self.client.get(reverse("admin:crm_teammember_changelist")).status_code,
+            200)
+
+    def test_it_reports_open_leads_per_member(self):
+        """Otherwise a member looks idle while holding twenty open leads.
+
+        Asserted through the rendered list, since that is what the operator
+        reads, rather than by calling the column method directly.
+        """
+        TeamMember.objects.create(name="Sam", user=self.user)
+        url = reverse("admin:crm_teammember_changelist")
+        self.assertContains(self.client.get(url), "Sam")
+        Lead.objects.create(name="A", email="a@e.com", message="hi",
+                            owner=self.user)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "open_leads")
+
+    def test_merge_action_refuses_a_single_lead(self):
+        """Merging one lead into itself is the mistake the guard exists for."""
+        lead = Lead.objects.create(name="A", email="a@e.com", message="hi")
+        response = self.client.post(reverse("admin:crm_lead_changelist"), {
+            "action": "action_merge_leads",
+            "_selected_action": [str(lead.pk)],
+        }, follow=True)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, LeadStatus.NEW)
+        self.assertContains(response, "Select at least two leads to merge")
+
+    def test_merge_action_folds_the_selection_into_the_oldest(self):
+        old = Lead.objects.create(name="A", email="a@e.com", message="first",
+                                  created_at=timezone.now())
+        new = Lead.objects.create(name="A", email="a@e.com", message="second",
+                                  created_at=timezone.now() + timezone.timedelta(days=1))
+        self.client.post(reverse("admin:crm_lead_changelist"), {
+            "action": "action_merge_leads",
+            "_selected_action": [str(new.pk), str(old.pk)],
+        }, follow=True)
+        new.refresh_from_db()
+        self.assertEqual(new.status, LeadStatus.LOST)
+        self.assertIn(LeadActivity.Kind.MERGED,
+                      list(old.activities.values_list("kind", flat=True)))
+
+    def test_round_robin_action_reports_when_nobody_is_eligible(self):
+        """Silently doing nothing would look like the action worked."""
+        lead = Lead.objects.create(name="A", email="a@e.com", message="hi")
+        response = self.client.post(reverse("admin:crm_lead_changelist"), {
+            "action": "action_assign_round_robin",
+            "_selected_action": [str(lead.pk)],
+        }, follow=True)
+        self.assertContains(response, "no eligible team member")
