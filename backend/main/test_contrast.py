@@ -168,7 +168,8 @@ class AdminStylesheetContrastTests(SimpleTestCase):
 
     def test_panel_titles_are_readable_on_white(self):
         for accent in ("panel-crm", "panel-pipeline", "panel-content",
-                        "panel-service"):
+                       "panel-service", "panel-tasks", "panel-trend",
+                       "panel-services"):
             value = self._declaration(f".{accent}", prop="--panel-accent")
             colours = re.findall(r"#[0-9A-Fa-f]{6}", value)
             self.assertTrue(colours, f".{accent} resolved to {value!r}")

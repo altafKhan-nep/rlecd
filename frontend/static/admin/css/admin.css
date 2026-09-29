@@ -51,9 +51,11 @@
     --c-mint: #2E9E6B;
     --c-mint-deep: #1F7A50;
     --c-rose: #D2547C;
+    --c-rose-deep: #A8355C;
     --c-clay: #E27D60;
 
     --sidebar-w: 264px;
+    --sidebar-w-collapsed: 68px;
     --topbar-h: 60px;
 }
 
@@ -146,6 +148,7 @@ a:hover, a:focus { color: var(--accent); }
         linear-gradient(160deg, #1B3022 0%, #16281D 100%);
     color: #fff;
     overflow: hidden;
+    transition: width .22s cubic-bezier(.4, 0, .2, 1);
 }
 
 #container {
@@ -153,7 +156,54 @@ a:hover, a:focus { color: var(--accent); }
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    transition: margin-left .22s cubic-bezier(.4, 0, .2, 1);
 }
+
+/* ------------------------------------------------------------ collapsed
+   The rail keeps the icons and drops the text, so navigation stays reachable
+   at 68px. Labels are removed from the tab order and the accessible tree with
+   visibility rather than display, which keeps the title attribute working as
+   the discoverable label on a rail where there is no room for one. */
+html.sidebar-collapsed .studio-sidebar { width: var(--sidebar-w-collapsed); }
+html.sidebar-collapsed #container { margin-left: var(--sidebar-w-collapsed); }
+
+html.sidebar-collapsed .nav-text,
+html.sidebar-collapsed .sidebar-brand-name,
+html.sidebar-collapsed .sidebar-user-name,
+html.sidebar-collapsed .nav-group-label {
+    visibility: hidden;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+html.sidebar-collapsed .nav-item,
+html.sidebar-collapsed .sidebar-link {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* The badge is the one thing that must not be lost on a collapsed rail --
+   it is often the only reason to open a section. */
+html.sidebar-collapsed .nav-item { position: relative; }
+html.sidebar-collapsed .nav-count {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    margin-left: 0;
+    min-width: 17px;
+    padding: 1px 4px;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+html.sidebar-collapsed .sidebar-brand { padding-left: 14px; }
+html.sidebar-collapsed .sidebar-footer { padding-left: 10px; padding-right: 10px; }
+html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0; }
 
 .studio-topbar {
     position: sticky;
@@ -209,17 +259,6 @@ a:hover, a:focus { color: var(--accent); }
     color: #fff;
     letter-spacing: -.01em;
     line-height: 1.25;
-}
-
-.sidebar-brand-sub {
-    display: block;
-    font-family: var(--font);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: .09em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, .48);
-    margin-top: 2px;
 }
 
 /* ------------------------------------------------------------ sidebar nav */
@@ -365,6 +404,17 @@ a:hover, a:focus { color: var(--accent); }
 
 .sidebar-link:hover { background: rgba(255, 255, 255, .07); color: #fff; }
 
+/* The collapse control is a <button> so it can be triggered by keyboard, which
+   means it inherits the UA's button chrome. Reset it to match .sidebar-link. */
+.sidebar-collapse {
+    width: 100%;
+    border: 0;
+    background: none;
+    font-family: var(--font);
+    text-align: left;
+    cursor: pointer;
+}
+
 /* ----------------------------------------------------------------- topbar */
 .sidebar-toggle {
     display: none;
@@ -382,21 +432,185 @@ a:hover, a:focus { color: var(--accent); }
 
 .sidebar-toggle svg { width: 18px; height: 18px; stroke: currentColor; }
 
-.topbar-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ink);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .topbar-actions {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 8px;
 }
+
+/* The search field sits between the title and the actions and takes the slack
+   in the bar, so .topbar-actions keeps its auto margin while the field
+   absorbs the remaining width. */
+.topbar-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 340px;
+    flex: 1 1 auto;
+    margin: 0 0 0 18px;
+    padding: 0 10px 0 12px;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    transition: border-color .16s ease, background .16s ease;
+}
+
+.topbar-search:focus-within {
+    border-color: var(--c-teal);
+    background: var(--surface);
+}
+
+.topbar-search svg {
+    width: 15px;
+    height: 15px;
+    stroke: var(--muted);
+    flex: none;
+}
+
+.topbar-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    font-family: var(--font);
+    font-size: 13px;
+    color: var(--ink);
+    outline: none;
+}
+
+.topbar-search input::placeholder { color: #a9b0ab; }
+.topbar-search input::-webkit-search-cancel-button { display: none; }
+
+/* A rendered shortcut hint. Hidden rather than removed once the field is in
+   use on narrow screens, where the space is needed for the query. */
+.topbar-search kbd {
+    flex: none;
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--surface);
+    font-family: var(--font);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+/* Context-sensitive create buttons. Filled for the first action and outlined
+   for the second, so the pair reads as primary/secondary rather than as two
+   equally weighted commits. */
+.topbar-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 10px;
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.topbar-add svg { width: 14px; height: 14px; stroke: currentColor; }
+.topbar-add:hover { background: #123A28; border-color: #123A28; }
+
+.topbar-add + .topbar-add {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--primary-soft);
+}
+
+.topbar-add + .topbar-add:hover { border-color: var(--accent); color: var(--accent); }
+
+.topbar-icon-btn {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--primary-soft);
+    cursor: pointer;
+    transition: border-color .16s ease, color .16s ease;
+}
+
+.topbar-icon-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+.topbar-icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.notif-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* Identity block on the right of the bar. The sidebar already carries the
+   user's name, so this is the one that can be dropped on small screens. */
+.topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-left: 12px;
+    margin-left: 2px;
+    border-left: 1px solid var(--line);
+}
+
+.topbar-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, var(--c-teal) 0%, #14A79D 100%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    flex: none;
+}
+
+.topbar-user-meta { display: flex; flex-direction: column; line-height: 1.3; }
+
+.topbar-user-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+}
+
+.topbar-user-role {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+/* Static, not a menu: the block is a summary of who is signed in. The chevron
+   is left out so it does not imply a disclosure that does not exist. */
+.topbar-user svg { display: none; }
 
 .topbar-link {
     display: inline-flex;
@@ -423,6 +637,316 @@ a:hover, a:focus { color: var(--accent); }
     z-index: 250;
     background: rgba(16, 26, 20, .5);
     backdrop-filter: blur(2px);
+}
+
+/* ==========================================================================
+   CHANGELIST FURNITURE
+   The summary strip, filter chips, row actions and totals row. Django's table
+   and its behaviour are untouched; this is only the furniture around it.
+   ========================================================================== */
+.studio-list-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin: 0 0 12px;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface);
+}
+
+.list-count {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.list-count strong {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-right: 3px;
+}
+
+.list-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+
+/* A chip is a link, not a static label: clicking it drops that one filter and
+   keeps the rest, so narrowing a list is reversible a step at a time. */
+.list-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--primary-soft);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.list-filter-chip:hover {
+    border-color: var(--c-clay);
+    color: var(--accent);
+}
+
+.chip-x {
+    font-size: 14px;
+    line-height: 1;
+    opacity: .6;
+}
+
+.list-filter-clear {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.list-filter-clear:hover { color: var(--accent); }
+
+/* Row actions sit in their own column and are always visible. A hover-only
+   menu is unusable on touch and invisible to keyboard users. */
+.row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+}
+
+.row-actions.is-empty { color: var(--muted); opacity: .5; }
+
+.row-action {
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    border-radius: 7px;
+    color: var(--muted);
+    text-decoration: none;
+    transition: background .14s ease, color .14s ease;
+}
+
+.row-action svg { width: 14px; height: 14px; stroke: currentColor; }
+.row-action:hover { background: var(--bg); color: var(--primary); }
+
+/* Destructive action is de-emphasised until hovered, but never hidden. */
+.row-action[href*="/delete/"]:hover { background: #FDECEA; color: #B3261E; }
+
+.studio-list-totals {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    margin: 10px 0 0;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--primary);
+    border-radius: 0 0 11px 11px;
+    background: #F8FAF8;
+}
+
+.totals-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.total-item { display: flex; align-items: baseline; gap: 7px; }
+
+.total-name { font-size: 12px; color: var(--muted); }
+
+.total-value {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+/* The stock changelist table has a hard-coded background on the header and
+   action cell; the sidebar and topbar colours have to reach them too. */
+#changelist table thead th {
+    background: #F8FAF8;
+    border-bottom: 2px solid var(--line);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+#changelist table tbody td { vertical-align: middle; }
+
+#changelist .actions { text-align: right; white-space: nowrap; }
+#changelist .actions .row-actions { display: inline-flex; }
+
+@media (max-width: 760px) {
+    .list-filters { margin-left: 0; }
+}
+
+/* ==========================================================================
+   CROSS-MODEL SEARCH
+   ========================================================================== */
+.search-page { max-width: 880px; }
+
+/* The page repeats the topbar field as a full-width hero: arriving from ⌘K
+   the query is already in the box, and arriving by submit the field is the
+   obvious next target. autofocus puts the caret straight back in it. */
+.search-hero {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 6px 14px;
+    margin-bottom: 20px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.search-hero:focus-within { border-color: var(--c-teal); }
+
+.search-hero svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    stroke: var(--muted);
+}
+
+.search-hero input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    font-family: var(--font);
+    font-size: 15px;
+    color: var(--ink);
+    outline: none;
+}
+
+.search-hero-go { margin: 0; }
+
+.search-summary {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.search-group { margin-bottom: 14px; padding: 0; overflow: hidden; }
+
+.search-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAF8 100%);
+}
+
+.search-group-head h2 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.search-group-all {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--c-teal-deep);
+    text-decoration: none;
+}
+
+.search-group-all:hover { text-decoration: underline; }
+
+.search-results { list-style: none; margin: 0; padding: 0; }
+
+.search-results li + li { border-top: 1px solid var(--line); }
+
+.search-result {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 16px;
+    color: var(--ink);
+    font-size: 13.5px;
+    text-decoration: none;
+}
+
+.search-result svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    stroke: var(--muted);
+    opacity: .6;
+}
+
+/* #fcfbfa is the row-hover tint the changelist and form already use, so a
+   search result and a changelist row respond to hover identically. */
+.search-result:hover { background: #fcfbfa; color: var(--primary); }
+.search-result:hover svg { stroke: var(--c-teal); opacity: 1; }
+
+/* Truncation rather than wrapping: a long page title should not push the
+   result list out of alignment with the rest of the panel. */
+.search-result span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-empty { padding: 34px 26px; text-align: center; }
+
+.search-hint { margin: 0 0 6px; font-size: 16px; }
+
+.search-hint-sub {
+    margin: 0 auto 18px;
+    max-width: 46ch;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.search-model-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    justify-content: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.search-model-list a {
+    display: inline-block;
+    padding: 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--primary-soft);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.search-model-list a:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 640px) {
+    .search-hero { flex-wrap: wrap; }
+    .search-hero-go { width: 100%; margin-top: 4px; text-align: center; }
 }
 
 /* ==========================================================================
@@ -540,7 +1064,57 @@ a:hover, a:focus { color: var(--accent); }
     text-shadow: 0 2px 10px rgba(0, 0, 0, .18);
 }
 
-.stat-hint { font-size: 12px; color: rgba(255, 255, 255, .72); }
+.stat-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, .72);
+    /* Clears the trend badge pinned to the bottom-right corner. */
+    padding-right: 62px;
+}
+
+/* Period-over-period change. It sits bottom-right, opposite the hint, so the
+   value and the badge read as two facts about the same number. Cards whose
+   number has no comparable period render no badge at all, leaving the hint
+   full width. */
+.stat-trend {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px 4px 6px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    /* The fill is translucent white, so the badge stays legible on all six
+       gradients without a per-tone colour. */
+    background: rgba(255, 255, 255, .20);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+}
+
+.stat-trend svg { width: 12px; height: 12px; stroke: currentColor; }
+
+/* A rising count is good news and a falling one is not, so up is tinted
+   toward the mint and down toward the clay. Both are drawn as an arrow as
+   well as a colour, so the direction survives without hue. */
+.stat-trend.trend-up {
+    background: rgba(46, 158, 107, .34);
+    box-shadow: inset 0 0 0 1px rgba(150, 232, 190, .55);
+}
+
+.stat-trend.trend-down {
+    background: rgba(201, 72, 59, .40);
+    box-shadow: inset 0 0 0 1px rgba(255, 178, 168, .55);
+}
+
+.stat-trend.trend-flat {
+    background: rgba(255, 255, 255, .20);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+}
 
 /* Tone → gradient. Each series keeps one hue across the UI. */
 .stat-card.t-leads { --card-bg: linear-gradient(135deg, #1B3022 0%, #2E5540 100%); }
@@ -599,11 +1173,26 @@ a:hover, a:focus { color: var(--accent); }
 
 .panel-link:hover { color: var(--accent); }
 
+/* Secondary note in a panel header, e.g. the range a chart covers. */
+.panel-note {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    flex: none;
+}
+
 .panel-crm     { --panel-accent: var(--c-sky); }
 .panel-tasks   { --panel-accent: var(--c-violet); }
 .panel-pipeline{ --panel-accent: var(--c-violet-deep); }
 .panel-content { --panel-accent: var(--c-mint-deep); }
 .panel-service { --panel-accent: var(--c-amber-deep); }
+
+/* Panels added alongside the originals. Each needs its own accent: reusing
+   one hue put two identical colour bars in the same column, so the bar stopped
+   identifying which panel it belonged to. The deep variants are the ones that
+   clear 4.5:1 for the title text on white, which the contrast tests pin. */
+.panel-trend   { --panel-accent: var(--c-teal-deep); }
+.panel-services{ --panel-accent: var(--c-rose-deep); }
 
 /* ----------------------------------------------------------------- tables */
 .dash-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -702,6 +1291,128 @@ a:hover, a:focus { color: var(--accent); }
 .health-name { color: var(--ink); font-weight: 500; }
 .health-value { margin-left: auto; font-weight: 700; color: var(--primary); font-family: var(--font-mono); font-size: 12.5px; }
 .health-note { color: var(--muted); font-size: 12px; }
+
+/* ------------------------------------------------------------- bar chart */
+/* The plot is a fixed-height flex row: each column is a track with a bar
+   anchored to the bottom, and the bar's height percentage comes from the
+   view as a share of the busiest month. */
+.chart-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    height: 168px;
+    padding: 20px 18px 14px;
+}
+
+.chart-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 100%;
+}
+
+.chart-bar-wrap {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-radius: 8px;
+    /* A hairline baseline so an empty month still reads as a plotted column
+       rather than a gap in the chart. */
+    background:
+        linear-gradient(180deg, transparent calc(100% - 1px),
+                        var(--line-soft) calc(100% - 1px));
+}
+
+.chart-bar {
+    width: 100%;
+    max-width: 40px;
+    border-radius: 7px 7px 3px 3px;
+    background: linear-gradient(180deg, var(--c-sky) 0%, #5FA8DC 100%);
+    box-shadow: 0 2px 8px rgba(47, 123, 181, .30);
+    /* A month with no leads still needs a visible stub, otherwise a 0% bar
+       is indistinguishable from a column that failed to render. */
+    min-height: 4px;
+    transition: height .3s ease;
+}
+
+/* The tallest month is emphasised so the reader can find the peak without
+   reading every bar's value. */
+.chart-bar.is-peak {
+    background: linear-gradient(180deg, var(--c-teal) 0%, #14A79D 100%);
+    box-shadow: 0 3px 10px rgba(14, 143, 135, .34);
+}
+
+.chart-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--muted);
+    flex: none;
+}
+
+/* ---------------------------------------------------------- contact list */
+.contact-list { list-style: none; margin: 0; padding: 8px 18px 16px; }
+
+.contact-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.contact-row:last-child { border-bottom: 0; }
+
+.contact-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, var(--c-teal) 0%, #14A79D 100%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    flex: none;
+}
+
+.contact-meta {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.35;
+    min-width: 0;
+}
+
+.contact-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contact-email {
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contact-date {
+    margin-left: auto;
+    flex: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
 
 /* ------------------------------------------------------------ quick links */
 .quick-links {
@@ -1066,6 +1777,21 @@ input:focus, select:focus, textarea:focus {
 .right { text-align: right; }
 .mono { font-family: var(--font-mono); font-size: 12.5px; }
 
+/* Available to a screen reader, invisible on screen. Trend percentages and
+   bar values are abbreviations without it, so the reading is spelled out. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */
@@ -1094,6 +1820,31 @@ input:focus, select:focus, textarea:focus {
 
     .studio-content { padding: 20px 16px 56px; }
     .studio-topbar { padding: 0 16px; }
+
+    /* The search field is the first thing to give up room on a tablet: the
+       sidebar, notifications and site link are all still worth a tap. */
+    .topbar-search { max-width: none; margin-left: 10px; }
+    .topbar-search kbd { display: none; }
+
+    /* Below this width the sidebar is a full-height drawer, so collapsing it is
+       meaningless -- the rail rules would shrink the drawer to 68px and hide
+       the very labels the drawer exists to show. The stored preference is left
+       untouched so it still applies at desktop widths. */
+    html.sidebar-collapsed .studio-sidebar { width: var(--sidebar-w); }
+    html.sidebar-collapsed .nav-text,
+    html.sidebar-collapsed .sidebar-brand-name,
+    html.sidebar-collapsed .sidebar-user-name,
+    html.sidebar-collapsed .nav-group-label {
+        visibility: visible;
+        position: static;
+        width: auto;
+        height: auto;
+        clip-path: none;
+    }
+    html.sidebar-collapsed .nav-item,
+    html.sidebar-collapsed .sidebar-link { justify-content: flex-start; padding-left: 10px; padding-right: 10px; }
+    html.sidebar-collapsed .nav-item .nav-count { position: static; margin-left: auto; min-width: 22px; padding: 1px 7px; font-size: 11px; }
+    .sidebar-collapse { display: none; }
 }
 
 @media (max-width: 640px) {
@@ -1104,7 +1855,25 @@ input:focus, select:focus, textarea:focus {
     .dash-head-actions { width: 100%; }
     .dash-head-actions .button { flex: 1; text-align: center; }
     .pipe-row { grid-template-columns: minmax(70px, 1fr) minmax(48px, 1.4fr) 32px; gap: 9px; }
-    .topbar-title { display: none; }
+
+    /* The trend badge would sit under the hint on a two-up card grid, so the
+       hint loses its reserve and the badge tucks into the card's top-left. */
+    .stat-hint { padding-right: 0; }
+    .stat-trend {
+        top: 14px;
+        right: auto;
+        bottom: auto;
+        left: 15px;
+    }
+    .stat-label { padding-right: 0; }
+
+    .chart-bars { height: 140px; gap: 7px; padding: 16px 14px 12px; }
+    .topbar-user { display: none; }
+
+    /* The add buttons drop their labels to icons: two full-word buttons plus a
+       search field do not fit, and the icons stay tappable at 36px. */
+    .topbar-add span { display: none; }
+    .topbar-add { padding: 0 11px; }
 }
 
 /* Tables scroll sideways rather than crushing their columns on small screens. */

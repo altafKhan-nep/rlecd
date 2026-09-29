@@ -4,14 +4,130 @@
 reference, decorator and template tag in the project keeps working unchanged.
 Only the landing page and global context differ.
 """
+from urllib.parse import quote
+
 from django.apps import apps
-from django.contrib import admin
 from django.contrib.admin import AdminSite
-from django.db.models import Count, Q
+from django.db.models import Count
+from django.db.models.functions import TruncMonth
 from django.shortcuts import render
+from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
+
+MONTH_LABELS = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+# How many calendar months the lead chart plots, current month included.
+TREND_MONTHS = 6
+
+# The sidebar, as data: (group label or None for the top group,
+# [(item label, icon name, admin url name, tab_counts key or None), ...]).
+#
+# Declared once at module level because two places need it. `_nav` renders it,
+# and `_nav_labels` reuses the same labels as the human-readable model names in
+# search results -- so the sidebar says "FAQs" and the search result says "FAQs"
+# rather than Django's raw verbose_name_plural of "faqs".
+#
+# A `None` count key means the row shows no badge.
+NAV_GROUPS = (
+    (None, (
+        ("Overview", "grid", "admin:index", None),
+    )),
+    ("Content", (
+        ("Pages", "store", "admin:content_page_changelist", "pages"),
+        ("Sections", "layers", "admin:content_section_changelist", None),
+        ("Services", "tag", "admin:crm_service_changelist", None),
+        ("Media library", "image", "admin:content_mediaitem_changelist", "media"),
+        ("Projects", "briefcase", "admin:content_project_changelist", None),
+        ("Service areas", "map-pin", "admin:content_servicearea_changelist", None),
+        ("Testimonials", "quote", "admin:content_testimonial_changelist", None),
+        ("FAQs", "help-circle", "admin:content_faq_changelist", None),
+        ("Trust badges", "shield", "admin:content_trustbadge_changelist", None),
+        ("Site settings", "settings", "admin:content_sitesetting_changelist", None),
+    )),
+    ("CRM", (
+        ("Leads", "users", "admin:crm_lead_changelist", "new_leads"),
+        ("Tasks", "check-square", "admin:crm_task_changelist", "open_tasks"),
+        ("Contacts", "user", "admin:crm_contact_changelist", None),
+        ("Activity log", "bar-chart", "admin:crm_leadactivity_changelist", None),
+    )),
+    # auth.User and auth.Group are auto-registered by django.contrib.auth.
+    # Without these entries the only route to them is a hand-typed URL.
+    ("Administration", (
+        ("Users", "user-cog", "admin:auth_user_changelist", None),
+        ("Groups", "users-round", "admin:auth_group_changelist", None),
+    )),
+)
+
+
+def _nav_labels():
+    """Map admin url name -> human label, e.g. 'crm_lead_changelist' -> 'Leads'."""
+    return {
+        url_name.split(":")[-1]: label
+        for _group, rows in NAV_GROUPS
+        for label, _icon, url_name, _count in rows
+    }
+
+
+def _shift_month(year, month, delta):
+    """Return (year, month) moved by `delta` months, carrying into the year."""
+    index = year * 12 + (month - 1) + delta
+    return index // 12, index % 12 + 1
+
+
+def _month_floor(moment, months_back=0):
+    """Midnight on the first day of the month `months_back` months before `moment`.
+
+    Takes a count backwards rather than a signed delta: the only caller wants
+    the start of a window that ends at `moment`, and a signed parameter made it
+    a one-character mistake to reach forward instead and silently match nothing.
+    """
+    year, month = _shift_month(moment.year, moment.month, -months_back)
+    return moment.replace(year=year, month=month, day=1, hour=0, minute=0,
+                          second=0, microsecond=0)
+
+
+def _trend(current, previous):
+    """Direction and percentage change of `current` against `previous`.
+
+    A previous period of zero has no meaningful percentage, so a rise from
+    nothing is reported as a flat 100% rather than an invented figure.
+    """
+    if previous == 0:
+        return ("up", 100) if current > 0 else ("flat", 0)
+    pct = int(round((current - previous) * 100 / previous))
+    if pct > 0:
+        return ("up", pct)
+    if pct < 0:
+        return ("down", abs(pct))
+    return ("flat", 0)
+
+
+def _volume_trend(queryset, now, days=30):
+    """Period-over-period change for a queryset that has a `created_at`.
+
+    Both sides are scoped to the same width of window so the comparison is
+    like with like. Only meaningful for flows; a backlog count such as
+    "overdue tasks" has no flow to measure and must pass no trend at all.
+
+    Returns None when the query fails, matching _content_counts: a fresh
+    database with no tables should cost the dashboard a trend, not the page.
+    """
+    current_start = now - timezone.timedelta(days=days)
+    previous_start = now - timezone.timedelta(days=days * 2)
+    try:
+        current = queryset.filter(created_at__gte=current_start).count()
+        previous = queryset.filter(
+            created_at__gte=previous_start,
+            created_at__lt=current_start,
+        ).count()
+    except Exception:
+        return None
+    return _trend(current, previous)
 
 
 class StudioAdminSite(AdminSite):
@@ -22,8 +138,119 @@ class StudioAdminSite(AdminSite):
 
     def each_context(self, request):
         ctx = super().each_context(request)
-        ctx["tab_counts"] = self._tab_counts(request)
+        counts = self._tab_counts(request)
+        ctx["tab_counts"] = counts
+        ctx["nav_sections"] = self._nav(counts)
+        # The bell used to render a hard-coded "3". A badge that is always the
+        # same number teaches the eye to ignore it, which is the opposite of
+        # what a notification count is for.
+        ctx["attention_count"] = counts["overdue_tasks"] + counts["new_leads"]
+        ctx["attention_url"] = self._attention_url(counts)
+        ctx["add_links"] = self._add_links(request)
         return ctx
+
+    def _attention_url(self, counts):
+        """Deep link the bell badge into the queue it is counting.
+
+        The badge adds new leads and overdue tasks together, but they are not
+        equally urgent, so it opens whichever is the more pressing: an overdue
+        task is already past due, whereas a new lead is merely unhandled.
+        """
+        if counts["overdue_tasks"]:
+            return f"{reverse('admin:crm_task_changelist')}?done__exact=0"
+        return f"{reverse('admin:crm_lead_changelist')}?status__exact=new"
+
+    def _nav(self, counts):
+        """Sidebar structure, derived from the NAV_GROUPS declaration.
+
+        The template used to hard-code seven links, each repeating an active
+        check. That made a new model mean editing markup, and a renamed URL
+        silently dropped its highlight. The count key is looked up from the
+        counts dict; anything not named there shows no badge.
+        """
+        sections = []
+        for label, rows in NAV_GROUPS:
+            items = [
+                {
+                    "label": name,
+                    "icon": ico,
+                    "url": reverse(url_name),
+                    # Bare name, because resolver_match.url_name carries no
+                    # namespace prefix. Comparing it against "admin:content_..."
+                    # would never match and no item would ever look active.
+                    "match_name": url_name.split(":")[-1],
+                    "count": counts.get(key) if key else None,
+                }
+                for name, ico, url_name, key in rows
+            ]
+            sections.append({"label": label, "items": items})
+        return sections
+
+    def _current_model(self, request):
+        """Model label for the screen being viewed, e.g. 'content_page'.
+
+        Derived from the resolver's url_name. `match.app_name` is "admin" for
+        every admin URL, so it cannot be used to tell models apart.
+        """
+        match = getattr(request, "resolver_match", None)
+        name = getattr(match, "url_name", None) or ""
+        for suffix in ("_changelist", "_add", "_change", "_delete", "_history"):
+            if name.endswith(suffix):
+                return name[: -len(suffix)]
+        return None
+
+    def _add_links(self, request):
+        """Primary create buttons for the topbar, scoped to the current section.
+
+        The reference shows two context-sensitive "Add" buttons per screen. The
+        pair is picked from the model the admin is actually looking at, so the
+        topbar never offers to create something the screen has no context for.
+        Each candidate is permission-checked, so a user who cannot add a model
+        simply sees one button instead of a link that 403s.
+
+        With no model in view there is nothing to scope to, so the bar stays
+        empty. That is the index case, and the dashboard supplies its own two
+        action areas -- the header buttons and Quick actions -- so a fallback
+        pair here would only print the same links twice.
+        """
+        current = self._current_model(request)
+        if current is None:
+            return []
+        pairs = {
+            "content_page": (("content_page", "New page"),
+                             ("content_section", "New section")),
+            "content_section": (("content_section", "New section"),
+                                ("content_page", "New page")),
+            "content_mediaitem": (("content_mediaitem", "Upload media"),
+                                  ("content_page", "New page")),
+            "content_project": (("content_project", "New project"),
+                                ("content_mediaitem", "Upload media")),
+            "crm_service": (("crm_service", "New service"),
+                            ("content_page", "New page")),
+            "crm_lead": (("crm_lead", "New lead"),
+                         ("crm_task", "New task")),
+            "crm_task": (("crm_task", "New task"),
+                         ("crm_lead", "New lead")),
+            "crm_contact": (("crm_contact", "New contact"),
+                            ("crm_lead", "New lead")),
+        }
+        chosen = pairs.get(current, ())
+
+        links = []
+        for label, text in chosen:
+            try:
+                model = apps.get_model(*label.split("_", 1))
+            except LookupError:
+                continue
+            model_admin = self._registry.get(model)
+            if model_admin is None or not model_admin.has_add_permission(request):
+                continue
+            # Admin URL names are <app_label>_<model_name>_<action>, so the app
+            # label is required here; model_name alone reverses to nothing.
+            url_name = (f"admin:{model._meta.app_label}_"
+                        f"{model._meta.model_name}_add")
+            links.append({"url": reverse(url_name), "label": text})
+        return links
 
     def _tab_counts(self, request):
         """Badge counts for the sidebar. Unavailable models degrade to 0.
@@ -31,17 +258,22 @@ class StudioAdminSite(AdminSite):
         Counts are wrapped so a missing table (fresh database before
         migrations) or a restricted user cannot break every admin page.
         """
-        counts = {"new_leads": 0, "open_tasks": 0, "pages": 0, "media": 0}
+        counts = {
+            "new_leads": 0, "open_tasks": 0, "overdue_tasks": 0,
+            "pages": 0, "media": 0,
+        }
         if not request.user.is_authenticated or not request.user.is_active:
             return counts
         try:
             crm = apps.get_app_config("crm")
             content = apps.get_app_config("content")
-            counts["new_leads"] = crm.get_model("Lead").objects.filter(
-                status="new"
-            ).count()
-            counts["open_tasks"] = crm.get_model("Task").objects.filter(
-                done=False
+            now = timezone.now()
+            leads = crm.get_model("Lead").objects
+            tasks = crm.get_model("Task").objects
+            counts["new_leads"] = leads.filter(status="new").count()
+            counts["open_tasks"] = tasks.filter(done=False).count()
+            counts["overdue_tasks"] = tasks.filter(
+                done=False, due_at__lt=now
             ).count()
             counts["pages"] = content.get_model("Page").objects.count()
             counts["media"] = content.get_model("MediaItem").objects.count()
@@ -49,6 +281,146 @@ class StudioAdminSite(AdminSite):
             # A missing table or an unmigrated app must not 500 the whole admin.
             pass
         return counts
+
+    def get_urls(self):
+        """Add the cross-model search view to the admin's own URL namespace.
+
+        Django's admin has no global search endpoint (a changelist's `?q=` is
+        per-model), so the topbar's field needs a real target. Subclassing
+        get_urls puts it behind admin: where `admin_view` already applies the
+        login check, instead of a bare project URL that would sit outside the
+        admin's own security.
+        """
+        extra = [
+            path(
+                "studio-search/",
+                self.admin_view(self.studio_search),
+                name="studio_search",
+            ),
+        ]
+        return extra + super().get_urls()
+
+    # Rows shown per model, and models shown, keep one keystroke cheap even
+    # though the query fans out across every registered model.
+    SEARCH_ROWS = 5
+    SEARCH_MODELS = 12
+
+    def studio_search(self, request, extra_context=None):
+        term = (request.GET.get("q") or "").strip()
+        groups = self._search_groups(request, term) if term else []
+        context = {
+            **self.each_context(request),
+            "title": _("Search"),
+            "subtitle": None,
+            "search_term": term,
+            "search_groups": groups,
+            "search_total": sum(len(g["results"]) for g in groups),
+            "searchable_models": self._searchable(request),
+            **(extra_context or {}),
+        }
+        return render(request, "admin/search.html", context)
+
+    def _model_label(self, meta):
+        """Human name for a model, preferring the sidebar's own wording.
+
+        Django's verbose_name_plural is often the wrong shape for a heading:
+        FAQ is "faqs", LeadActivity is "lead activities". The nav already says
+        "FAQs" and "Activity log", so reusing that keeps one name per model
+        across the whole admin. A model with no nav entry falls back to the
+        plural with a single leading capital.
+        """
+        url_name = f"{meta.app_label}_{meta.model_name}_changelist"
+        label = _nav_labels().get(url_name)
+        if label:
+            return label
+        plural = meta.verbose_name_plural
+        return plural[:1].upper() + plural[1:]
+
+    def _searchable(self, request):
+        """Registered models this user may view and that are searchable.
+
+        `search_fields` is the admin's own declaration of what is text-searchable
+        for a model, so reusing it keeps global search consistent with each
+        changelist's search instead of guessing column names here.
+        """
+        out = []
+        for model, model_admin in self._registry.items():
+            if not model_admin.search_fields:
+                continue
+            try:
+                if not model_admin.has_view_or_change_permission(request):
+                    continue
+            except Exception:
+                continue
+            meta = model._meta
+            url_name = f"{meta.app_label}_{meta.model_name}_changelist"
+            out.append({
+                "label": self._model_label(meta),
+                "changelist_url": reverse(f"admin:{url_name}"),
+            })
+        out.sort(key=lambda row: row["label"])
+        return out[: self.SEARCH_MODELS]
+    def _search_groups(self, request, term):
+        """Run the term against every searchable model and group the hits.
+
+        Walks the registry directly rather than the `_searchable` list, because
+        that one returns display dicts for the template while the query needs the
+        ModelAdmin. Both apply the same two gates -- declared search_fields and
+        view permission -- so a model cannot appear in one and not the other.
+        """
+        groups = []
+        for model, model_admin in self._registry.items():
+            if not model_admin.search_fields:
+                continue
+            try:
+                if not model_admin.has_view_or_change_permission(request):
+                    continue
+                # get_search_results is the same code path a changelist search
+                # uses, so per-model overrides and the search_fields prefixes
+                # (=, ^, @) behave identically in both places.
+                queryset, _duplicates = model_admin.get_search_results(
+                    request, model._default_manager.get_queryset(), term
+                )
+                hits = list(queryset[: self.SEARCH_ROWS])
+            except Exception:
+                # One misbehaving model (bad search_fields, unmigrated table)
+                # must not take down the whole search page.
+                continue
+            if not hits:
+                continue
+            meta = model._meta
+            url_name = f"{meta.app_label}_{meta.model_name}_changelist"
+            changelist = reverse(f"admin:{url_name}")
+            groups.append({
+                "label": self._model_label(meta),
+                "results": [self._search_row(model_admin, obj) for obj in hits],
+                # Precomputed rather than assembled in the template: the admin
+                # URL name is <app_label>_<model_name>_<action>, so a bare app
+                # label in a template could only ever reverse by luck.
+                "changelist_url": f"{changelist}?q={quote(term)}",
+            })
+
+        groups.sort(key=lambda row: row["label"])
+        return groups[: self.SEARCH_MODELS]
+
+    def _search_row(self, model_admin, obj):
+        """Label plus a deep link to the change form for one hit.
+
+        The label falls back through the admin's own display methods so the
+        result reads the same way the changelist column does.
+        """
+        try:
+            label = str(model_admin.get_object_name(obj))
+        except Exception:
+            label = str(obj)
+        return {
+            "label": label,
+            "url": reverse(
+                f"admin:{model_admin.model._meta.app_label}_"
+                f"{model_admin.model._meta.model_name}_change",
+                args=[obj.pk],
+            ),
+        }
 
     def index(self, request, extra_context=None):
         # each_context supplies site_header/site_title/available_apps and the
@@ -73,8 +445,6 @@ def _self_queries(request):
     from crm.models import Lead, LeadStatus, Task
 
     now = timezone.now()
-    day_ago = now - timezone.timedelta(days=1)
-    week_ago = now - timezone.timedelta(days=7)
 
     open_leads = Lead.objects.exclude(
         status__in=[LeadStatus.WON, LeadStatus.LOST]
@@ -91,7 +461,6 @@ def _self_queries(request):
         r["status"]: r["total"]
         for r in Lead.objects.values("status").annotate(total=Count("id"))
     }
-    labels = dict(LeadStatus.choices)
     open_total = sum(
         n for status, n in counts.items()
         if status not in (LeadStatus.WON, LeadStatus.LOST)
@@ -179,6 +548,16 @@ def _self_queries(request):
 
     # Six cards: three CRM, three content. The tone class drives the gradient,
     # so colour is assigned here rather than by position in the template.
+    #
+    # `trend` is a (direction, percentage) pair measured over the last 30 days
+    # against the 30 before, or None where the number has no flow to measure.
+    # Overdue tasks are a backlog, not a rate, and Service carries no
+    # timestamp at all, so inventing a percentage for those two would put a
+    # confident-looking "up 0%" next to a number it does not describe.
+    content = _content_counts()
+    pages_qs = apps.get_app_config("content").get_model("Page").objects
+    media_qs = apps.get_app_config("content").get_model("MediaItem").objects
+
     stats = [
         {
             "label": "Open leads",
@@ -188,6 +567,7 @@ def _self_queries(request):
             "query": "",
             "tone": "t-leads",
             "icon": ICON["leads"],
+            "trend": _volume_trend(Lead.objects.all(), now),
         },
         {
             "label": "Hot leads",
@@ -197,6 +577,7 @@ def _self_queries(request):
             "query": "?score__gte=70",
             "tone": "t-hot",
             "icon": ICON["hot"],
+            "trend": _volume_trend(hot, now),
         },
         {
             "label": "Overdue tasks",
@@ -206,33 +587,37 @@ def _self_queries(request):
             "query": "",
             "tone": "t-tasks",
             "icon": ICON["task"],
+            "trend": None,
         },
         {
             "label": "Pages",
-            "value": _content_counts()["pages"],
-            "hint": f"{_content_counts()['published']} published",
+            "value": content["pages"],
+            "hint": f"{content['published']} published",
             "url": "admin:content_page_changelist",
             "query": "",
             "tone": "t-pages",
             "icon": ICON["page"],
+            "trend": _volume_trend(pages_qs, now),
         },
         {
             "label": "Media items",
-            "value": _content_counts()["media"],
+            "value": content["media"],
             "hint": "In the library",
             "url": "admin:content_mediaitem_changelist",
             "query": "",
             "tone": "t-media",
             "icon": ICON["media"],
+            "trend": _volume_trend(media_qs, now),
         },
         {
             "label": "Services",
-            "value": _content_counts()["services"],
+            "value": content["services"],
             "hint": "Across the site",
             "url": "admin:crm_service_changelist",
             "query": "",
             "tone": "t-today",
             "icon": ICON["service"],
+            "trend": None,
         },
     ]
 
@@ -242,35 +627,48 @@ def _self_queries(request):
         "due_at"
     )[:8]
 
-    # Content health: the numbers that tell an owner whether the published
-    # site is complete. This is the part the CRM-only dashboard was missing.
-    content = _content_counts()
-    content_health = [
-        {
-            "label": "Pages",
-            "value": str(content["pages"]),
-            "note": f"{content['published']} published",
-            "colour": "#2F7BB5",
-        },
-        {
-            "label": "Sections",
-            "value": str(content["sections"]),
-            "note": "Across all pages",
-            "colour": "#0E8F87",
-        },
-        {
-            "label": "Services",
-            "value": str(content["services"]),
-            "note": "Listed on the site",
-            "colour": "#A8620F",
-        },
-        {
-            "label": "Media items",
-            "value": str(content["media"]),
-            "note": "In the library",
-            "colour": "#7C5CBF",
-        },
-    ]
+    # Content health: what is present but not doing its job. The stat cards
+    # above already own the totals, so repeating them here would say the same
+    # thing twice. These are the gaps an owner can act on instead.
+    content_health = _content_gaps()
+
+    # Leads created per calendar month, oldest first, for the trend chart.
+    #
+    # Months are walked with calendar arithmetic rather than by stepping back
+    # 30 days at a time. Subtracting 30 days from a 31st lands in the previous
+    # month, which made two bars share a label and skip one entirely, and
+    # matching rows on the month number alone folded leads from the same month
+    # of the previous year into this year's bar.
+    counts = {
+        (row["month"].year, row["month"].month): row["total"]
+        for row in Lead.objects
+        .filter(created_at__gte=_month_floor(now, TREND_MONTHS - 1))
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(total=Count("id"))
+    }
+    monthly_data = []
+    for offset in range(TREND_MONTHS - 1, -1, -1):
+        year, month = _shift_month(now.year, now.month, -offset)
+        monthly_data.append({
+            "label": MONTH_LABELS[month - 1],
+            "value": counts.get((year, month), 0),
+        })
+
+    # Bars are drawn as a percentage of the plot height, so they have to be
+    # scaled against the busiest month. Writing the raw lead count straight
+    # into the height made a real month overflow the panel and a quiet one
+    # render as an invisible sliver.
+    peak_month = max((row["value"] for row in monthly_data), default=0)
+    for row in monthly_data:
+        row["pct"] = (
+            int(round(row["value"] * 100 / peak_month)) if peak_month else 0
+        )
+
+    recent_contacts = (
+        apps.get_app_config("crm").get_model("Contact").objects
+        .order_by("-created_at")[:5]
+    )
 
     # Scale against the busiest service, not the raw count, so the bars are
     # comparable to each other rather than rendering at 1% when every service
@@ -281,9 +679,11 @@ def _self_queries(request):
         .objects.annotate(lead_total=Count("leads"))
         .order_by("-lead_total", "sort_order")[:6]
     )
-    peak = max([s.lead_total for s in service_rows], default=0)
+    peak_service = max([s.lead_total for s in service_rows], default=0)
     for svc in service_rows:
-        svc.pct = int(round(svc.lead_total * 100 / peak)) if peak else 0
+        svc.pct = (
+            int(round(svc.lead_total * 100 / peak_service)) if peak_service else 0
+        )
 
     return {
         "stats": stats,
@@ -292,7 +692,78 @@ def _self_queries(request):
         "upcoming_tasks": upcoming,
         "top_services": service_rows,
         "content_health": content_health,
+        "monthly_data": monthly_data,
+        "recent_contacts": recent_contacts,
+        # The dashboard heading prints the current date. Nothing in the admin
+        # context provides it, so it is passed explicitly rather than left to
+        # render blank.
+        "today": timezone.localdate(),
     }
+
+
+#: Row colours for the content-gap list: a row reading zero is good news.
+GAP_OK = "#1F7A4D"
+GAP_WARN = "#A8620F"
+GAP_BROKEN = "#B3261E"
+
+
+def _gap_colour(count, when_bad=GAP_WARN):
+    return when_bad if count else GAP_OK
+
+
+def _content_gaps():
+    """Content that exists but is not reaching a visitor.
+
+    The dashboard's stat cards already report how much content there is, so
+    this reports how much of it is not working: pages saved but unpublished,
+    pages with nothing in them, sections switched off, services taken out of
+    the menu. A row reading 0 is the desired state, which is the opposite of
+    the totals it replaces -- a growing number here is the thing to fix.
+
+    Wrapped in try/except for the same reason as `_content_counts`: a database
+    without the tables yet must still render the dashboard.
+    """
+    try:
+        content = apps.get_app_config("content")
+        crm = apps.get_app_config("crm")
+        pages = content.get_model("Page").objects
+        sections = content.get_model("Section").objects
+        services = crm.get_model("Service").objects
+
+        unpublished = pages.filter(is_published=False).count()
+        empty = pages.annotate(n=Count("sections")).filter(n=0).count()
+        hidden = sections.filter(is_visible=False).count()
+        inactive = services.filter(is_active=False).count()
+
+        return [
+            {
+                "label": "Unpublished pages",
+                "value": unpublished,
+                "note": "Saved but hidden from visitors",
+                "colour": _gap_colour(unpublished),
+            },
+            {
+                "label": "Empty pages",
+                "value": empty,
+                "note": "No sections, so they render blank",
+                # An empty page is published-and-useless, not merely unwritten.
+                "colour": _gap_colour(empty, GAP_BROKEN),
+            },
+            {
+                "label": "Hidden sections",
+                "value": hidden,
+                "note": "Authored but switched off",
+                "colour": _gap_colour(hidden),
+            },
+            {
+                "label": "Inactive services",
+                "value": inactive,
+                "note": "Not offered on the site",
+                "colour": _gap_colour(inactive),
+            },
+        ]
+    except Exception:
+        return []
 
 
 def _content_counts():

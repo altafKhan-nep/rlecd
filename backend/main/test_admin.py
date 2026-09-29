@@ -5,17 +5,27 @@ query that raises now 500s the landing page for every staff user, and the
 sidebar counts run on *every* admin screen, not just the dashboard. These tests
 pin both behaviours, plus the media library's file validation.
 """
+import re
 import shutil
 import tempfile
 from pathlib import Path
+from unittest import mock
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from content.models import MediaItem
-from main.admin_site import StudioAdminSite
+from crm.models import Lead, LeadStatus, Service
+from main.admin_site import (
+    GAP_OK,
+    MONTH_LABELS,
+    StudioAdminSite,
+    _month_floor,
+    _shift_month,
+)
 
 MEDIA = tempfile.mkdtemp(prefix="studio-admin-tests-")
 
@@ -174,7 +184,6 @@ class StudioAdminTests(TestCase):
             with self.subTest(url=url):
                 html = self.client.get(url).content.decode()
                 self.assertEqual(html.count("nav-item is-active"), 1)
-                self.assertIn(f'is-active', html)
                 # The active item's label appears in the sidebar.
                 self.assertIn(expected, html)
 
@@ -211,32 +220,59 @@ class StudioAdminTests(TestCase):
         self.assertIn("sidebar-toggle", html)
 
     def test_content_health_panel_is_present(self):
-        """The dashboard leads with content health, not just CRM. The panel
-        must list the four content types an owner cares about."""
+        """The dashboard reports content gaps, not just CRM. The panel must
+        list the four kinds of work that does not reach a visitor."""
         response = self.client.get(reverse("admin:index"))
         self.assertContains(response, "Content health")
-        for label in ("Pages", "Sections", "Services", "Media items"):
+        for label in ("Unpublished pages", "Empty pages", "Hidden sections",
+                      "Inactive services"):
             self.assertContains(response, label)
 
-    def test_content_health_reflects_real_data(self):
-        """Health numbers come from the database, not placeholders."""
+    def test_content_health_reports_gaps_from_real_data(self):
+        """Health numbers come from the database, not placeholders, and they
+        count problems rather than repeating the totals in the stat cards."""
         from content.models import Page, Section
         from crm.models import Service
 
-        Page.objects.create(title="Home", path="/", slug="home", is_published=True)
-        Page.objects.create(title="Draft", path="/draft/", slug="draft", is_published=False)
-        Service.objects.create(name="Test Service", slug="test-service")
-        Section.objects.create(page=Page.objects.first(), key="hero",
-                               type="hero", content_html="<h1>Hi</h1>",
-                               position=0)
+        published = Page.objects.create(title="Home", path="/", slug="home",
+                                        is_published=True)
+        Page.objects.create(title="Draft", path="/draft/", slug="draft",
+                            is_published=False)
+        Service.objects.create(name="Live Service", slug="live-service")
+        Service.objects.create(name="Retired Service", slug="retired-service",
+                               is_active=False)
+        Section.objects.create(page=published, key="hero", type="hero",
+                               content_html="<h1>Hi</h1>", position=0)
+        Section.objects.create(page=published, key="off", type="hero",
+                               content_html="<p>hidden</p>", position=1,
+                               is_visible=False)
 
         response = self.client.get(reverse("admin:index"))
-        health = response.context["content_health"]
-        by_label = {row["label"]: row for row in health}
-        self.assertEqual(by_label["Pages"]["value"], "2")
-        self.assertEqual(by_label["Pages"]["note"], "1 published")
-        self.assertEqual(by_label["Sections"]["value"], "1")
-        self.assertEqual(by_label["Services"]["value"], "1")
+        by_label = {row["label"]: row for row in response.context["content_health"]}
+        self.assertEqual(by_label["Unpublished pages"]["value"], 1)
+        # The draft has no sections, so it counts as empty as well.
+        self.assertEqual(by_label["Empty pages"]["value"], 1)
+        self.assertEqual(by_label["Hidden sections"]["value"], 1)
+        self.assertEqual(by_label["Inactive services"]["value"], 1)
+
+    def test_content_health_colour_flags_a_gap(self):
+        """A row reading zero is the healthy state, so colour has to follow the
+        count -- otherwise a clean site still looks like a list of problems."""
+        from content.models import Page
+
+        response = self.client.get(reverse("admin:index"))
+        clean = {row["label"]: row for row in response.context["content_health"]}
+        self.assertTrue(clean)
+        for row in clean.values():
+            self.assertEqual(row["colour"], GAP_OK, f"{row['label']} should be clean")
+
+        Page.objects.create(title="Draft", path="/draft/", slug="draft",
+                            is_published=False)
+        response = self.client.get(reverse("admin:index"))
+        after = {row["label"]: row for row in response.context["content_health"]}
+        self.assertNotEqual(after["Unpublished pages"]["colour"], GAP_OK)
+        # A gap in one row must not paint the others.
+        self.assertEqual(after["Hidden sections"]["colour"], GAP_OK)
 
     def test_stat_cards_use_tone_classes_not_nth_child(self):
         """Colour is assigned by a tone class from the view, so reordering the
@@ -522,3 +558,801 @@ class StudioAdminTests(TestCase):
         from crm.models import Service
 
         return Service.objects.create(name=name, slug=name.lower())
+
+
+class DashboardWidgetsTests(TestCase):
+    """The trend badges, the lead chart and the date on the dashboard heading.
+
+    Each of these shipped broken once. They are quiet failures -- the dashboard
+    still renders, the numbers are just wrong -- so they get pinned here.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("owner", "o@example.com", "pw")
+        self.client.force_login(self.admin)
+        self.service = Service.objects.create(name="Kitchens", slug="kitchens")
+
+    def _lead_in_month(self, months_back, name="L"):
+        """Create a lead dated inside the calendar month `months_back` back."""
+        from crm.models import Lead, LeadStatus
+        from main.admin_site import _shift_month
+
+        now = timezone.now()
+        year, month = _shift_month(now.year, now.month, -months_back)
+        return Lead.objects.create(
+            name=name,
+            email=f"{name}@example.com",
+            service=self.service,
+            status=LeadStatus.NEW,
+            created_at=now.replace(year=year, month=month, day=15),
+        )
+
+    def _series(self):
+        return self.client.get(reverse("admin:index")).context["monthly_data"]
+
+    def test_chart_window_reaches_back_six_months(self):
+        """The window has to open *behind* now.
+
+        `_month_floor` originally added its offset instead of subtracting it,
+        so the query filtered from five months in the future and every bar
+        rendered at zero while still looking like a working chart.
+        """
+        now = timezone.now()
+        series = self._series()
+        self.assertEqual(len(series), 6)
+        self.assertLess(
+            _month_floor(now, 5), now,
+            "chart window must start in the past",
+        )
+        # The newest bar is the current month.
+        self.assertEqual(series[-1]["label"], MONTH_LABELS[now.month - 1])
+
+    def test_chart_labels_track_six_distinct_calendar_months(self):
+        """Months are walked with calendar arithmetic, not by subtracting 30
+        days. Stepping back 30 days from a 31st lands in the previous month,
+        which produced two bars sharing one label and skipped a month.
+
+        The six months are checked as (year, month) pairs, since a window
+        spanning a year boundary legitimately repeats a name.
+        """
+        now = timezone.now()
+        keys = [
+            _shift_month(now.year, now.month, -offset)
+            for offset in range(5, -1, -1)
+        ]
+        self.assertEqual(len(set(keys)), 6, "chart window repeats a month")
+        self.assertEqual(keys, sorted(keys), "chart is not oldest-first")
+        self.assertEqual(keys[-1], (now.year, now.month))
+
+        for months_back in range(6):
+            self._lead_in_month(months_back, name=f"L{months_back}")
+        series = self._series()
+        self.assertEqual([row["value"] for row in series], [1, 1, 1, 1, 1, 1])
+        self.assertEqual(
+            [row["label"] for row in series],
+            [MONTH_LABELS[key[1] - 1] for key in keys],
+        )
+
+    def test_chart_ignores_leads_from_the_same_month_last_year(self):
+        """Rows are matched on year *and* month. Matching the month number
+        alone folded a lead from the same month of the previous year into this
+        year's bar and roughly doubled the total."""
+        now = timezone.now()
+        self._lead_in_month(0, name="recent")
+        Lead.objects.create(
+            name="ancient",
+            email="ancient@example.com",
+            service=self.service,
+            status=LeadStatus.NEW,
+            created_at=now.replace(year=now.year - 1, month=now.month, day=15),
+        )
+        self.assertEqual(sum(row["value"] for row in self._series()), 1)
+
+    def test_chart_bars_are_scaled_to_the_busiest_month(self):
+        """Bar heights are percentages of the plot, so they must be scaled.
+        Writing the raw lead count into the height let a busy month overflow
+        the panel and a quiet month render as an invisible sliver."""
+        for _ in range(9):
+            self._lead_in_month(2, name=f"busy{_}")
+        self._lead_in_month(0, name="quiet")
+        series = self._series()
+        busiest = max(row["value"] for row in series)
+        self.assertEqual(max(row["pct"] for row in series), 100)
+        for row in series:
+            with self.subTest(label=row["label"]):
+                self.assertLessEqual(row["pct"], 100)
+                self.assertEqual(row["pct"], round(row["value"] * 100 / busiest))
+
+    def test_rendered_bar_heights_use_the_scaled_value(self):
+        """The template must draw the scaled percentage, not the raw count."""
+        for _ in range(9):
+            self._lead_in_month(2, name=f"busy{_}")
+        response = self.client.get(reverse("admin:index"))
+        heights = re.findall(r'chart-bar[^"]*"\s*style="height: (\d+)%"',
+                             response.content.decode())
+        self.assertEqual(
+            heights,
+            [str(row["pct"]) for row in response.context["monthly_data"]],
+        )
+
+    def test_trend_is_omitted_where_no_period_comparison_exists(self):
+        """Overdue tasks are a backlog and Service has no created_at, so
+        neither can be compared to a previous period. Those cards must render
+        no badge rather than a confident-looking "up 0%"."""
+        response = self.client.get(reverse("admin:index"))
+        stats = {s["label"]: s for s in response.context["stats"]}
+        self.assertIsNone(stats["Overdue tasks"]["trend"])
+        self.assertIsNone(stats["Services"]["trend"])
+        badges = re.findall(r'class="stat-trend (trend-\w+)"',
+                            response.content.decode())
+        self.assertEqual(len(badges), 4)
+
+    def test_trend_compares_equal_widthed_windows(self):
+        """Both sides of the comparison cover the same span. The original
+        compared all open leads against only the ones created over a month
+        ago, so the badge described neither number on the card."""
+        for _ in range(4):
+            self._lead_in_month(0, name=f"cur{_}")
+        for _ in range(2):
+            self._lead_in_month(1, name=f"prev{_}")
+        stats = {s["label"]: s for s in
+                 self.client.get(reverse("admin:index")).context["stats"]}
+        self.assertEqual(stats["Open leads"]["trend"], ("up", 100))
+
+    def test_heading_has_a_date(self):
+        """The heading prints `today`. Nothing in the admin context provides
+        it, so the view has to -- otherwise the date line renders empty."""
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.context["today"], timezone.localdate())
+        self.assertContains(response, timezone.localdate().strftime("%A"))
+
+    def test_content_health_survives_alongside_the_new_panels(self):
+        """Content health is a documented dashboard widget. Adding the lead
+        chart, top services and contacts must not have displaced it."""
+        response = self.client.get(reverse("admin:index"))
+        self.assertContains(response, "Content health")
+        self.assertContains(response, "Lead Trend")
+        self.assertContains(response, "Top Services")
+        self.assertContains(response, "Recent Contacts")
+
+
+class ShellAndSearchTests(TestCase):
+    """Phase 1 of the shell work: the nav, the notification badge, the
+    context-aware add buttons, the collapse control and global search.
+
+    Each of these replaced something decorative in the previous template -- a
+    hard-coded badge, an input with no action, a repeated active check -- so the
+    tests pin the behaviour that made them worth changing.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="shell", email="shell@example.com", password="pw-shell-123"
+        )
+        self.client.force_login(self.user)
+
+    # ------------------------------------------------------------ navigation
+    def test_nav_covers_every_registered_model(self):
+        """The sidebar is built from the registry's models, so a model that is
+        registered but missing from the nav is a silent gap."""
+        from django.contrib import admin
+        from django.test import RequestFactory
+
+        # main.admin_config sets default_site, so the live registry hangs off
+        # django.contrib.admin.site rather than a module-level instance.
+        site = admin.site
+        self.assertIsInstance(site, StudioAdminSite)
+
+        # Permission checks need a request, and the URL name in the href is the
+        # stable identifier; the label is deliberately not asserted because copy
+        # changes must not fail this test.
+        request = RequestFactory().get("/admin/")
+        request.user = self.user
+
+        html = self.client.get(reverse("admin:index")).content.decode()
+        for model, model_admin in site._registry.items():
+            if not model_admin.has_view_permission(request):
+                continue
+            meta = model._meta
+            with self.subTest(model=meta.label_lower):
+                # The nav item is identified by its href, not its label, so a
+                # copy change cannot make this test fail for the wrong reason.
+                url = reverse(
+                    f"admin:{meta.app_label}_{meta.model_name}_changelist"
+                )
+                self.assertIn(f'href="{url}"', html)
+
+    def test_active_marking_survives_a_model_without_a_nav_entry(self):
+        """Every nav entry that matches the current URL is marked, and a URL
+        with no entry (an add or change page) still marks its parent list."""
+        html = self.client.get(
+            reverse("admin:crm_lead_changelist")
+        ).content.decode()
+        self.assertEqual(html.count("nav-item is-active"), 1)
+
+    # ------------------------------------------------------- notification bell
+    def test_badge_is_absent_when_nothing_needs_attention(self):
+        """A badge showing 0 trains the eye to ignore the bell, so at rest the
+        button must not be rendered at all."""
+        html = self.client.get(reverse("admin:index")).content.decode()
+        self.assertNotIn("notif-badge", html)
+
+    def test_badge_counts_new_leads_and_overdue_tasks(self):
+        from crm.models import Lead, Task
+
+        lead = Lead.objects.create(name="Busy", email="busy@example.com",
+                                   status="new")
+        Task.objects.create(
+            lead=lead, title="Overdue", done=False,
+            due_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.context["attention_count"], 2)
+        self.assertContains(response, "notif-badge")
+
+    def test_badge_ignores_done_and_future_tasks(self):
+        """Only genuinely overdue work counts. A completed task or one due next
+        week is not something to interrupt the owner about."""
+        from crm.models import Lead, Task
+
+        lead = Lead.objects.create(name="Calm", email="calm@example.com",
+                                   status="contacted")
+        Task.objects.create(lead=lead, title="Finished", done=True,
+                            due_at=timezone.now() - timezone.timedelta(days=5))
+        Task.objects.create(lead=lead, title="Later", done=False,
+                            due_at=timezone.now() + timezone.timedelta(days=5))
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.context["attention_count"], 0)
+
+    def test_bell_deep_links_into_the_queue_it_counts(self):
+        from crm.models import Lead, Task
+
+        lead = Lead.objects.create(name="Bell", email="bell@example.com",
+                                   status="new")
+        Task.objects.create(lead=lead, title="Late", done=False,
+                            due_at=timezone.now() - timezone.timedelta(days=1))
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(
+            response.context["attention_url"],
+            reverse("admin:crm_task_changelist") + "?done__exact=0",
+        )
+
+    # ----------------------------------------------------------- add buttons
+    def test_add_buttons_follow_the_screen_you_are_on(self):
+        cases = [
+            (reverse("admin:crm_lead_changelist"), "New lead"),
+            (reverse("admin:content_page_changelist"), "New page"),
+            (reverse("admin:crm_service_changelist"), "New service"),
+        ]
+        for url, expected in cases:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                labels = [link["label"] for link in response.context["add_links"]]
+                self.assertIn(expected, labels)
+
+    def test_add_buttons_hide_what_the_user_cannot_create(self):
+        """A link the user would get a 403 from is worse than no link, so
+        permissions are checked before the button is offered."""
+        limited = User.objects.create_user(
+            username="viewer", password="pw-viewer-123", is_staff=True
+        )
+        limited.user_permissions.add(
+            Permission.objects.get(codename="view_lead", content_type__app_label="crm")
+        )
+        self.client.force_login(limited)
+        response = self.client.get(reverse("admin:crm_lead_changelist"))
+        self.assertEqual(response.context["add_links"], [])
+
+    def test_add_buttons_are_not_repeated_on_the_index(self):
+        """The dashboard has its own action areas -- the header buttons and the
+        Quick actions panel. Repeating a create pair in the topbar printed the
+        same two links twice on the one screen that already has them."""
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.context["add_links"], [])
+        # The dashboard's own affordances must survive that.
+        html = response.content.decode()
+        self.assertContains(response, "Quick actions")
+        self.assertIn(reverse("admin:crm_lead_add"), html)
+        self.assertIn(reverse("admin:content_page_add"), html)
+
+    # -------------------------------------------------------------- collapse
+    def test_collapse_state_is_applied_before_first_paint(self):
+        """The collapsed preference is read in <head> so the sidebar does not
+        snap from full width to a rail on every reload."""
+        html = self.client.get(reverse("admin:index")).content.decode()
+        head = html.split("</head>")[0]
+        self.assertIn("studio.sidebar.collapsed", head)
+        self.assertIn("sidebar-collapsed", head)
+
+    def test_collapse_button_is_a_real_button_with_aria_state(self):
+        html = self.client.get(reverse("admin:index")).content.decode()
+        self.assertIn('id="sidebar-collapse"', html)
+        self.assertIn('aria-expanded="true"', html)
+        self.assertIn("aria-controls=\"studio-sidebar\"", html)
+
+    # ---------------------------------------------------------------- search
+    def test_search_requires_a_signed_in_staff_user(self):
+        """The view lives inside the admin namespace, so the admin's own
+        permission wrapper must protect it."""
+        self.client.logout()
+        response = self.client.get(reverse("admin:studio_search"), {"q": "x"})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response["Location"])
+
+    def test_search_finds_a_row_and_links_to_its_change_form(self):
+        from content.models import Page
+
+        page = Page.objects.create(title="Distinctive Title", path="/x/",
+                                   slug="x", is_published=True)
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "Distinctive"})
+        self.assertEqual(response.status_code, 200)
+        results = [r for g in response.context["search_groups"]
+                   for r in g["results"]]
+        self.assertEqual(
+            [r["url"] for r in results],
+            [reverse("admin:content_page_change", args=[page.pk])],
+        )
+        # PageAdmin's own display method supplies the label, so a result reads
+        # the way the changelist column does.
+        self.assertIn("Distinctive Title", results[0]["label"])
+
+    def test_search_spans_content_and_crm(self):
+        from content.models import Page
+        from crm.models import Lead
+
+        Page.objects.create(title="Zephyrine", path="/z/", slug="z")
+        Lead.objects.create(name="Zephyrine", email="z@example.com",
+                            status="new")
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "Zephyrine"})
+        models = {g["label"] for g in response.context["search_groups"]}
+        self.assertEqual(models, {"Pages", "Leads"})
+
+    def test_group_labels_reuse_the_sidebar_wording(self):
+        """Search results must not introduce a second name for a model. Django
+        calls them "faqs" and "lead activities"; the sidebar says "FAQs" and
+        "Activity log", and those are the names that should carry through."""
+        from content.models import FAQ
+
+        FAQ.objects.create(question="Can you help?", answer="Yes.")
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "Can you"})
+        self.assertIn("FAQs", {g["label"] for g in response.context["search_groups"]})
+
+    def test_search_skips_models_with_no_declared_search_fields(self):
+        """A model that never declared search_fields is not searched. Including
+        it would mean guessing columns and usually matching everything."""
+        from content.models import SiteSetting
+
+        SiteSetting.objects.create(company_name="unique_setting_value_xyz")
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "unique_setting"})
+        self.assertEqual(response.context["search_groups"], [])
+
+    def test_search_respects_view_permission(self):
+        """Search must not leak rows from models the user cannot open."""
+        from content.models import Page
+
+        Page.objects.create(title="Restrictedneedle", path="/r/", slug="r")
+        limited = User.objects.create_user(
+            username="leadonly", password="pw-leadonly-123", is_staff=True
+        )
+        limited.user_permissions.add(
+            Permission.objects.get(codename="view_lead", content_type__app_label="crm")
+        )
+        self.client.force_login(limited)
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "Restrictedneedle"})
+        self.assertEqual(response.context["search_groups"], [])
+
+    def test_empty_search_lists_the_models_it_covers(self):
+        response = self.client.get(reverse("admin:studio_search"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["searchable_models"])
+        self.assertContains(response, "Type to search")
+
+    def test_search_caps_rows_per_model(self):
+        from content.models import Page
+
+        for i in range(8):
+            Page.objects.create(title=f"Capped {i}", path=f"/c{i}/",
+                                slug=f"c{i}")
+        response = self.client.get(reverse("admin:studio_search"),
+                                   {"q": "Capped"})
+        for group in response.context["search_groups"]:
+            with self.subTest(model=group["label"]):
+                self.assertLessEqual(len(group["results"]),
+                                     StudioAdminSite.SEARCH_ROWS)
+
+    def test_search_survives_a_model_whose_query_is_broken(self):
+        """One bad model must not take the whole page down; the fan-out
+        degrades to the models that do work."""
+        from django.contrib.admin import ModelAdmin
+
+        from content.models import Page
+
+        Page.objects.create(title="Stillfound", path="/s/", slug="s")
+
+        original = ModelAdmin.get_search_results
+        calls = {"n": 0}
+
+        def flaky(self, request, queryset, search_term):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ValueError("simulated bad search_fields")
+            return original(self, request, queryset, search_term)
+
+        with mock.patch.object(ModelAdmin, "get_search_results", flaky):
+            response = self.client.get(reverse("admin:studio_search"),
+                                       {"q": "Stillfound"})
+        self.assertEqual(response.status_code, 200)
+        results = [r for g in response.context["search_groups"] for r in g["results"]]
+        self.assertTrue(results)
+
+
+class IconRegistryTests(TestCase):
+    """The icon registry is only useful if a missing name is loud.
+
+    `icon()` falls back to a dot for an unknown name, which is a reasonable
+    safety net at runtime and a terrible way to ship: a typo in a template
+    would render a placeholder dot with nothing in the logs. These tests turn
+    that into a failure.
+    """
+
+    def _templates(self):
+        root = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "admin"
+        return sorted(root.glob("*.html"))
+
+    def test_every_icon_name_used_in_a_template_exists(self):
+        from main.icons import PATHS
+
+        pattern = re.compile(r"{%\s*studio_icon\s+\"([a-z0-9-]+)\"")
+        used = set()
+        for template in self._templates():
+            used.update(pattern.findall(template.read_text()))
+
+        self.assertTrue(used, "no studio_icon calls found; check the pattern")
+        missing = sorted(used - set(PATHS))
+        self.assertEqual(missing, [], f"unknown icon names: {missing}")
+
+    def test_icon_names_in_the_nav_declaration_all_exist(self):
+        """The nav is data in Python, not markup, so the template scan cannot
+        see it. Dotted keys are skipped: they are per-row overrides."""
+        from main.admin_site import StudioAdminSite
+
+        from main.icons import PATHS
+
+        site = StudioAdminSite(name="probe")
+        nav = site._nav({})
+        names = {item["icon"]
+                 for section in nav
+                 for item in section["items"]}
+        missing = sorted(names - set(PATHS))
+        self.assertEqual(missing, [], f"unknown icon names: {missing}")
+
+    def test_icon_output_is_well_formed_svg(self):
+        """The SVG must parse. A truncated attribute silently breaks the icon
+        and still returns HTTP 200, so only a real parse catches it."""
+        from xml.etree import ElementTree
+
+        from main.icons import PATHS, icon
+
+        for name in PATHS:
+            with self.subTest(icon=name):
+                root = ElementTree.fromstring(icon(name))
+                self.assertTrue(root.tag.endswith("svg"))
+                self.assertEqual(root.get("aria-hidden"), "true")
+                self.assertEqual(root.get("viewBox"), "0 0 24 24")
+
+    def test_icon_carries_an_accessible_name(self):
+        """Icons are aria-hidden, so anything wrapping them must carry a label.
+        This pins that the attribute is actually emitted."""
+        from main.icons import icon
+
+        self.assertIn('aria-hidden="true"', icon("search"))
+        self.assertIn('class="custom"', icon("search", "custom"))
+
+    def test_no_icon_is_defined_twice(self):
+        """A repeated dict key does not raise, it silently shadows the earlier
+        value, so the registry can lose an icon without any error. Parse the
+        source, because by the time Python has the dict the duplicate is gone."""
+        import ast
+
+        from main import icons
+
+        source = Path(icons.__file__).read_text(encoding="utf-8")
+        duplicates = []
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = [key.value for key in node.keys
+                    if isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)]
+            duplicates.extend(name for name in set(keys) if keys.count(name) > 1)
+        self.assertEqual(duplicates, [], f"icons defined more than once: {duplicates}")
+
+
+class AdminTemplateHygieneTests(TestCase):
+    """No template syntax may reach the browser.
+
+    Django's lexer matches `{# ... #}` without `re.DOTALL`, so a comment that
+    spans more than one line is never tokenised and is emitted as literal text
+    on the page. The view still returns 200, so this failure survives a
+    status-code check and a passing test suite, and has to be pinned directly.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="hygiene", email="hygiene@example.com", password="pw-hygiene-123"
+        )
+        self.client.force_login(self.user)
+
+    def _templates(self):
+        root = Path(__file__).resolve().parents[2] / "frontend" / "templates" / "admin"
+        return sorted(root.glob("*.html"))
+
+    def test_no_admin_template_uses_a_multi_line_hash_comment(self):
+        """The source-level cause. `{% comment %}` is the multi-line form."""
+        offenders = []
+        for template in self._templates():
+            lines = template.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, start=1):
+                if line.count("{#") and line.count("{#") != line.count("#}"):
+                    offenders.append(f"{template.name}:{number}")
+        self.assertEqual(offenders, [], f"multi-line {{# #}} comments: {offenders}")
+
+    def test_rendered_admin_pages_contain_no_template_syntax(self):
+        """The behaviour that matters, on the pages a user actually opens."""
+        for url in ("/admin/", "/admin/content/page/", "/admin/crm/lead/",
+                    "/admin/crm/contact/", "/admin/content/project/"):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                html = response.content.decode()
+                for token in ("{#", "{%", "endcomment"):
+                    self.assertNotIn(token, html, f"{token!r} leaked from {url}")
+
+
+class ChangelistFurnitureTests(TestCase):
+    """Phase 2: the shared changelist skin.
+
+    The mixin adds a thumbnail column, per-row action icons, a result count with
+    removable filter chips, and a totals row. These tests pin the behaviour that
+    makes each worth having -- in particular the three places it could lie to
+    the reader: an action the user cannot take, a total that does not match the
+    rows on screen, and a "view on site" link for something unpublished.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="lists", email="lists@example.com", password="pw-lists-123"
+        )
+        self.client.force_login(self.user)
+
+    # ------------------------------------------------------- adoption coverage
+    def test_every_project_model_admin_is_skinned(self):
+        """Adopting the list view must not be per-model optional by accident.
+        A ModelAdmin that silently misses the mixin would be the one screen in
+        the admin that looks different from all the others."""
+        from django.contrib import admin
+
+        from main.listview import StudioListMixin
+
+        for model, model_admin in admin.site._registry.items():
+            app_label = model._meta.app_label
+            if app_label not in ("content", "crm"):
+                continue
+            with self.subTest(model=model._meta.label_lower):
+                self.assertIsInstance(model_admin, StudioListMixin)
+                self.assertEqual(
+                    model_admin.change_list_template,
+                    "admin/studio_changelist.html",
+                )
+
+    def test_actions_column_is_added_exactly_once(self):
+        """The mixin appends the column; a ModelAdmin that also lists it must
+        not produce a duplicated header."""
+        from django.contrib import admin
+
+        from crm.models import Lead
+
+        lead_admin = admin.site._registry[Lead]
+        columns = lead_admin.get_list_display(_fake_request(self.user))
+        self.assertEqual(columns.count("studio_row_actions"), 1)
+        self.assertEqual(columns[-1], "studio_row_actions")
+
+    def test_thumbnail_column_is_not_duplicated(self):
+        """ProjectAdmin already lists project_thumb. The mixin must leave an
+        admin's own column list alone rather than adding a second copy."""
+        from django.contrib import admin
+
+        from content.models import Project
+
+        project_admin = admin.site._registry[Project]
+        # The attribute is normally set on the class; set it on this instance and
+        # restore it so the change cannot leak into another test.
+        original = project_admin.studio_thumb
+        project_admin.studio_thumb = "project_thumb"
+        try:
+            columns = project_admin.get_list_display(_fake_request(self.user))
+        finally:
+            project_admin.studio_thumb = original
+        self.assertEqual(columns.count("project_thumb"), 1)
+
+    # ------------------------------------------------------------ row actions
+    def test_row_actions_offer_edit_and_delete(self):
+        from crm.models import Lead
+
+        lead = Lead.objects.create(name="Row", email="row@example.com",
+                                   status="new")
+        html = self.client.get(reverse("admin:crm_lead_changelist")).content.decode()
+        self.assertIn(reverse("admin:crm_lead_change", args=[lead.pk]), html)
+        self.assertIn(reverse("admin:crm_lead_delete", args=[lead.pk]), html)
+
+    def test_row_actions_are_hidden_from_a_user_who_cannot_use_them(self):
+        """A viewer may not add, change or delete. Offering the icons anyway
+        produces links that 403 on submit, so the column must be empty."""
+        from crm.models import Lead
+
+        lead = Lead.objects.create(name="Locked", email="locked@example.com",
+                                   status="new")
+        viewer = User.objects.create_user(
+            username="rowviewer", password="pw-rowview-123", is_staff=True
+        )
+        viewer.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="crm", codename__startswith="view_"
+        ))
+        self.client.force_login(viewer)
+        html = self.client.get(reverse("admin:crm_lead_changelist")).content.decode()
+
+        # Scoped to the actions cell on purpose. Django's own row link points at
+        # the change URL for a viewer too -- that is the read-only view, and it
+        # is correct. What must not appear is an *action* link, so the check
+        # reads the cell the mixin is responsible for.
+        cells = _row_action_cells(html)
+        self.assertEqual(len(cells), 1)
+        self.assertIn("is-empty", cells[0])
+        self.assertNotIn(reverse("admin:crm_lead_change", args=[lead.pk]), cells[0])
+        self.assertNotIn(reverse("admin:crm_lead_delete", args=[lead.pk]), cells[0])
+        # Nothing else on the page offers a delete either.
+        self.assertNotIn(reverse("admin:crm_lead_delete", args=[lead.pk]), html)
+
+    def test_draft_pages_get_no_view_on_site_action(self):
+        """An unpublished page has no public URL, so the link would 404 and
+        imply the edit is already live."""
+        from content.models import Page
+
+        draft = Page.objects.create(title="Hidden Draft", path="/hidden/",
+                                    slug="hidden", is_published=False)
+        live = Page.objects.create(title="Visible", path="/visible/",
+                                   slug="visible", is_published=True)
+        html = self.client.get(reverse("admin:content_page_changelist")).content.decode()
+        # Both rows are listed; only the published one offers the public link.
+        self.assertIn(reverse("admin:content_page_change", args=[draft.pk]), html)
+        self.assertIn('href="/visible/"', html)
+        self.assertNotIn('href="/hidden/"', html)
+        self.assertIn(reverse("admin:content_page_change", args=[live.pk]), html)
+
+    # --------------------------------------------------------------- counting
+    def test_count_says_filtered_of_total(self):
+        from content.models import Page
+
+        for i in range(5):
+            Page.objects.create(title=f"P{i}", path=f"/p{i}/", slug=f"p{i}",
+                                is_published=bool(i % 2))
+        response = self.client.get(
+            reverse("admin:content_page_changelist") + "?is_published__exact=1"
+        )
+        self.assertEqual(response.context["studio_shown"], 2)
+        self.assertEqual(response.context["studio_all"], 5)
+
+    def test_unfiltered_list_reports_a_single_number(self):
+        from content.models import Page
+
+        Page.objects.create(title="One", path="/one/", slug="one")
+        response = self.client.get(reverse("admin:content_page_changelist"))
+        self.assertEqual(response.context["studio_shown"], 1)
+        self.assertEqual(response.context["studio_all"], 1)
+
+    # ---------------------------------------------------------- filter chips
+    def test_applied_filter_becomes_a_named_chip(self):
+        """A chip is read by a person, so it says "Is published: Yes" rather
+        than echoing `is_published__exact=1` back at them."""
+        from content.models import Page
+
+        Page.objects.create(title="Pub", path="/pub/", slug="pub",
+                            is_published=True)
+        response = self.client.get(
+            reverse("admin:content_page_changelist") + "?is_published__exact=1"
+        )
+        chips = response.context["studio_filters"]
+        self.assertEqual([chip["label"] for chip in chips],
+                         ["Is published: Yes"])
+
+    def test_no_filters_means_no_chips(self):
+        response = self.client.get(reverse("admin:content_page_changelist"))
+        self.assertEqual(response.context["studio_filters"], [])
+
+    def test_a_chip_drops_only_its_own_filter(self):
+        """Two filters applied, one chip clicked: the other must survive."""
+        from content.models import Page
+
+        Page.objects.create(title="Both", path="/both/", slug="both",
+                            is_published=True, show_in_menu=True)
+        Page.objects.create(title="OnlyPublished", path="/op/", slug="op",
+                            is_published=True, show_in_menu=False)
+        url = (reverse("admin:content_page_changelist")
+               + "?is_published__exact=1&show_in_menu__exact=1")
+        response = self.client.get(url)
+        chips = response.context["studio_filters"]
+        self.assertEqual(sorted(chip["label"] for chip in chips),
+                         ["Is published: Yes", "Show in menu: Yes"])
+
+        # Each chip's URL drops exactly the parameter it is named for and keeps
+        # the other one, so the two chips are genuinely independent.
+        for chip in chips:
+            dropped = ("is_published__exact"
+                       if "published" in chip["label"].lower()
+                       else "show_in_menu__exact")
+            kept = ("show_in_menu__exact" if dropped == "is_published__exact"
+                    else "is_published__exact")
+            self.assertNotIn(dropped, chip["remove_url"])
+            self.assertIn(kept, chip["remove_url"])
+
+    def test_search_term_is_not_reported_as_a_filter_chip(self):
+        """A search box is a different control from a filter; showing it as a
+        removable chip next to real filters conflates the two."""
+        from content.models import Page
+
+        Page.objects.create(title="Needle", path="/n/", slug="n")
+        response = self.client.get(
+            reverse("admin:content_page_changelist") + "?q=Needle"
+        )
+        self.assertEqual(response.context["studio_filters"], [])
+
+    # ----------------------------------------------------------------- totals
+    def test_totals_sum_the_filtered_rows_only(self):
+        """A totals row that sums the whole table while the view shows a subset
+        is the classic way a list misleads."""
+        from crm.models import Lead
+
+        for name, score in (("a", 10), ("b", 20), ("c", 30)):
+            Lead.objects.create(name=name, email=f"{name}@example.com",
+                                status="new", score=score)
+        Lead.objects.create(name="won", email="won@example.com",
+                            status="won", score=100)
+
+        unfiltered = self.client.get(reverse("admin:crm_lead_changelist"))
+        self.assertEqual(unfiltered.context["studio_totals"]["Score"], 160)
+
+        filtered = self.client.get(
+            reverse("admin:crm_lead_changelist") + "?status__exact=new"
+        )
+        self.assertEqual(filtered.context["studio_totals"]["Score"], 60)
+
+    def test_models_without_totals_declare_none(self):
+        """The totals strip must be absent, not empty, where nothing is summed."""
+        response = self.client.get(reverse("admin:content_page_changelist"))
+        self.assertEqual(response.context["studio_totals"], {})
+        self.assertNotContains(response, "studio-list-totals")
+
+    def test_lead_changelist_renders_the_totals_strip(self):
+        self.client.get(reverse("admin:crm_lead_changelist"))
+        self.assertContains(self.client.get(
+            reverse("admin:crm_lead_changelist")), "studio-list-totals")
+
+
+def _row_action_cells(html):
+    """The inner HTML of every per-row actions cell on a changelist."""
+    return re.findall(
+        r'<td class="field-studio_row_actions">(.*?)</td>', html, re.S
+    )
+
+
+def _fake_request(user):
+    from django.test import RequestFactory
+
+    request = RequestFactory().get("/admin/")
+    request.user = user
+    return request

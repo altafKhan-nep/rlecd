@@ -1,10 +1,12 @@
 {% extends "admin/base.html" %}
-{% load static i18n %}
+{% load static i18n studio_tags %}
 
-{# Branded shell: a fixed left sidebar for navigation with the content column
-   to its right, plus a slim topbar. Everything still extends Django's own
-   base, so permissions, forms and the changelist machinery are untouched --
-   only the frame around them changes. #}
+{% comment %}
+Branded shell: a fixed left sidebar for navigation with the content column
+to its right, plus a slim topbar. Everything still extends Django's own
+base, so permissions, forms and the changelist machinery are untouched --
+only the frame around them changes.
+{% endcomment %}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:"Studio" }}{% endblock %}
 
@@ -13,6 +15,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'admin/css/admin.css' %}">
+<script>
+/* Runs in <head>, before the sidebar paints. Without this the browser lays the
+   sidebar out at full width and then snaps it to the collapsed width, which
+   reads as a flicker on every reload. The script at the foot of the header
+   takes over from here and owns the toggle. */
+try {
+    if (window.localStorage.getItem('studio.sidebar.collapsed') === '1') {
+        document.documentElement.classList.add('sidebar-collapsed');
+    }
+} catch (e) {}
+</script>
 {% endblock %}
 
 {% block bodyclass %}{{ block.super }} studio-admin{% endblock %}
@@ -24,13 +37,15 @@
 {% block nav-breadcrumbs %}{% endblock %}
 {% block footer %}{% endblock %}
 
-{# Warning banner. MediaItemAdmin sets storage_is_ephemeral on its add form, so
-   the caveat lands on the one screen where an upload can lose data. It has to
-   live inside a block: text outside blocks in a child template is never
-   rendered. content_title is used because base.html renders it and
-   change_form.html does not override it, so the banner appears on the add form
-   without shadowing the page heading. Written without a literal opening tag
-   in this comment: the lexer tokenises those even inside comments. #}
+{% comment %}
+Warning banner. MediaItemAdmin sets storage_is_ephemeral on its add form, so
+the caveat lands on the one screen where an upload can lose data. It has to
+live inside a block: text outside blocks in a child template is never
+rendered. content_title is used because base.html renders it and
+change_form.html does not override it, so the banner appears on the add form
+without shadowing the page heading. Written without a literal opening tag
+in this comment: the lexer tokenises those even inside comments.
+{% endcomment %}
 {% block content_title %}{{ block.super }}
   {% if storage_is_ephemeral %}
   <div class="storage-warning">
@@ -46,80 +61,28 @@
 <aside class="studio-sidebar" id="studio-sidebar" aria-label="{% translate 'Admin navigation' %}">
   <div class="sidebar-brand">
     <span class="brand-mark" aria-hidden="true">R</span>
-    <span class="sidebar-brand-name">
-      {{ site_header }}
-      <span class="sidebar-brand-sub">{% translate "Studio" %}</span>
-    </span>
+    <span class="sidebar-brand-name">{{ site_header }}</span>
   </div>
 
+  {% comment %}
+The nav is built in Python (StudioAdminSite._nav) so a new model is one
+  dict entry rather than a block of markup, and the active check lives in
+  one template tag instead of being repeated per link.
+  {% endcomment %}
   <nav class="sidebar-nav">
-    <div class="nav-group">
-      <a class="nav-item{% if request.resolver_match.url_name == 'index' %} is-active{% endif %}"
-         href="{% url 'admin:index' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-        <span>{% translate "Overview" %}</span>
-      </a>
-    </div>
-
-    <div class="nav-group">
-      <p class="nav-group-label">{% translate "CRM" %}</p>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'crm_lead_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:crm_lead_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
-        <span>{% translate "Leads" %}</span>
-        {% if tab_counts.new_leads %}<span class="nav-count">{{ tab_counts.new_leads }}</span>{% endif %}
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'crm_task_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:crm_task_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span>{% translate "Tasks" %}</span>
-        {% if tab_counts.open_tasks %}<span class="nav-count">{{ tab_counts.open_tasks }}</span>{% endif %}
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'crm_contact_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:crm_contact_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" opacity="0"/><path d="M6 8h12M6 12h12M6 16h7"/></svg>
-        <span>{% translate "Contacts" %}</span>
-      </a>
-    </div>
-
-    <div class="nav-group">
-      <p class="nav-group-label">{% translate "Content" %}</p>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'content_page_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:content_page_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
-        <span>{% translate "Pages" %}</span>
-        {% if tab_counts.pages %}<span class="nav-count">{{ tab_counts.pages }}</span>{% endif %}
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'content_section_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:content_section_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg>
-        <span>{% translate "Sections" %}</span>
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'crm_service_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:crm_service_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z"/></svg>
-        <span>{% translate "Services" %}</span>
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'content_mediaitem_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:content_mediaitem_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-        <span>{% translate "Media" %}</span>
-        {% if tab_counts.media %}<span class="nav-count">{{ tab_counts.media }}</span>{% endif %}
-      </a>
-
-      <a class="nav-item{% if request.resolver_match.url_name == 'content_sitesetting_changelist' %} is-active{% endif %}"
-         href="{% url 'admin:content_sitesetting_changelist' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span>{% translate "Site settings" %}</span>
-      </a>
-    </div>
+    {% for section in nav_sections %}
+      <div class="nav-group">
+        {% if section.label %}<p class="nav-group-label">{{ section.label }}</p>{% endif %}
+        {% for item in section.items %}
+          <a class="nav-item{% nav_item_class item.match_name %}" href="{{ item.url }}"
+             title="{{ item.label }}" aria-label="{{ item.label }}">
+            {% studio_icon item.icon %}
+            <span class="nav-text">{{ item.label }}</span>
+            {% if item.count %}<span class="nav-count">{{ item.count }}</span>{% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    {% endfor %}
   </nav>
 
   <div class="sidebar-footer">
@@ -127,15 +90,29 @@
       <span class="sidebar-avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span>
       <span class="sidebar-user-name">{{ user.first_name|default:user.username }}</span>
     </div>
+
+    {% comment %}
+Collapse is a pure view preference, so it lives in localStorage rather
+    than a cookie: nothing server-side needs to know, and it must not
+    invalidate the session.
+    {% endcomment %}
+    <button class="sidebar-link sidebar-collapse" type="button" id="sidebar-collapse"
+            aria-expanded="true" aria-controls="studio-sidebar" aria-label="{% translate 'Collapse navigation' %}">
+      {% studio_icon "menu-open" %}
+      <span class="nav-text">{% translate "Collapse" %}</span>
+    </button>
+
     {% if user.is_active and user.is_staff %}
-      <a class="sidebar-link" href="{% url 'admin:password_change' %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-        <span>{% translate "Change password" %}</span>
+      <a class="sidebar-link" href="{% url 'admin:password_change' %}"
+         title="{% translate 'Change password' %}" aria-label="{% translate 'Change password' %}">
+        {% studio_icon "key" %}
+        <span class="nav-text">{% translate "Change password" %}</span>
       </a>
     {% endif %}
-    <a class="sidebar-link" href="{% url 'admin:logout' %}">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
-      <span>{% translate "Log out" %}</span>
+    <a class="sidebar-link" href="{% url 'admin:logout' %}"
+       title="{% translate 'Log out' %}" aria-label="{% translate 'Log out' %}">
+      {% studio_icon "external-link" %}
+      <span class="nav-text">{% translate "Log out" %}</span>
     </a>
   </div>
 </aside>
@@ -145,18 +122,55 @@
 <header class="studio-topbar">
   <button class="sidebar-toggle" id="sidebar-toggle" type="button"
           aria-label="{% translate 'Toggle navigation' %}" aria-expanded="false" aria-controls="studio-sidebar">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    {% studio_icon "menu" %}
   </button>
 
-  <div class="topbar-title">
-    {% block topbar_title %}{{ title }}{% endblock %}
-  </div>
+  {% comment %}
+  There is no page title in this bar. Django's own <h1> already names the
+  page, and a second copy of the same words directly above it read as clutter.
+  The h1 is also the only one of the two that survives on narrow screens, so
+  the bar stays a place for controls only.
+  {% endcomment %}
+
+  {% comment %}
+A real GET to the custom cross-model search view, not a decorative input.
+  The view reuses each ModelAdmin's own search_fields, so results match what
+  that model's changelist would return.
+  {% endcomment %}
+  <form class="topbar-search" action="{% url 'admin:studio_search' %}" method="get" role="search">
+    {% studio_icon "search" %}
+    <input type="search" name="q" value="{{ request.GET.q|default:'' }}"
+           placeholder="{% translate 'Search anything...' %}" aria-label="{% translate 'Search' %}">
+    <kbd>⌘K</kbd>
+  </form>
 
   <div class="topbar-actions">
+    {% for link in add_links %}
+      <a class="topbar-add" href="{{ link.url }}" title="{{ link.label }}" aria-label="{{ link.label }}">{% studio_icon "plus" %}<span>{{ link.label }}</span></a>
+    {% endfor %}
+
+    {% comment %}
+Real count: unassigned new leads plus overdue tasks. Hidden entirely at
+    zero so an empty badge never renders as a stray dot.
+    {% endcomment %}
+    {% if attention_count %}
+      <a class="topbar-icon-btn" href="{{ attention_url }}" aria-label="{% translate 'Items needing attention' %}">
+        {% studio_icon "bell" %}
+        <span class="notif-badge">{{ attention_count }}</span>
+      </a>
+    {% endif %}
+
     <a class="topbar-link" href="/">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      {% studio_icon "globe" %}
       <span>{% translate "View site" %}</span>
     </a>
+    <div class="topbar-user">
+      <span class="topbar-avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span>
+      <div class="topbar-user-meta">
+        <span class="topbar-user-name">{{ user.first_name|default:user.username }}</span>
+        <span class="topbar-user-role">{% translate "Administrator" %}</span>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -189,6 +203,52 @@
        sidebar off-canvas, so reset it when the viewport grows. */
     window.addEventListener('resize', function () {
         if (window.innerWidth > 900) setOpen(false);
+    });
+})();
+
+/* Collapse. The class goes on <html> rather than <body> so the state set by
+   the pre-paint snippet in <head> is the same class the toggle flips, and the
+   sidebar never has to be re-laid-out when the two meet. */
+(function () {
+    var btn = document.getElementById('sidebar-collapse');
+    var root = document.documentElement;
+    var KEY = 'studio.sidebar.collapsed';
+
+    function setCollapsed(on) {
+        root.classList.toggle('sidebar-collapsed', on);
+        if (btn) {
+            /* aria-label mirrors the visible text so the button still has a
+               correct accessible name once the rail hides the text. */
+            var label = on ? 'Expand navigation' : 'Collapse navigation';
+            btn.setAttribute('aria-expanded', String(!on));
+            btn.setAttribute('aria-label', label);
+            var text = btn.querySelector('.nav-text');
+            if (text) text.textContent = on ? 'Expand' : 'Collapse';
+        }
+    }
+
+    setCollapsed(root.classList.contains('sidebar-collapsed'));
+
+    if (btn) {
+        btn.addEventListener('click', function () {
+            var on = !root.classList.contains('sidebar-collapsed');
+            setCollapsed(on);
+            try { window.localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
+        });
+    }
+})();
+
+/* ⌘K / Ctrl-K focuses the search field, which is what the kbd hint promises.
+   preventDefault stops the browser's own search shortcut. */
+(function () {
+    var field = document.querySelector('.topbar-search input[name="q"]');
+    if (!field) return;
+    document.addEventListener('keydown', function (event) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            field.focus();
+            field.select();
+        }
     });
 })();
 </script>

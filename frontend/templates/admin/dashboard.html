@@ -3,14 +3,14 @@
 
 {% block bodyclass %}{{ block.super }} studio-dashboard{% endblock %}
 
-{% block topbar_title %}{% translate "Dashboard" %}{% endblock %}
-
-{# Django's default content_title renders an <h1> above the content area. On the
-   model index it carries the page title, but here it fights the greeting in
-   .dash-head and can read as a stray model name. The dashboard supplies its own
-   heading, so drop the inherited one. The storage banner in base_site.html also
-   lives in this block and is only relevant to the media upload form, so nothing
-   useful is lost. #}
+{% comment %}
+Django's default content_title renders an <h1> above the content area. On the
+model index it carries the page title, but here it fights the greeting in
+.dash-head and can read as a stray model name. The dashboard supplies its own
+heading, so drop the inherited one. The storage banner in base_site.html also
+lives in this block and is only relevant to the media upload form, so nothing
+useful is lost.
+{% endcomment %}
 {% block content_title %}{% endblock %}
 
 {% block content %}
@@ -18,8 +18,8 @@
 
   <div class="dash-head">
     <div>
-      <h1 class="dash-title">Good to see you, {{ user.first_name|default:user.username }}</h1>
-      <p class="dash-sub">{% translate "Here is where things stand across your site and your leads." %}</p>
+      <h1 class="dash-title">{% translate "Dashboard" %}</h1>
+      <p class="dash-sub">{{ today|date:"l, F j, Y" }}</p>
     </div>
     <div class="dash-head-actions">
       <a class="button" href="{% url 'admin:content_page_changelist' %}">{% translate "Manage pages" %}</a>
@@ -27,9 +27,12 @@
     </div>
   </div>
 
-  {# Six cards spanning both content and CRM, so the dashboard leads with the
-     website the admin is actually responsible for. Colour comes from the tone
-     class the view assigns, not from position. #}
+  {% comment %}
+Six cards spanning both content and CRM. `s.trend` is a (direction,
+  percentage) pair from the view, or empty for the cards whose number has
+  no period-over-period flow to measure. Colour comes from the tone class
+  the view assigns.
+  {% endcomment %}
   <div class="stat-grid">
     {% for s in stats %}
       <a class="stat-card {{ s.tone }}" href="{% url s.url %}{{ s.query }}">
@@ -39,6 +42,19 @@
           <span class="stat-value">{{ s.value }}</span>
           <span class="stat-hint">{{ s.hint }}</span>
         </span>
+        {% if s.trend %}
+          <span class="stat-trend trend-{{ s.trend.0 }}">
+            {% if s.trend.0 == "up" %}
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M7 7h10v10"/></svg>
+            {% elif s.trend.0 == "down" %}
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7l10 10M17 7v10H7"/></svg>
+            {% else %}
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+            {% endif %}
+            <span class="stat-trend-value">{{ s.trend.1 }}%</span>
+            <span class="visually-hidden">{% translate "versus the previous 30 days" %}</span>
+          </span>
+        {% endif %}
       </a>
     {% endfor %}
   </div>
@@ -46,6 +62,29 @@
   <div class="dash-grid">
 
     <div class="dash-col">
+
+      <section class="panel panel-trend">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Lead Trend" %}</h2>
+          <span class="panel-note">{% translate "Last 6 months" %}</span>
+        </header>
+        {% comment %}
+`pct` is the month's share of the busiest month, not its raw count,
+        so the tallest bar always fills the plot.
+        {% endcomment %}
+        <div class="chart-bars">
+          {% for m in monthly_data %}
+            <div class="chart-col">
+              <div class="chart-bar-wrap">
+                <div class="chart-bar{% if m.value %} is-peak{% endif %}"
+                     style="height: {{ m.pct }}%"
+                     title="{{ m.label }}: {{ m.value }}"></div>
+              </div>
+              <span class="chart-label">{{ m.label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
 
       <section class="panel panel-crm">
         <header class="panel-head">
@@ -123,7 +162,7 @@
 
       <section class="panel panel-pipeline">
         <header class="panel-head">
-          <h2 class="panel-title">{% translate "Pipeline" %}</h2>
+          <h2 class="panel-title">{% translate "Lead Status" %}</h2>
         </header>
         <ul class="pipe">
           {% for row in pipeline %}
@@ -136,8 +175,54 @@
         </ul>
       </section>
 
-      {# Content health: the numbers that tell an owner whether the published
-         site is complete, which is the part the old dashboard was missing. #}
+      <section class="panel panel-services">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Top Services" %}</h2>
+          <a class="panel-link" href="{% url 'admin:crm_service_changelist' %}">{% translate "View all" %}</a>
+        </header>
+        {% if top_services %}
+          <ul class="pipe">
+            {% for s in top_services %}
+              <li class="pipe-row">
+                <a class="pipe-label" href="{% url 'admin:crm_service_change' s.pk %}">{{ s.name }}</a>
+                <span class="bar-track"><span class="bar-fill lead" style="width: {{ s.pct }}%"></span></span>
+                <span class="pipe-count">{{ s.lead_total }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">{% translate "No services yet." %}</p>
+        {% endif %}
+      </section>
+
+      <section class="panel panel-service">
+        <header class="panel-head">
+          <h2 class="panel-title">{% translate "Recent Contacts" %}</h2>
+          <a class="panel-link" href="{% url 'admin:crm_contact_changelist' %}">{% translate "View all" %}</a>
+        </header>
+        {% if recent_contacts %}
+          <ul class="contact-list">
+            {% for c in recent_contacts %}
+              <li class="contact-row">
+                <span class="contact-avatar" aria-hidden="true">{{ c.name|slice:":1"|upper }}</span>
+                <div class="contact-meta">
+                  <span class="contact-name">{{ c.name }}</span>
+                  <span class="contact-email">{{ c.email }}</span>
+                </div>
+                <span class="contact-date">{{ c.created_at|date:"M j" }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">{% translate "No contacts yet." %}</p>
+        {% endif %}
+      </section>
+
+  {% comment %}
+Content health reports gaps, not totals: the stat cards above already own the
+  totals, so a row here is a number of things that are saved but not reaching a
+  visitor. Zero is the healthy reading, and the row colour follows it.
+  {% endcomment %}
       <section class="panel panel-content">
         <header class="panel-head">
           <h2 class="panel-title">{% translate "Content health" %}</h2>

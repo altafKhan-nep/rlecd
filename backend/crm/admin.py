@@ -21,10 +21,11 @@ from .models import (
     Service,
     Task,
 )
+from main.listview import StudioListMixin
 
 
 @admin.register(Service)
-class ServiceAdmin(admin.ModelAdmin):
+class ServiceAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("name", "slug", "is_active", "sort_order", "lead_count")
     list_editable = ("is_active", "sort_order")
     search_fields = ("name", "slug")
@@ -53,11 +54,15 @@ class TaskInline(admin.TabularInline):
 
 
 @admin.register(Lead)
-class LeadAdmin(admin.ModelAdmin):
+class LeadAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = (
         "name", "service_label", "status_badge", "priority_badge", "score_chip",
         "owner", "source", "created_at",
     )
+    # The score total is the one number worth seeing across a filtered
+    # pipeline: it is the only numeric column here, and it is what the
+    # dashboard's "hot leads" card is a slice of.
+    studio_totals = {"Score": "score"}
     list_filter = ("status", "priority", "source", "service", "owner", "created_at")
     search_fields = ("name", "email", "phone", "message", "service_raw", "city_or_zip")
     date_hierarchy = "created_at"
@@ -226,7 +231,7 @@ class LeadAdmin(admin.ModelAdmin):
 
 
 @admin.register(LeadActivity)
-class LeadActivityAdmin(admin.ModelAdmin):
+class LeadActivityAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("created_at", "lead", "kind", "summary", "actor")
     list_filter = ("kind", "created_at")
     search_fields = ("summary", "detail", "lead__name", "lead__email")
@@ -241,7 +246,7 @@ class LeadActivityAdmin(admin.ModelAdmin):
 
 
 @admin.register(Task)
-class TaskAdmin(admin.ModelAdmin):
+class TaskAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("title", "lead", "due_label", "state", "assigned_to")
     list_filter = ("done", "due_at", "assigned_to")
     search_fields = ("title", "lead__name", "lead__email")
@@ -282,7 +287,7 @@ class TaskAdmin(admin.ModelAdmin):
 
 
 @admin.register(Contact)
-class ContactAdmin(admin.ModelAdmin):
+class ContactAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("name", "email", "phone", "city_or_zip", "owner", "created_at")
     list_filter = ("owner", "created_at")
     search_fields = ("name", "email", "phone", "city_or_zip")

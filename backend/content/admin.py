@@ -13,6 +13,7 @@ from content.models import (
     Testimonial, TrustBadge,
 )
 from content.render import clear_template_cache
+from main.listview import StudioListMixin
 
 
 class SectionInline(admin.TabularInline):
@@ -51,9 +52,9 @@ class SectionInline(admin.TabularInline):
 
 
 @admin.register(Page)
-class PageAdmin(admin.ModelAdmin):
+class PageAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("path", "title", "is_published", "section_count",
-                    "locked_count", "updated_at", "view_link")
+                    "locked_count", "updated_at")
     list_display_links = ("path",)
     list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
     search_fields = ("path", "title", "seo_title", "seo_description")
@@ -95,12 +96,16 @@ class PageAdmin(admin.ModelAdmin):
     def locked_count(self, obj):
         return obj.sections.filter(is_locked=True).count()
 
-    @admin.display(description="view")
-    def view_link(self, obj):
-        if not obj.pk:
-            return "-"
-        return format_html('<a href="{}" target="_blank">{}</a>',
-                           obj.path, obj.path)
+    def studio_public_url(self, obj):
+        """Public URL for the row's "view on site" action, or None.
+
+        A draft has no public page, so offering the link would send the owner to
+        a 404 and imply the change is live. Publishing is the flag that decides,
+        not the presence of a path.
+        """
+        if not obj.pk or not obj.is_published:
+            return None
+        return reverse("index") if obj.path == "/" else obj.path
 
     def preview_link(self, obj):
         if not obj.pk:
@@ -124,7 +129,7 @@ class PageAdmin(admin.ModelAdmin):
 
 
 @admin.register(Section)
-class SectionAdmin(admin.ModelAdmin):
+class SectionAdmin(StudioListMixin, admin.ModelAdmin):
     """Cross-page section browser, for find-and-fix without opening 19 pages."""
 
     list_display = ("page", "position", "label", "type", "is_visible",
@@ -168,7 +173,7 @@ class SectionAdmin(admin.ModelAdmin):
 
 
 @admin.register(ServiceArea)
-class ServiceAreaAdmin(admin.ModelAdmin):
+class ServiceAreaAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("name", "group", "is_active", "sort_order", "project_count")
     list_editable = ("is_active", "sort_order")
     list_filter = ("group", "is_active")
@@ -181,7 +186,7 @@ class ServiceAreaAdmin(admin.ModelAdmin):
 
 
 @admin.register(FAQ)
-class FAQAdmin(admin.ModelAdmin):
+class FAQAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("question", "page", "service", "is_published", "sort_order")
     list_editable = ("is_published", "sort_order")
     list_filter = ("is_published", "page", "service")
@@ -189,7 +194,7 @@ class FAQAdmin(admin.ModelAdmin):
 
 
 @admin.register(Testimonial)
-class TestimonialAdmin(admin.ModelAdmin):
+class TestimonialAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("author", "location", "rating", "is_featured",
                     "is_published", "sort_order")
     list_editable = ("is_featured", "is_published", "sort_order")
@@ -198,7 +203,7 @@ class TestimonialAdmin(admin.ModelAdmin):
 
 
 @admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
+class ProjectAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("project_thumb", "title", "service", "area", "completed_on",
                     "is_published")
     list_display_links = ("project_thumb", "title")
@@ -249,7 +254,7 @@ class ProjectAdmin(admin.ModelAdmin):
 
 
 @admin.register(TrustBadge)
-class TrustBadgeAdmin(admin.ModelAdmin):
+class TrustBadgeAdmin(StudioListMixin, admin.ModelAdmin):
     list_display = ("badge_thumb", "label", "issuer", "sort_order", "is_published")
     list_display_links = ("badge_thumb", "label")
     list_editable = ("sort_order", "is_published")
@@ -276,7 +281,7 @@ class TrustBadgeAdmin(admin.ModelAdmin):
 
 
 @admin.register(SiteSetting)
-class SiteSettingAdmin(admin.ModelAdmin):
+class SiteSettingAdmin(StudioListMixin, admin.ModelAdmin):
     def has_add_permission(self, request):
         return not SiteSetting.objects.exists()
 
@@ -309,7 +314,7 @@ class MediaItemInline(admin.TabularInline):
 
 
 @admin.register(MediaItem)
-class MediaItemAdmin(admin.ModelAdmin):
+class MediaItemAdmin(StudioListMixin, admin.ModelAdmin):
     """Image library: upload, preview, publish, retire, delete.
 
     Uploaded files land in MEDIA_ROOT, which on a free Render service is

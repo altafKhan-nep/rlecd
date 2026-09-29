@@ -1,0 +1,72 @@
+{% extends "admin/base_site.html" %}
+{% load i18n studio_tags %}
+
+{% block content %}
+<div class="studio-content search-page">
+
+  <form class="search-hero" action="{% url 'admin:studio_search' %}" method="get" role="search">
+    {% studio_icon "search" %}
+    <input type="search" name="q" value="{{ search_term }}" autofocus
+           placeholder="{% translate 'Search pages, services, leads, media...' %}"
+           aria-label="{% translate 'Search' %}">
+    <button class="button search-hero-go" type="submit">{% translate "Search" %}</button>
+  </form>
+
+  {% if not search_term %}
+    <div class="panel search-empty">
+      <h2 class="search-hint">{% translate "Type to search across the studio" %}</h2>
+      <p class="search-hint-sub">
+        {% blocktranslate count counter=searchable_models|length %}
+          {{ counter }} model is searched.
+        {% plural %}
+          {{ counter }} models are searched.
+        {% endblocktranslate %}
+      </p>
+      <ul class="search-model-list">
+        {% for row in searchable_models %}
+          <li><a href="{{ row.changelist_url }}">{{ row.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+
+  {% elif search_groups %}
+    <p class="search-summary">
+      {% blocktranslate count counter=search_total with term=search_term %}
+        {{ counter }} result for "{{ term }}".
+      {% plural %}
+        {{ counter }} results for "{{ term }}".
+      {% endblocktranslate %}
+    </p>
+
+    {% for group in search_groups %}
+      <div class="panel search-group">
+        <div class="search-group-head">
+          <h2>{{ group.label }}</h2>
+          <a class="search-group-all" href="{{ group.changelist_url }}">{% translate "View all" %}</a>
+        </div>
+        <ul class="search-results">
+          {% for row in group.results %}
+            <li>
+              <a class="search-result" href="{{ row.url }}">
+                {% studio_icon "chevron-right" %}
+                <span>{{ row.label }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+
+  {% else %}
+    <div class="panel search-empty">
+      <h2 class="search-hint">
+        {% blocktranslate %}Nothing matches "{{ search_term }}".{% endblocktranslate %}
+      </h2>
+      <p class="search-hint-sub">
+        {% translate "Search covers the text fields each model declares as searchable, and shows the first few matches per model. Try a shorter term." %}
+      </p>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
