@@ -16,9 +16,13 @@ from django.urls import reverse
 
 from content import importer
 from content.models import (
-    FAQ, Page, Project, Section, ServiceArea, SiteSetting, Testimonial, TrustBadge,
+    FAQ, Page, Project, Section, SectionImage, ServiceArea, SiteSetting,
+    Testimonial, TrustBadge,
 )
-from content.render import ContentRenderError, clear_template_cache
+from content import render as render_module
+from content.render import (
+    ContentRenderError, clear_template_cache, render_sections,
+)
 
 
 def strip_tags(html):
@@ -173,17 +177,30 @@ class AdminCrudTests(TestCase):
         self.client.force_login(self.admin)
 
     def test_changelists_all_load(self):
-        for model in (Page, Section, ServiceArea, FAQ, Testimonial,
-                      Project, TrustBadge, SiteSetting):
+        for model in (Page, Section, SectionImage, ServiceArea, FAQ,
+                      Testimonial, Project, TrustBadge, SiteSetting):
             url = reverse(f"admin:content_{model._meta.model_name}_changelist")
             with self.subTest(model=model.__name__):
                 self.assertEqual(self.client.get(url).status_code, 200)
+
+    #: The section form carries a SectionImage inline, so every POST to it
+    #: needs that formset's management fields. Omitting them makes Django
+    #: reject the whole save, which is correct but easy to trip over.
+    @staticmethod
+    def empty_image_formset():
+        return {
+            "images-TOTAL_FORMS": "0",
+            "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0",
+            "images-MAX_NUM_FORMS": "1000",
+        }
 
     def test_create_section_via_admin(self):
         url = reverse("admin:content_section_add")
         self.client.post(url, {
             "page": self.page.pk, "key": "new", "position": 5,
             "label": "Brand new", "type": "text", "content_html": "<p>NEW</p>",
+            **self.empty_image_formset(),
         })
         self.assertTrue(Section.objects.filter(label="Brand new").exists())
 
@@ -192,9 +209,34 @@ class AdminCrudTests(TestCase):
         self.client.post(url, {
             "page": self.page.pk, "key": self.section.key, "position": 0,
             "label": "Edited", "type": "text", "content_html": "<p>UPDATED</p>",
+            "images-TOTAL_FORMS": "1", "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
+            "images-0-position": "0", "images-0-image": "img/new.jpg",
+            "images-0-alt_text": "New image", "images-0-caption": "",
         })
         self.section.refresh_from_db()
         self.assertEqual(self.section.content_html, "<p>UPDATED</p>")
+        # The image posted alongside the section was saved too.
+        self.assertTrue(self.section.images.filter(image="img/new.jpg").exists())
+
+    def test_add_an_image_row_through_the_section_form(self):
+        """The path the CMS actually uses to change a picture."""
+        self.section.content_html = "<!--rlecd-image:1-->"
+        self.section.save()
+        url = reverse("admin:content_section_change", args=[self.section.pk])
+        self.client.post(url, {
+            "page": self.page.pk, "key": self.section.key, "position": 0,
+            "label": self.section.label, "type": self.section.type,
+            "content_html": "<!--rlecd-image:1-->",
+            "images-TOTAL_FORMS": "1", "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
+            "images-0-position": "0",
+            "images-0-image": "{% static 'img/replacement.jpg' %}",
+            "images-0-alt_text": "Replacement", "images-0-caption": "",
+        })
+        image = SectionImage.objects.get()
+        self.assertEqual(image.image, "{% static 'img/replacement.jpg' %}")
+        self.assertEqual(image.alt_text, "Replacement")
 
     def test_delete_section_via_admin(self):
         url = reverse("admin:content_section_delete", args=[self.section.pk])
@@ -276,17 +318,41 @@ class MirrorRegressionTests(TestCase):
     def test_imported_sections_reproduce_the_captured_body(self):
         """The strongest mirror guarantee available.
 
-        For every page, joining its stored sections must equal the body of the
-        captured template exactly. If this drifts, the running site can no longer
-        be compared against the live markup.
+        For every page, joining its stored sections -- with each section's
+        images resolved back into <img> tags -- must equal the body of the
+        captured template exactly. If this drifts, the running site can no
+        longer be compared against the live markup.
+
+        Resolving the images is what makes this still exact after the images
+        were lifted into SectionImage rows: the round trip is
+        extract_images -> SectionImage.to_html, and this is the test that says
+        the round trip is lossless rather than merely close.
         """
+        from content.render import resolve_images
+
         specs = {s["slug"]: s for s in importer.collect_specs(settings.REPO_ROOT)}
         for slug, spec in specs.items():
             with self.subTest(page=spec["path"]):
                 page = Page.objects.get(slug=slug)
                 joined = "".join(
-                    s.content_html for s in page.sections.order_by("position"))
+                    resolve_images(s, s.content_html)
+                    for s in page.sections.order_by("position"))
                 self.assertEqual(joined, spec["body"])
+
+    def test_lifting_images_out_is_lossless(self):
+        """No page may lose an <img> to the extraction, and none may gain one.
+
+        Counted on the captured body against the stored rows rather than
+        compared as text, so this fails if a single tag is dropped even when
+        the remaining markup still matches.
+        """
+        for spec in importer.collect_specs(settings.REPO_ROOT):
+            with self.subTest(page=spec["path"]):
+                expected = len(re.findall(r"<img\b", spec["body"], re.I))
+                self.assertEqual(
+                    SectionImage.objects.filter(section__page__slug=spec["slug"]).count(),
+                    expected,
+                )
 
     def test_page_shell_fields_match_the_captured_template(self):
         specs = {s["slug"]: s for s in importer.collect_specs(settings.REPO_ROOT)}
@@ -441,3 +507,349 @@ class HollowPageTests(TestCase):
             clear_template_cache()
             self.client.get("/about/")
         self.assertIn("no content", "\n".join(caught.output))
+
+
+class SectionImageTests(TestCase):
+    """Images live in rows, not in the section's HTML.
+
+    Before this, all 93 page images were literal <img> tags inside
+    `content_html`, so changing one meant hand-editing markup on a page that
+    had twenty of them. The importer now lifts each tag into a SectionImage and
+    leaves a marker behind.
+
+    The two things that must hold are that the round trip is byte-exact (so the
+    public site does not change) and that a broken reference fails loudly (so
+    an image is never silently dropped).
+    """
+
+    def setUp(self):
+        self.page = Page.objects.create(slug="p", title="P", path="/p/")
+
+    def section(self, html="", **kwargs):
+        return Section.objects.create(
+            page=self.page, key=kwargs.pop("key", "s"), position=0,
+            content_html=html, **kwargs)
+
+    # --- extraction -----------------------------------------------------
+    def test_extract_lifts_src_alt_and_presentation(self):
+        html = ('<img src="{% static \'img/a.jpg\' %}" alt="A" '
+                'class="c d" id="i" style="width: 100%;">')
+        stored, images = importer.extract_images(html)
+        self.assertEqual(stored, "<!--rlecd-image:1-->")
+        self.assertEqual(images[0], {
+            "position": 0, "image": "img/a.jpg", "alt_text": "A", "caption": "",
+            "css_class": "c d", "dom_id": "i", "inline_style": "width: 100%;",
+        })
+
+    def test_extract_keeps_document_order(self):
+        html = "".join(
+            f'<img src="{{% static \'img/{n}.jpg\' %}}" alt="{n}">'
+            for n in "abc")
+        _, images = importer.extract_images(html)
+        self.assertEqual([i["position"] for i in images], [0, 1, 2])
+        self.assertEqual([i["image"] for i in images],
+                         ["img/a.jpg", "img/b.jpg", "img/c.jpg"])
+
+    def test_extract_passes_absolute_paths_through_unwrapped(self):
+        """Wrapping a /media/ upload in {% static %} would look it up in the
+        wrong storage, so only the repo-relative form is unwrapped."""
+        for src in ("/media/up/x.png", "https://cdn.example/x.png", "/static/img/z.png"):
+            with self.subTest(src=src):
+                _, images = importer.extract_images(f'<img src="{src}" alt="a">')
+                self.assertEqual(images[0]["image"], src)
+
+    def test_extract_handles_a_tag_with_no_alt(self):
+        _, images = importer.extract_images('<img src="img/a.jpg">')
+        self.assertEqual(images[0]["alt_text"], "")
+
+    def test_extract_leaves_surrounding_markup_untouched(self):
+        html = '<p>a</p>\n<img src="img/a.jpg" alt="A">\n<p>b</p>'
+        stored, _ = importer.extract_images(html)
+        self.assertEqual(stored, '<p>a</p>\n<!--rlecd-image:1-->\n<p>b</p>')
+
+    # --- round trip -----------------------------------------------------
+    def test_round_trip_is_byte_exact(self):
+        """The whole point: extract then rebuild must give the tag back."""
+        original = ('<img src="{% static \'img/k4.jpg\' %}" alt="The Chef\'s Suite">')
+        stored, images = importer.extract_images(original)
+        self.assertEqual(SectionImage(**images[0]).to_html(), original)
+
+    def test_apostrophes_are_not_escaped(self):
+        """Django's escape() would write &#x27; and rewrite the site's own copy.
+
+        The captured alt text is full of real apostrophes, and a
+        double-quoted attribute does not need them escaped.
+        """
+        image = SectionImage(image="img/a.jpg", alt_text="The Chef's Suite")
+        self.assertIn("alt=\"The Chef's Suite\"", image.to_html())
+        self.assertNotIn("&#x27;", image.to_html())
+
+    def test_ampersand_in_alt_is_escaped(self):
+        image = SectionImage(image="img/a.jpg", alt_text="Tom & Jerry")
+        self.assertIn('alt="Tom &amp; Jerry"', image.to_html())
+
+    def test_source_tag_wraps_only_repo_paths(self):
+        self.assertEqual(SectionImage(image="img/a.jpg").source_tag(),
+                         "{% static 'img/a.jpg' %}")
+        self.assertEqual(SectionImage(image="/media/up/a.png").source_tag(),
+                         "/media/up/a.png")
+
+    def test_no_caption_means_no_figure_wrapper(self):
+        """Captions are opt-in, so an untouched import renders a bare <img>."""
+        image = SectionImage(image="img/a.jpg", alt_text="A")
+        self.assertNotIn("<figure", image.to_html())
+
+    def test_caption_wraps_in_a_figure(self):
+        image = SectionImage(image="img/a.jpg", alt_text="A", caption="  Nice  ")
+        html = image.to_html()
+        self.assertTrue(html.startswith('<figure class="content-figure">'))
+        self.assertIn("<figcaption>Nice</figcaption>", html)
+
+    def test_image_with_no_path_renders_nothing(self):
+        """An empty path must not emit a broken <img src="">."""
+        self.assertEqual(SectionImage(image="").to_html(), "")
+
+    def test_preview_src_is_servable_or_empty(self):
+        self.assertEqual(SectionImage(image="img/a.jpg").preview_src, "/static/img/a.jpg")
+        self.assertEqual(SectionImage(image="/media/up/a.png").preview_src, "/media/up/a.png")
+        self.assertEqual(SectionImage(image="https://c/x.png").preview_src, "https://c/x.png")
+        self.assertEqual(SectionImage(image="").preview_src, "")
+
+    # --- substitution ---------------------------------------------------
+    def test_resolve_puts_the_tag_back_in_place(self):
+        section = self.section("<!--rlecd-image:1-->")
+        SectionImage.objects.create(section=section, position=0,
+                                    image="img/a.jpg", alt_text="A")
+        resolved = render_module.resolve_images(section, section.content_html)
+        self.assertEqual(resolved, "<img src=\"{% static 'img/a.jpg' %}\" alt=\"A\">")
+
+    def test_resolve_is_a_noop_without_markers(self):
+        section = self.section("<p>plain</p>")
+        self.assertEqual(render_module.resolve_images(section, section.content_html),
+                         "<p>plain</p>")
+
+    def test_two_markers_resolve_to_their_own_images(self):
+        section = self.section("<!--rlecd-image:1--> mid <!--rlecd-image:2-->")
+        SectionImage.objects.create(section=section, position=0, image="img/a.jpg")
+        SectionImage.objects.create(section=section, position=1, image="img/b.jpg")
+        resolved = render_module.resolve_images(section, section.content_html)
+        self.assertIn("img/a.jpg", resolved)
+        self.assertIn("img/b.jpg", resolved)
+        self.assertLess(resolved.index("a.jpg"), resolved.index("b.jpg"))
+
+    def test_a_marker_with_no_row_raises_rather_than_dropping_the_image(self):
+        """Silently removing an image leaves a page that looks fine and is
+        missing a photo. That is the failure this change exists to prevent."""
+        section = self.section("<!--rlecd-image:1-->")
+        with self.assertRaises(ContentRenderError) as caught:
+            render_module.resolve_images(section, section.content_html)
+        self.assertIn("no such image row", str(caught.exception))
+
+    def test_rendering_a_page_with_a_broken_marker_raises(self):
+        self.section("<!--rlecd-image:1-->", is_visible=True)
+        with self.assertRaises(ContentRenderError):
+            render_sections(self.page)
+
+    # --- the import as a whole ------------------------------------------
+    def test_sync_creates_rows_and_preserves_an_editors_caption(self):
+        """A re-import must not wipe a caption an editor added.
+
+        An <img> tag has no caption, so the extractor always yields "" for that
+        field. Copying that over the stored row on every re-import would
+        silently delete editorial work.
+        """
+        section = self.section()
+        images = [{"position": 0, "image": "img/a.jpg", "alt_text": "A",
+                   "caption": "", "css_class": "", "dom_id": "", "inline_style": ""}]
+        importer._sync_section_images(section, images, reset=True)
+        self.assertEqual(SectionImage.objects.count(), 1)
+
+        SectionImage.objects.update(caption="Editor wrote this")
+
+        # Same image, fresh extraction: caption must survive.
+        importer._sync_section_images(section, images, reset=False)
+        self.assertEqual(SectionImage.objects.get().caption, "Editor wrote this")
+
+        # A changed path is imported; a changed alt is imported.
+        images[0]["image"] = "img/b.jpg"
+        images[0]["alt_text"] = "B"
+        importer._sync_section_images(section, images, reset=False)
+        row = SectionImage.objects.get()
+        self.assertEqual((row.image, row.alt_text, row.caption),
+                         ("img/b.jpg", "B", "Editor wrote this"))
+
+    def test_sync_drops_a_row_whose_image_left_the_markup(self):
+        section = self.section()
+        images = [{"position": 0, "image": "img/a.jpg", "alt_text": "",
+                   "caption": "", "css_class": "", "dom_id": "", "inline_style": ""},
+                  {"position": 1, "image": "img/b.jpg", "alt_text": "",
+                   "caption": "", "css_class": "", "dom_id": "", "inline_style": ""}]
+        importer._sync_section_images(section, images, reset=True)
+        self.assertEqual(SectionImage.objects.count(), 2)
+
+        importer._sync_section_images(section, images[:1], reset=False)
+        self.assertEqual([i.image for i in SectionImage.objects.all()], ["img/a.jpg"])
+
+    def test_gallery_sections_keep_their_type_after_extraction(self):
+        """infer_type detects a gallery by looking for "<img", so it has to see
+        the chunk before the tags are lifted out."""
+        chunk = '<div class="gallery">' + '<img src="img/a.jpg" alt="a">' * 3 + "</div>"
+        self.assertEqual(importer.infer_type(chunk), "gallery")
+        stored, images = importer.extract_images(chunk)
+        self.assertEqual(importer.infer_type(stored), "html")  # why order matters
+
+
+class PageSummaryTests(TestCase):
+    """The Pages changelist has to be readable without opening 19 pages.
+
+    Telling two pages apart otherwise means opening both, which is how a CMS
+    ends up worse than the static site it replaced.
+    """
+
+    def setUp(self):
+        self.page = Page.objects.create(slug="p", title="P", path="/p/")
+
+    def add(self, key, html, position=0, visible=True):
+        return Section.objects.create(
+            page=self.page, key=key, label=key, position=position,
+            content_html=html, is_visible=visible)
+
+    def test_summary_is_the_first_line_of_prose(self):
+        self.add("a", "<h1>Kitchen Portfolio</h1><p>Twenty of our finest remodels</p>")
+        self.assertEqual(self.page.text_summary(),
+                         "Kitchen Portfolio Twenty of our finest remodels")
+
+    def test_summary_skips_style_script_and_svg(self):
+        """A CSS rule or an inline icon path must never become the description."""
+        self.add("a", "<style>.x{color:red}</style><script>var a=1</script>"
+                      "<svg><path d='M0 0'/></svg>"
+                      "<p>Real content worth showing</p>")
+        summary = self.page.text_summary()
+        self.assertIn("Real content", summary)
+        self.assertNotIn("color:red", summary)
+        self.assertNotIn("var a", summary)
+
+    def test_summary_drops_image_markers(self):
+        self.add("a", "<!--rlecd-image:1--><!--rlecd-image:2-->"
+                      "<p>Words that matter here</p>")
+        self.assertNotIn("rlecd-image", self.page.text_summary())
+
+    def test_summary_collapses_whitespace(self):
+        self.add("a", "<p>one\n\n   two</p><p>three</p>")
+        self.assertEqual(self.page.text_summary(), "one two three")
+
+    def test_summary_skips_a_section_with_only_markup(self):
+        self.add("a", "<div></div>", position=0)
+        self.add("b", "<p>Actual words live in the next section</p>", position=1)
+        self.assertIn("Actual words", self.page.text_summary())
+
+    def test_summary_ignores_hidden_sections(self):
+        self.add("a", "<p>Hidden text nobody should see</p>", visible=False)
+        self.add("b", "<p>Visible text that should show</p>", position=1)
+        self.assertNotIn("Hidden text", self.page.text_summary())
+
+    def test_summary_is_truncated_with_an_ellipsis(self):
+        self.add("a", "<p>" + "word " * 60 + "</p>")
+        summary = self.page.text_summary(limit=50)
+        self.assertLessEqual(len(summary), 51)
+        self.assertTrue(summary.endswith("…"))
+
+    def test_summary_is_empty_when_there_is_no_text(self):
+        self.add("a", "<!--rlecd-image:1-->")
+        self.assertEqual(self.page.text_summary(), "")
+
+    def test_first_image_follows_render_order(self):
+        first = self.add("a", "<!--rlecd-image:1-->", position=0)
+        second = self.add("b", "<!--rlecd-image:1-->", position=1)
+        image_a = SectionImage.objects.create(
+            section=first, position=0, image="img/first.jpg")
+        SectionImage.objects.create(section=second, position=0, image="img/second.jpg")
+        self.assertEqual(self.page.first_image(), image_a)
+
+    def test_first_image_skips_hidden_sections(self):
+        hidden = self.add("a", "<!--rlecd-image:1-->", position=0, visible=False)
+        SectionImage.objects.create(section=hidden, position=0, image="img/hidden.jpg")
+        self.assertIsNone(self.page.first_image())
+
+    def test_first_image_is_none_when_there_are_no_images(self):
+        self.add("a", "<p>text</p>")
+        self.assertIsNone(self.page.first_image())
+
+
+class SectionImageAdminTests(TestCase):
+    """The image rows have to be editable, thumbnailed and pickable."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("img", "i@example.com", "pw")
+        cls.page = Page.objects.create(slug="p", title="P", path="/p/")
+        cls.section = Section.objects.create(
+            page=cls.page, key="s", label="S", position=0,
+            content_html="<!--rlecd-image:1-->"
+                        "<p>A remodeled kitchen with a marble island</p>")
+        cls.image = SectionImage.objects.create(
+            section=cls.section, position=0, image="img/a.jpg", alt_text="A")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_changelist_shows_a_thumbnail_and_the_page(self):
+        html = self.client.get(
+            reverse("admin:content_sectionimage_changelist")).content.decode()
+        self.assertIn("/static/img/a.jpg", html)
+        self.assertIn(self.page.path, html)
+
+    def test_the_image_field_gets_the_picker(self):
+        """The picker is the whole reason these rows exist."""
+        from main.widgets import MediaPathWidget
+
+        response = self.client.get(
+            reverse("admin:content_sectionimage_change", args=[self.image.pk]))
+        form = response.context["adminform"].form
+        self.assertIsInstance(form.fields["image"].widget, MediaPathWidget)
+        self.assertIn("admin/js/media_picker.js", response.content.decode())
+
+    def test_presentation_fields_are_read_only(self):
+        """`class="display-img active"` is what makes the carousel work, so it
+        is reproduced on render but must not be casually edited."""
+        html = self.client.get(
+            reverse("admin:content_sectionimage_change", args=[self.image.pk])
+        ).content.decode()
+        self.assertIn("field-css_class", html)
+        self.assertIn("field-dom_id", html)
+        self.assertIn("field-inline_style", html)
+
+    def test_the_section_form_offers_the_preview_script(self):
+        html = self.client.get(
+            reverse("admin:content_section_change", args=[self.section.pk])
+        ).content.decode()
+        self.assertIn("admin/js/section_editor.js", html)
+        # And the inline that holds the images.
+        self.assertIn("images-TOTAL_FORMS", html)
+        self.assertIn("section-image-thumb", html)
+
+    def test_section_list_offers_a_link_to_each_sections_images(self):
+        html = self.client.get(
+            reverse("admin:content_section_changelist")).content.decode()
+        self.assertIn(reverse("admin:content_section_change",
+                              args=[self.section.pk]), html)
+
+    def test_page_list_shows_a_thumbnail_a_summary_and_an_image_count(self):
+        html = self.client.get(
+            reverse("admin:content_page_changelist")).content.decode()
+        self.assertIn("/static/img/a.jpg", html)
+        self.assertIn("page-summary", html)
+
+    def test_broken_image_row_does_not_break_the_changelist(self):
+        SectionImage.objects.create(section=self.section, position=1, image="")
+        response = self.client.get(
+            reverse("admin:content_sectionimage_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "—")
+
+    def test_the_page_image_thumbnail_falls_back_to_a_dash(self):
+        """A page whose first image has no servable path must still list."""
+        self.image.image = ""
+        self.image.save()
+        response = self.client.get(reverse("admin:content_page_changelist"))
+        self.assertEqual(response.status_code, 200)

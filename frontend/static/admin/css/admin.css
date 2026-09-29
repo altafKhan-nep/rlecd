@@ -2071,3 +2071,67 @@ input:focus, select:focus, textarea:focus {
 }
 
 .used-by-list li { margin: 2px 0; }
+
+/* --------------------------------------------------------- section content
+   The section body is raw HTML, because that is what the captured pages are
+   and because a WYSIWYG editor would rewrite the markup the mirror check
+   compares against. These styles make that raw HTML tolerable to edit: a live
+   preview of what it will look like, and a way to drop an image in without
+   typing a tag by hand. */
+
+.section-live-preview {
+    margin-top: 8px;
+    border: 1px solid var(--line, #d6d9dd);
+    border-radius: 8px;
+    background: #fbfbfc;
+    overflow: hidden;
+}
+
+.section-live-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line-soft, #e6e8ea);
+    background: #f4f5f6;
+}
+
+.section-live-preview-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: var(--ink-soft, #5b6167);
+}
+
+.section-live-preview-body {
+    /* The page markup carries its own full-width layout rules, so the preview
+       is an iframe rather than an injected div: injecting would let the
+       section's <style> blocks restyle the whole admin. */
+    width: 100%;
+    height: 340px;
+    border: 0;
+    background: #fff;
+    display: block;
+}
+
+.section-preview-empty {
+    padding: 14px;
+    font-size: 12.5px;
+    color: var(--ink-soft, #5b6167);
+}
+
+/* Image rows on the section form. */
+.section-image-thumb {
+    width: 88px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--line, #d6d9dd);
+    background: #eef0f2;
+    display: block;
+}
+
+.section-image-inline .field-thumb { width: 100px; }
+.section-image-inline textarea { min-height: 52px; }

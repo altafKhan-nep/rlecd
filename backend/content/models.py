@@ -13,6 +13,7 @@ made in the CRM is the only difference between the local page and the live one.
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
+from django.utils.html import escape
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -80,6 +81,48 @@ class Page(models.Model):
 
     def visible_sections(self):
         return self.sections.filter(is_visible=True).order_by("position")
+
+    def first_image(self):
+        """This page's first image in render order, or None.
+
+        Walks the sections rather than reading `og_image`, because `og_image`
+        is the social-preview path and is usually empty on a captured page.
+        """
+        return SectionImage.objects.filter(
+            section__page_id=self.pk, section__is_visible=True,
+        ).order_by("section__position", "position", "pk").first()
+
+    def text_summary(self, limit=110):
+        """The first line of real prose on the page, for the changelist.
+
+        Derived from the stored markup so it cannot drift from what the page
+        says. Skips <style>, <script> and <svg> so a CSS rule or an inline icon
+        path never becomes the description, and collapses whitespace so the
+        result is one clean line in a table cell.
+        """
+        import re
+
+        collected = []
+        for section in self.sections.filter(is_visible=True).order_by("position"):
+            text = re.sub(
+                r"<(style|script|svg)\b.*?</\1>", " ",
+                section.content_html, flags=re.S | re.I)
+            # The image markers are not text; drop them before stripping tags.
+            text = re.sub(r"<!--rlecd-image:\d+-->", " ", text)
+            text = re.sub(r"<[^>]+>", " ", text)
+            collected.append(" ".join(text.split()))
+            # Kept going until there is a sentence's worth. Demanding that a
+            # *single* section be long enough would blank the summary of a page
+            # whose copy is split into several short sections.
+            joined = " ".join(part for part in collected if part)
+            if len(joined) >= 20:
+                break
+        text = " ".join(part for part in collected if part)
+        if not text:
+            return ""
+        if len(text) > limit:
+            return text[:limit].rsplit(" ", 1)[0] + "…"
+        return text
 
     def has_content(self):
         """Can this row actually render a page?
@@ -192,6 +235,131 @@ class Section(models.Model):
                 if text:
                     return text
         return f"Section {position + 1}"
+
+
+def _attr(value):
+    """Escape a value for a double-quoted HTML attribute.
+
+    Deliberately not `django.utils.html.escape`, which also turns `'` into
+    `&#x27;`. The captured alt text contains real apostrophes -- "The Chef's
+    Suite" on the kitchen page -- and escaping them rewrites the site's own
+    copy for no gain, because a double-quoted attribute does not need it. The
+    result is byte-identical to the markup that was captured.
+    """
+    return (str(value or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+class SectionImage(models.Model):
+    """One image inside a section's body, editable without touching HTML.
+
+    The captured pages had their images hard-coded as literal `<img>` tags in
+    the section markup, which meant changing one meant hand-editing HTML on a
+    page with 20 of them. The importer now lifts each tag out into a row here
+    and leaves a `<!--rlecd-image:N-->` marker in its place, so the path, alt
+    text and caption are ordinary fields an editor can change.
+
+    The presentation attributes (`css_class`, `dom_id`, `inline_style`) are
+    reproduced verbatim on render, not as things to edit. Thirteen of the
+    captured images depend on them for layout -- `class="display-img active"`
+    drives a carousel -- so dropping them would silently restyle the site.
+    They are shown read-only in the admin and kept out of the editable set.
+
+    `image` is a CharField holding a path, exactly like `Page.og_image` and
+    `Project.image`, and for the same reason: a captured row may point at a
+    file in this repository, while a newly uploaded one points into MEDIA_URL.
+    Two spellings, one field, no migration on the existing content.
+    """
+
+    section = models.ForeignKey(
+        Section, on_delete=models.CASCADE, related_name="images")
+    position = models.PositiveIntegerField(default=0)
+    image = models.CharField(
+        max_length=300, blank=True,
+        help_text="Repo path (img/photo.jpg), an uploaded /media/... path, "
+                  "or a full URL. Use the picker to choose from the library.",
+    )
+    alt_text = models.CharField(
+        max_length=300, blank=True,
+        help_text="Describes the image for screen readers. Required for "
+                  "accessibility even though the captured copy left four "
+                  "images with none.",
+    )
+    caption = models.TextField(
+        blank=True,
+        help_text="Optional. Rendered as a <figcaption>, which wraps the "
+                  "image in a <figure>.",
+    )
+
+    # Reproduced on render, not intended for editing.
+    css_class = models.CharField(max_length=200, blank=True, editable=False)
+    dom_id = models.CharField(max_length=100, blank=True, editable=False)
+    inline_style = models.CharField(max_length=300, blank=True, editable=False)
+
+    class Meta:
+        ordering = ["section", "position", "pk"]
+        verbose_name = "section image"
+        verbose_name_plural = "section images"
+
+    def __str__(self):
+        return self.alt_text or self.image or f"Image {self.position + 1}"
+
+    def source_tag(self):
+        """The `src` value, as template source rather than a final URL.
+
+        A repo path is emitted as `{% static %}` so the engine resolves it, which
+        is what the captured markup did and what makes static-hashed filenames
+        keep working. Anything already absolute -- an upload, a CDN URL -- is
+        passed through untouched, because wrapping it in `{% static %}` would
+        look it up under the wrong storage.
+        """
+        value = (self.image or "").strip()
+        if not value:
+            return ""
+        if value.startswith(("http://", "https://", "/")):
+            return value
+        return "{%% static '%s' %%}" % value
+
+    def to_html(self):
+        """Rebuild the `<img>` tag.
+
+        Attribute order is fixed to src, alt, class, id, style, which is the
+        order the captured markup used, so re-rendering an untouched import
+        reproduces the original bytes exactly.
+        """
+        src = self.source_tag()
+        if not src:
+            return ""
+        parts = [f'<img src="{src}"']
+        if self.alt_text:
+            parts.append(f'alt="{_attr(self.alt_text)}"')
+        if self.css_class:
+            parts.append(f'class="{_attr(self.css_class)}"')
+        if self.dom_id:
+            parts.append(f'id="{_attr(self.dom_id)}"')
+        if self.inline_style:
+            parts.append(f'style="{_attr(self.inline_style)}"')
+        tag = " ".join(parts) + ">"
+        if self.caption.strip():
+            return (f'<figure class="content-figure">'
+                    f'{tag}<figcaption>{escape(self.caption.strip())}'
+                    f'</figcaption></figure>')
+        return tag
+
+    @property
+    def preview_src(self):
+        """A URL the admin can put in an <img>, or '' if there is nothing to show."""
+        value = (self.image or "").strip()
+        if not value:
+            return ""
+        if value.startswith(("http://", "https://", "/media/", "/static/")):
+            return value
+        if value.startswith("/"):
+            return ""
+        return f"/static/{value}"
 
 
 class ServiceArea(models.Model):

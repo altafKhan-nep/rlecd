@@ -248,7 +248,7 @@ def import_pages(root_dir, *, reset=False, log=None):
 
     Returns (created, updated, removed, sections_written). Safe to re-run.
     """
-    from content.models import Page, Section
+    from content.models import Page
     from django.db import transaction
 
     specs = collect_specs(root_dir)
@@ -294,6 +294,10 @@ def _sync_sections(page, spec, reset):
     seen = set()
 
     for i, chunk in enumerate(chunks):
+        # The label and the type are derived from the ORIGINAL chunk, before the
+        # <img> tags are lifted out. infer_type() detects a gallery by looking
+        # for "<img", so feeding it the rewritten chunk would relabel every
+        # gallery as plain html.
         label = Section.derive_label(chunk, i)
         base_key = slugify(label)[:80] or f"section-{i + 1:02d}"
         key = f"{base_key}-{i + 1:02d}"
@@ -301,20 +305,23 @@ def _sync_sections(page, spec, reset):
         locked = leading_tag(chunk) in LOCKED_TAGS
         seen.add(key)
 
+        stored, images = extract_images(chunk)
+
         if key in existing:
             section = existing[key]
-            if reset or section.content_html != chunk:
-                section.content_html = chunk
+            if reset or section.content_html != stored:
+                section.content_html = stored
                 section.label = label
                 section.type = stype
                 section.position = i
                 section.is_locked = locked
                 section.save()
         else:
-            Section.objects.create(
+            section = Section.objects.create(
                 page=page, key=key, label=label, type=stype, position=i,
-                content_html=chunk, is_locked=locked,
+                content_html=stored, is_locked=locked,
             )
+        _sync_section_images(section, images, reset=reset)
 
     # Drop sections whose chunk is gone, unless an editor renamed them.
     for key, section in existing.items():
@@ -322,3 +329,110 @@ def _sync_sections(page, spec, reset):
             section.delete()
 
     return len(chunks)
+
+
+def _sync_section_images(section, images, reset):
+    """Make a section's image rows match what was lifted out of its markup.
+
+    `caption` is never imported -- an <img> tag has no caption -- and is
+    skipped on update so a caption an editor added is not wiped by a re-import.
+    """
+    from content.models import SectionImage
+
+    if reset:
+        section.images.all().delete()
+        for data in images:
+            SectionImage.objects.create(section=section, **data)
+        return len(images)
+
+    existing = {img.position: img for img in section.images.all()}
+    seen = set()
+    for data in images:
+        position = data["position"]
+        seen.add(position)
+        current = existing.get(position)
+        if current is None:
+            SectionImage.objects.create(section=section, **data)
+            continue
+        for field, value in data.items():
+            if field == "caption":
+                continue
+            if getattr(current, field) != value:
+                setattr(current, field, value)
+        current.save()
+
+    for position, image in existing.items():
+        if position not in seen:
+            image.delete()
+    return len(images)
+
+
+# --- images -----------------------------------------------------------------
+#
+# The captured pages hard-coded 93 <img> tags into their section markup. Lifting
+# them out into SectionImage rows is what makes an image changeable without hand
+# editing HTML, and the marker left behind is what keeps the position: the tag is
+# substituted back at exactly the spot it was lifted from.
+#
+# An HTML comment is used as the marker because it survives the template engine
+# untouched -- unlike {{ ... }}, which the engine would try to resolve and blank
+# out -- and because it is visible in the admin textarea, so an editor can see
+# where each image belongs.
+IMAGE_MARKER = "<!--rlecd-image:{}-->"
+
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_ATTR = re.compile(r"""([a-zA-Z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+
+
+def _parse_img_attrs(tag):
+    """Pull the attributes off one captured <img> tag.
+
+    Hand-rolled rather than a real HTML parser because the input is our own
+    captured output, which is machine-generated and regular. A parser would
+    also normalise the tag's whitespace and quoting, and byte-exactness is the
+    whole point.
+    """
+    attrs = {}
+    for name, dq, sq in _ATTR.findall(tag):
+        attrs[name.lower()] = dq if dq else sq
+    return attrs
+
+
+def _static_path(src):
+    """Turn `{% static 'img/x.jpg' %}` into `img/x.jpg`; pass anything else through.
+
+    Only the repo-relative form is unwrapped. An already-resolved path or a
+    remote URL is stored as-is, because it is not a static-file reference and
+    re-wrapping it would make it point somewhere else.
+    """
+    match = re.fullmatch(r"\{%\s*static\s+['\"](.+?)['\"]\s*%\}", (src or "").strip())
+    return match.group(1) if match else (src or "").strip()
+
+
+def extract_images(html):
+    """Replace every <img> in a chunk with a marker. Returns (html, images).
+
+    `images` is a list of dicts ready for `SectionImage.objects.create`. The
+    order is document order, and `position` follows it, so reordering the rows
+    in the admin does not move the images -- only renumbering the markers would,
+    which the admin does not do.
+    """
+    images = []
+    position = 0
+
+    def replace(match):
+        nonlocal position
+        attrs = _parse_img_attrs(match.group(0))
+        images.append({
+            "position": position,
+            "image": _static_path(attrs.get("src", "")),
+            "alt_text": attrs.get("alt", ""),
+            "caption": "",
+            "css_class": attrs.get("class", ""),
+            "dom_id": attrs.get("id", ""),
+            "inline_style": attrs.get("style", ""),
+        })
+        position += 1
+        return IMAGE_MARKER.format(position)
+
+    return _IMG_TAG.sub(replace, html or ""), images

@@ -18,6 +18,8 @@ permissions on those roles rather than on the default "staff" bit.
 """
 from functools import lru_cache
 
+import re
+
 from django.conf import settings
 from django.template import Context, RequestContext, TemplateSyntaxError, engines
 from django.utils.html import escape
@@ -81,11 +83,46 @@ def render_source(source, context, label):
         raise ContentRenderError(f"{label}: {exc}") from exc
 
 
+_IMAGE_MARKER = re.compile(r"<!--rlecd-image:(\d+)-->")
+
+
+def resolve_images(section, source):
+    """Put each section's <img> tags back where the importer left markers.
+
+    Substitution happens on the template *source*, before compilation, so the
+    `{% static %}` inside a rebuilt tag is resolved by the engine exactly as it
+    was in the captured markup.
+
+    A marker with no matching row raises rather than being dropped. Silently
+    removing an image would leave a page that looks fine and is missing a
+    photo, which is the failure mode this whole change exists to prevent.
+    """
+    if "rlecd-image:" not in (source or ""):
+        return source or ""
+
+    images = {index: image for index, image
+              in enumerate(section.images.all(), start=1)}
+
+    def swap(match):
+        index = int(match.group(1))
+        image = images.get(index)
+        if image is None:
+            raise ContentRenderError(
+                f"section {section.pk} ({section.key}) references image "
+                f"{index} but has no such image row -- the image was deleted "
+                f"without removing its marker from the content."
+            )
+        return image.to_html()
+
+    return _IMAGE_MARKER.sub(swap, source)
+
+
 def render_section(section, context=None, request=None, extra=None):
     """Render a single Section to HTML."""
     ctx = context if context is not None else build_context(request, extra)
     return render_source(
-        section.content_html, ctx, f"section {section.pk} ({section.key})")
+        resolve_images(section, section.content_html), ctx,
+        f"section {section.pk} ({section.key})")
 
 
 def render_sections(page, request=None, context=None, extra=None):
@@ -95,7 +132,7 @@ def render_sections(page, request=None, context=None, extra=None):
         data.update({k: v for k, v in context.items() if k not in ("request",)})
     ctx = build_context(request, data)
     out = [
-        render_source(s.content_html, ctx,
+        render_source(resolve_images(s, s.content_html), ctx,
                       f"section {s.pk} ({s.key}) on page {page.slug}")
         for s in page.visible_sections()
     ]

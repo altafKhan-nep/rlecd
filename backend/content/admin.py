@@ -5,18 +5,85 @@ heading, reorder these blocks, hide that one — is a single screen. The raw HTM
 box is always available because captured sections are the mirror's own markup.
 """
 from django.contrib import admin
+from django.db.models import Sum
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from content.models import (
-    FAQ, MediaItem, Page, Project, Section, ServiceArea, SiteSetting,
+    FAQ, MediaItem, Page, Project, Section, SectionImage, ServiceArea,
+    SiteSetting,
     Testimonial, TrustBadge,
 )
 from content.render import clear_template_cache
 from main.listview import StudioListMixin
 from main.widgets import MediaPickerFieldsMixin
+
+
+class SectionImageInline(MediaPickerFieldsMixin, admin.TabularInline):
+    """One row per image in a section, with a thumbnail and a picker.
+
+    The thumbnail is the point of this inline. Before, an editor changed an
+    image by reading a filename out of raw HTML; here they see the picture they
+    are about to replace.
+
+    `css_class`, `dom_id` and `inline_style` are shown read-only. Thirteen of the
+    captured images depend on them -- `class="display-img active"` is what makes
+    the service carousel work -- so they are reproduced on render but must not be
+    casually edited. Deleting a row whose marker is still in the content is the
+    one dangerous action here, and it is caught loudly at render time rather
+    than quietly dropping a photo.
+    """
+
+    model = SectionImage
+    extra = 1
+    ordering = ["position", "pk"]
+    fields = ("position", "thumb", "image", "alt_text", "caption",
+              "css_class", "dom_id", "inline_style")
+    readonly_fields = ("thumb", "css_class", "dom_id", "inline_style")
+    classes = ("section-image-inline",)
+    media_picker_fields = ("image",)
+
+    @admin.display(description="Preview")
+    def thumb(self, obj):
+        if not obj or not obj.pk:
+            return format_html('<span class="muted">{}</span>', _("No image yet"))
+        src = obj.preview_src
+        if not src:
+            return format_html('<span class="muted">{}</span>', _("No image set"))
+        return format_html(
+            '<img src="{}" class="section-image-thumb" alt="" loading="lazy">',
+            src)
+
+
+@admin.register(SectionImage)
+class SectionImageAdmin(MediaPickerFieldsMixin, StudioListMixin,
+                       admin.ModelAdmin):
+    """Cross-section image browser, for find-and-fix without opening 19 pages."""
+
+    list_display = ("thumb", "alt_text", "page_slug", "position", "caption")
+    list_display_links = ("alt_text",)
+    list_filter = ("section__page",)
+    search_fields = ("alt_text", "image", "caption", "section__label")
+    readonly_fields = ("thumb", "page_slug", "css_class", "dom_id",
+                       "inline_style")
+    media_picker_fields = ("image",)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("section__page")
+
+    @admin.display(description="Image", ordering="image")
+    def thumb(self, obj):
+        if not obj.preview_src:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<img src="{}" class="section-image-thumb" alt="" loading="lazy">',
+            obj.preview_src)
+
+    @admin.display(description="Page", ordering="section__page__path")
+    def page_slug(self, obj):
+        return obj.section.page.path
 
 
 class SectionInline(admin.TabularInline):
@@ -57,8 +124,8 @@ class SectionInline(admin.TabularInline):
 @admin.register(Page)
 class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
                 admin.ModelAdmin):
-    list_display = ("path", "title", "is_published", "section_count",
-                    "locked_count", "updated_at")
+    list_display = ("first_image", "path", "title", "summary", "is_published",
+                    "section_count", "image_count", "locked_count", "updated_at")
     list_display_links = ("path",)
     media_picker_fields = ("og_image",)
     list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
@@ -92,6 +159,46 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
             "fields": ("created_at", "updated_at"),
         }),
     )
+
+    @admin.display(description="Image")
+    def first_image(self, obj):
+        """The page's first image, so the list reads as a set of pictures.
+
+        Sections own their images, so this walks them in render order rather
+        than reading a field on the page. `og_image` is a social-preview path,
+        not the page's content, and showing the two side by side would be
+        actively misleading.
+        """
+        image = obj.first_image()
+        if image is None:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<img src="{}" class="section-image-thumb" alt="" loading="lazy">',
+            image.preview_src)
+
+    @admin.display(description="Summary")
+    def summary(self, obj):
+        """A readable line of what the page says.
+
+        Without it, telling two pages apart means opening both. That is the
+        reason a CMS ends up worse than the static site it replaced.
+        """
+        text = obj.text_summary()
+        if not text:
+            return format_html('<span class="muted">{}</span>', _("No text yet"))
+        return format_html('<span class="page-summary">{}</span>', text)
+
+    @admin.display(description="Images")
+    def image_count(self, obj):
+        """Links to this page's sections, where its images are edited."""
+        if not obj or not obj.pk:
+            return ""
+        count = obj.sections.aggregate(total=Sum("images__id"))["total"] or 0
+        if not count:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<a href="{}?page__id__exact={}">{}</a>',
+            reverse("admin:content_section_changelist"), obj.pk, count)
 
     @admin.display(description="sections")
     def section_count(self, obj):
@@ -137,8 +244,13 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
 class SectionAdmin(StudioListMixin, admin.ModelAdmin):
     """Cross-page section browser, for find-and-fix without opening 19 pages."""
 
+    class Media:
+        # The live preview of content_html. Separate from the picker's script
+        # rather than bundled, because only the section form needs it.
+        js = ("admin/js/section_editor.js",)
+
     list_display = ("page", "position", "label", "type", "is_visible",
-                    "is_locked", "size")
+                    "is_locked", "image_count", "size")
     list_filter = ("type", "is_visible", "is_locked", "page")
     list_editable = ("is_visible",)
     search_fields = ("label", "content_html", "key")
@@ -148,7 +260,26 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
     readonly_fields = ("key", "preview")
     fields = ("page", "key", "position", "label", "type", "is_visible",
               "is_locked", "content_html", "preview")
+    inlines = [SectionImageInline]
     actions = ["make_visible", "make_hidden"]
+
+    @admin.display(description="Images")
+    def image_count(self, obj):
+        """A count that links to this section's change form.
+
+        Images hang off a section, and Django does not render an inline inside
+        an inline, so changing an image is a second hop. This makes the hop
+        findable from the section list instead of something the editor has to
+        know to look for.
+        """
+        if not obj or not obj.pk:
+            return ""
+        count = obj.images.count()
+        return format_html(
+            '<a href="{}">{}</a>',
+            reverse("admin:content_section_change", args=[obj.pk]),
+            format_html("{} image{}", count, "" if count == 1 else "s"),
+        )
 
     @admin.display(description="size")
     def size(self, obj):

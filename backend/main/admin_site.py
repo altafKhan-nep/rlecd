@@ -41,6 +41,10 @@ NAV_GROUPS = (
     ("Content", (
         ("Pages", "store", "admin:content_page_changelist", "pages"),
         ("Sections", "layers", "admin:content_section_changelist", None),
+        # Sits next to Sections rather than under Media library: these rows are
+        # the site's 93 page images, and an editor looking for "the bathroom
+        # photo" starts from the section it sits in.
+        ("Page images", "grid", "admin:content_sectionimage_changelist", None),
         ("Services", "tag", "admin:crm_service_changelist", None),
         ("Media library", "image", "admin:content_mediaitem_changelist", "media"),
         ("Projects", "briefcase", "admin:content_project_changelist", None),
