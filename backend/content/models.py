@@ -209,6 +209,12 @@ class Section(models.Model):
     is_visible = models.BooleanField(
         default=True, help_text="Untick to hide without deleting.",
     )
+    content_body = models.TextField(
+        blank=True,
+        help_text="What this section says. Written in the editor on the form -- "
+                  "no HTML needed. Leave it empty to keep the copy that was "
+                  "captured from the live site.",
+    )
     is_locked = models.BooleanField(
         default=False,
         help_text="Structural chunks (page <style>, nested <main>). Keep these.",
@@ -237,14 +243,53 @@ class Section(models.Model):
     def plain_text(self, limit=None):
         """What this section actually says, as text.
 
-        The edit screen is HTML, because the page is HTML. This is the other
-        half: so an editor can read the section without reading markup, and see
-        at a glance whether the copy is the copy they meant.
+        The edit screen is a formatting box, not HTML. This is still the other
+        half: so a reader can see the section's words without opening it, and
+        tell at a glance whether the copy is the copy they meant.
         """
-        text = visible_text(self.content_html)
+        text = visible_text(self.editable_html() or self.content_html)
         if limit and len(text) > limit:
             return text[:limit].rsplit(" ", 1)[0] + "…"
         return text
+
+    def editable_html(self):
+        """The body the editor owns, or "" when the captured markup is in use.
+
+        Deliberately not a fallback chain hidden in the template. A section is
+        either *written in the editor* or *inherited from the capture*, and the
+        admin says which, so nobody is editing one and looking at the other.
+        """
+        return (self.content_body or "").strip()
+
+    def is_edited(self):
+        """True once someone has written this section in the editor.
+
+        `capture_content` re-imports the captured markup, so this is also how
+        the admin can tell an edited section from an untouched one.
+        """
+        return bool((self.content_body or "").strip())
+
+    def render_source(self):
+        """The markup this section contributes to the page.
+
+        Prefers the editor's body, falling back to the captured markup only
+        while the body is empty -- which is what keeps all 19 pages rendering
+        exactly as they do today while an editor works through them one at a
+        time.
+
+        An edited body has the section's images appended to it. The images used
+        to live inside the captured markup, so replacing that markup with plain
+        text would silently drop every photograph on the section the first time
+        somebody fixed a typo in it. They are appended rather than hidden
+        because a section that is missing its pictures is a bug nobody would
+        notice until a visitor did.
+        """
+        body = self.editable_html()
+        if not body:
+            return self.content_html
+        images = "".join(image.to_html() for image in self.images.all()
+                         if image.image)
+        return f"{body}{images}" if images else body
 
     def first_image(self):
         """This section's first image in render order, or None."""

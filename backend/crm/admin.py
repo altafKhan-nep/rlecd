@@ -310,7 +310,7 @@ class TeamMemberAdmin(StudioListMixin, admin.ModelAdmin):
                 "specialist for the lead's service, then the fewest "
                 "assignments."
             ),
-            "fields": ("service", "territory", "assignment_count", "open_leads"),
+            "fields": ("service", "territory", "assignment_count"),
         }),
     )
 

@@ -99,11 +99,17 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
     list_filter = ("is_published", "show_in_menu", "nav_variant", "footer_variant")
     search_fields = ("path", "title", "seo_title", "seo_description")
     ordering = ("path",)
-    readonly_fields = ("created_at", "updated_at", "preview_link",
-                       "edit_content")
+    # slug, path and sort_order decide the public URL; the shell variants
+    # decide which navbar and footer render. Listing a field in a fieldset does
+    # not make it read-only -- it has to be named here as well, which is what
+    # the first pass got wrong and what left six editable inputs on the form.
+    readonly_fields = (
+        "created_at", "updated_at", "preview_link", "edit_content",
+        "url_preview", "main_attrs_readonly", "slug", "path", "sort_order",
+        "nav_variant", "footer_variant", "post_variant", "head_summary",
+    )
     fieldsets = (
-        (None, {"fields": ("title", "slug", "path", "is_published",
-                           "show_in_menu", "sort_order")}),
+        (None, {"fields": ("title", "is_published", "show_in_menu")}),
         ("Page content", {
             "fields": ("preview_link", "edit_content"),
             "description": (
@@ -112,18 +118,24 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
                 "its markup."
             ),
         }),
-        ("SEO", {
+        ("Search engines", {
             "classes": ("collapse",),
-            "fields": ("seo_title", "seo_description", "seo_keywords",
-                       "og_image", "noindex"),
+            "fields": ("seo_title", "seo_description", "og_image", "noindex"),
         }),
-        ("Shell (mirrored from live)", {
+        # slug, path, sort_order and the whole shell are system-managed. They
+        # are shown rather than editable, because editing them breaks the
+        # public URL or the page's <head> and there is no non-technical reason
+        # to do either. `preview_link` is the answer to "what is this page's
+        # address" without a text box next to it.
+        ("Page settings (from the live site)", {
             "classes": ("collapse",),
-            "fields": ("head_html", "main_attrs", "nav_variant",
-                       "footer_variant", "post_variant"),
+            "fields": ("url_preview", "slug", "path", "sort_order",
+                       "nav_variant", "footer_variant", "post_variant",
+                       "main_attrs_readonly"),
             "description": (
-                "These mirror the live site. Editing head_html changes every "
-                "meta tag and JSON-LD block on the page."
+                "Captured from the live site. Shown for reference; these decide "
+                "the page's address and its head, so they are changed by "
+                "re-capturing rather than by typing."
             ),
         }),
         ("Timestamps", {
@@ -183,6 +195,72 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
             **(extra_context or {}),
         }
         return TemplateResponse(request, "admin/page_content.html", context)
+
+    def get_readonly_fields(self, request, obj=None):
+        """Read-only once a page exists; settable while creating one.
+
+        `slug` and `path` decide the public URL. Changing one after the fact
+        breaks every link to the page and every bookmark of it, so they are
+        locked on the change form. On the add form they have to be writable --
+        a new page needs an address, and a locked field would leave the form
+        unable to save at all, which is how the first pass broke page creation.
+        """
+        locked = [
+            "created_at", "updated_at", "preview_link", "edit_content",
+            "url_preview", "main_attrs_readonly", "head_summary",
+            "nav_variant", "footer_variant", "post_variant",
+        ]
+        if obj is not None:
+            locked += ["slug", "path", "sort_order"]
+        return locked
+
+    @admin.display(description="Search engines (page head)")
+    def head_summary(self, obj):
+        """head_html is meta tags and JSON-LD, thousands of characters of it.
+
+        It decides every meta tag and the structured data on the page. It is
+        never editable here, and never printed either -- just a count, so the
+        fieldset says it exists without dumping code on the form.
+        """
+        if not obj or not obj.pk:
+            return ""
+        if not (obj.head_html or "").strip():
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<span class="muted">{} characters of meta tags and structured '
+            'data, captured from the live site.</span>', f"{len(obj.head_html):,}")
+
+    @admin.display(description="Address")
+    def url_preview(self, obj):
+        """The page's public address, as a link rather than an editable field.
+
+        Replaces the `path` text box. A URL is not something an editor should
+        be able to change by accident, and a link answers the only question
+        they were asking it for.
+        """
+        if not obj or not obj.pk:
+            return ""
+        if not obj.is_published:
+            return format_html(
+                '<span class="muted">{}</span>', obj.path)
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener">{}</a>', obj.path, obj.path)
+
+    @admin.display(description="Main element attributes")
+    def main_attrs_readonly(self, obj):
+        """`main_attrs` is raw attribute text captured from the live markup.
+
+        It was an editable text box containing something like
+        `class="contact-page"`, which is not a thing anyone can be expected to
+        know. It decides the wrapper element's class, so it is shown and not
+        offered for editing.
+        """
+        if not obj or not obj.pk:
+            return ""
+        if not (obj.main_attrs or "").strip():
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            '<code class="mono studio-code">{}</code>', obj.main_attrs.strip())
 
     @admin.display(description="Content")
     def content_link(self, obj):
@@ -297,13 +375,9 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
 
 
 @admin.register(Section)
-class SectionAdmin(StudioListMixin, admin.ModelAdmin):
+class SectionAdmin(MediaPickerFieldsMixin, StudioListMixin,
+                    admin.ModelAdmin):
     """Cross-page section browser, for find-and-fix without opening 19 pages."""
-
-    class Media:
-        # The live preview of content_html. Separate from the picker's script
-        # rather than bundled, because only the section form needs it.
-        js = ("admin/js/section_editor.js",)
 
     list_display = ("page", "position", "label", "type", "excerpt",
                     "is_visible", "is_locked", "image_count")
@@ -313,34 +387,23 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
     ordering = ("page", "position")
     # key is system-managed so re-imports can match sections; page and position
     # stay editable so a section can be added to or moved within a page.
-    readonly_fields = ("key", "as_text", "preview")
+    # The formatting editor, applied by field name. content_html is not in the
+    # form at all: it is the copy captured from the live site, it is not
+    # something an editor should be able to damage, and exposing it as an
+    # editable textarea is what made this screen unusable.
+    rich_text_fields = ("content_body",)
+    readonly_fields = ("key", "as_text", "edit_hint")
     fieldsets = (
-        (None, {"fields": ("page", "position", "label", "type", "is_visible")}),
-        # The words, so an editor can read the section without reading markup.
+        (None, {"fields": ("page", "label", "type", "is_visible")}),
         ("What this section says", {
-            "fields": ("as_text", "preview"),
+            "fields": ("content_body", "as_text", "edit_hint"),
         }),
         ("Images", {
-            # The rows themselves are the inline below; this is just the signpost,
-            # because an inline with no heading above it reads as part of the
-            # previous fieldset.
+            # The rows themselves are the inline below; this is just the
+            # signpost, because an inline with no heading above it reads as
+            # part of the previous fieldset.
             "fields": (),
             "description": "Images for this section are in the table below.",
-        }),
-        # Markup last and collapsed. It still has to be here and still has to be
-        # the source of truth -- the pages are a byte-exact mirror -- but it is
-        # not what most edits are about, so it should not be the first thing on
-        # the screen or the loudest thing in it.
-        ("HTML (only if you need it)", {
-            "classes": ("collapse",),
-            "fields": ("key", "is_locked", "content_html"),
-            "description": (
-                "Rendered exactly as stored. Django tags are available: "
-                "<code>{% static 'img/x.jpg' %}</code>, "
-                "<code>{% url 'contact' %}</code>, "
-                "<code>{% csrf_token %}</code>. A live preview of this markup "
-                "appears below the editor."
-            ),
         }),
     )
     inlines = [SectionImageInline]
@@ -356,6 +419,25 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
             return format_html('<span class="muted">{}</span>',
                                _("Image or layout only"))
         return format_html('<span class="page-summary">{}</span>', text)
+
+    @admin.display(description="")
+    def edit_hint(self, obj):
+        """Says plainly which copy will be live after saving.
+
+        The captured copy stays in place until someone types, which is a
+        courtesy to the editor and the only way to tell an untouched section
+        from one whose copy was replaced months ago.
+        """
+        if not obj or not obj.pk:
+            return ""
+        if obj.is_edited():
+            return format_html(
+                '<p class="studio-hint">This section shows the text above. '
+                'Clear the box to go back to the copy captured from the '
+                'live site.</p>')
+        return format_html(
+            '<p class="studio-hint">This section is showing the copy captured '
+            'from the live site. Type above to change it.</p>')
 
     @admin.display(description="Images")
     def image_count(self, obj):
@@ -379,31 +461,21 @@ class SectionAdmin(StudioListMixin, admin.ModelAdmin):
     def size(self, obj):
         return f"{len(obj.content_html or ''):,} B"
 
-    def preview(self, obj):
-        if obj.pk:
-            return format_html(
-                '<div class="section-preview-note">{}</div>', obj.plain_text(400))
-        return "-"
-
-    preview.short_description = "Current text"
-
-    @admin.display(description="This section's text")
+    @admin.display(description="How it looks now")
     def as_text(self, obj):
-        """The section's words, rendered as prose rather than markup.
+        """The section's words as they will appear on the page.
 
-        The two halves of editing a section are different jobs. Most edits are
-        "is this the right sentence, is it showing" -- answered by reading.
-        The rest are layout changes -- answered by the HTML box further down.
-        This is the reading half, and it is above the fold for that reason.
+        Shown under the editor so a change can be checked without leaving the
+        form. Below the box on purpose: the editor is what you use, this is
+        what you verify.
         """
         if not obj or not obj.pk:
             return ""
-        text = obj.plain_text()
+        text = obj.plain_text(400)
         if not text:
             return format_html(
                 '<p class="muted">{}</p>',
-                _("This section has no text — it is images and layout. "
-                  "Edit it in the HTML section below, or add an image above."))
+                _("No text — this section is images and layout."))
         return format_html('<div class="section-as-text">{}</div>', text)
 
     @admin.action(description="Show selected sections")

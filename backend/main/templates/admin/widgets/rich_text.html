@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+A formatting editor surface. The hidden input is the real form field -- it
+carries the value, posts like every other field, and works with inlines and
+validation unchanged. Only the editing surface is replaced.
+
+The widget template lives in the main app rather than frontend/templates/
+because django.forms.renderers.DjangoTemplates builds its own engine with a
+hard-coded DIRS of django/forms/templates plus APP_DIRS and never reads
+TEMPLATES["DIRS"], so a template in frontend/ would raise TemplateDoesNotExist
+on every form that used it.
+{% endcomment %}
+<div class="rte" data-rte-surface>
+  <input type="hidden" name="{{ widget.name }}"
+         value="{{ widget.value|default:'' }}"
+         data-rte="1"
+         {% for name, value in widget.attrs.items %}{% if name != "cols" and name != "rows" %} {{ name }}="{{ value }}"{% endif %}{% endfor %}>
+</div>

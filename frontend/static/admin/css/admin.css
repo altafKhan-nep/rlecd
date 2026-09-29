@@ -2311,3 +2311,133 @@ input:focus, select:focus, textarea:focus {
    mode is offered the sun. */
 [data-theme="light"] .theme-icon-light svg { color: var(--amber); }
 [data-theme="dark"] .theme-icon-dark svg { color: var(--accent-soft); }
+
+/* ==========================================================================
+   RICH TEXT EDITOR
+   ==========================================================================
+   Replaces the raw-markup textarea for section text. The hidden input stays
+   the form field; this is only the surface, so the value still posts like any
+   other field and inlines and validation are unaffected.
+
+   Sized and spaced like a writing surface rather than a code box, because the
+   person using it is writing copy, not markup.
+*/
+
+.rte {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.rte-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface-2);
+}
+
+.rte-btn {
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-xs);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+}
+
+.rte-btn:hover {
+    background: var(--surface-3);
+    color: var(--ink);
+}
+
+.rte-btn:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 1px;
+}
+
+.rte-strong { font-weight: 700; }
+.rte-em { font-style: italic; }
+
+.rte-block {
+    font: inherit;
+    font-size: 12.5px;
+    padding: 5px 8px;
+    margin-right: 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xs);
+    background: var(--surface);
+    color: var(--ink);
+}
+
+.rte-editor {
+    min-height: 260px;
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--ink);
+    overflow-y: auto;
+}
+
+.rte-editor:focus {
+    outline: 2px solid var(--teal);
+    outline-offset: -2px;
+}
+
+.rte-editor h2 { font-size: 20px; margin: 0 0 10px; }
+.rte-editor h3 { font-size: 17px; margin: 0 0 8px; }
+.rte-editor p { margin: 0 0 12px; }
+.rte-editor ul, .rte-editor ol { margin: 0 0 12px; padding-left: 22px; }
+.rte-editor blockquote {
+    margin: 0 0 12px;
+    padding-left: 12px;
+    border-left: 3px solid var(--line);
+    color: var(--ink-soft);
+}
+.rte-editor img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-xs);
+}
+
+/* Says plainly which copy will be live, so nobody is surprised that their
+   edit did not appear. */
+.rte-status {
+    padding: 7px 14px;
+    border-top: 1px solid var(--line-soft);
+    background: var(--surface-2);
+    font-size: 11.5px;
+    color: var(--ink-soft);
+}
+
+.rte-status.is-empty { color: var(--ink-soft); }
+
+/* A hint under an editor: which copy will be live, in plain words. */
+.studio-hint {
+    margin: 8px 0 0;
+    padding: 9px 12px;
+    border-left: 3px solid var(--teal);
+    border-radius: var(--radius-xs);
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+}
+
+/* Reference values shown on a form but not editable. Mono so a path or an
+   attribute string is recognisable as data rather than prose. */
+.studio-code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--surface-3);
+    color: var(--ink-soft);
+    padding: 2px 7px;
+    border-radius: var(--radius-xs);
+    overflow-wrap: anywhere;
+}

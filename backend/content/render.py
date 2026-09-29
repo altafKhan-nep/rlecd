@@ -121,7 +121,7 @@ def render_section(section, context=None, request=None, extra=None):
     """Render a single Section to HTML."""
     ctx = context if context is not None else build_context(request, extra)
     return render_source(
-        resolve_images(section, section.content_html), ctx,
+        resolve_images(section, section.render_source()), ctx,
         f"section {section.pk} ({section.key})")
 
 
@@ -132,7 +132,7 @@ def render_sections(page, request=None, context=None, extra=None):
         data.update({k: v for k, v in context.items() if k not in ("request",)})
     ctx = build_context(request, data)
     out = [
-        render_source(resolve_images(s, s.content_html), ctx,
+        render_source(resolve_images(s, s.render_source()), ctx,
                       f"section {s.pk} ({s.key}) on page {page.slug}")
         for s in page.visible_sections()
     ]

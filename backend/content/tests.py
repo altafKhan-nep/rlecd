@@ -205,19 +205,44 @@ class AdminCrudTests(TestCase):
         self.assertTrue(Section.objects.filter(label="Brand new").exists())
 
     def test_update_section_via_admin(self):
+        """The form posts the editor's body, not the captured markup."""
         url = reverse("admin:content_section_change", args=[self.section.pk])
         self.client.post(url, {
-            "page": self.page.pk, "key": self.section.key, "position": 0,
-            "label": "Edited", "type": "text", "content_html": "<p>UPDATED</p>",
+            "page": self.page.pk, "label": "Edited", "type": "text",
+            "is_visible": "on", "content_body": "<p>UPDATED</p>",
             "images-TOTAL_FORMS": "1", "images-INITIAL_FORMS": "0",
             "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
             "images-0-position": "0", "images-0-image": "img/new.jpg",
             "images-0-alt_text": "New image", "images-0-caption": "",
         })
         self.section.refresh_from_db()
-        self.assertEqual(self.section.content_html, "<p>UPDATED</p>")
+        self.assertEqual(self.section.label, "Edited")
+        self.assertEqual(self.section.content_body, "<p>UPDATED</p>")
+        # The captured copy is untouched: it is the fallback, not the value.
+        self.assertEqual(self.section.content_html, "<p>ORIGINAL</p>")
         # The image posted alongside the section was saved too.
         self.assertTrue(self.section.images.filter(image="img/new.jpg").exists())
+
+    def test_captured_markup_cannot_be_edited_through_the_form(self):
+        """Even a hand-crafted POST cannot overwrite the captured copy.
+
+        The field is not in the form, so Django drops it. Without this the
+        captured body would be one crafted request away from being lost, and
+        the page would fall back to nothing.
+        """
+        original = self.section.content_html
+        url = reverse("admin:content_section_change", args=[self.section.pk])
+        self.client.post(url, {
+            "page": self.page.pk, "label": "L", "type": "text",
+            "is_visible": "on", "content_body": "<p>New</p>",
+            "content_html": "<p>HIJACKED</p>",
+            "key": "hijacked",
+            "images-TOTAL_FORMS": "0", "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
+        })
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, original)
+        self.assertEqual(self.section.key, "s1")
 
     def test_add_an_image_row_through_the_section_form(self):
         """The path the CMS actually uses to change a picture."""
@@ -269,14 +294,13 @@ class AdminCrudTests(TestCase):
     def test_a_page_can_be_created_without_any_sections(self):
         """The page form no longer carries a sections inline.
 
-        The body moved to its own screen, so a page can be created from its
-        settings alone and written afterwards. Previously the form rejected any
-        POST that did not carry the inline's formset data, which made creating a
-        page and writing it a single all-or-nothing request.
+        The body moved to its own screen, so a page is created from its
+        settings and written afterwards. Previously the form rejected any POST
+        that did not carry the inline's formset data, which made creating a page
+        and writing it a single all-or-nothing request.
         """
         response = self.client.post(reverse("admin:content_page_add"), {
-            "title": "New", "slug": "new", "path": "/new/",
-            "sort_order": 0,
+            "title": "New", "slug": "new", "path": "/new/", "sort_order": 0,
         }, follow=True)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Page.objects.filter(slug="new").exists())
@@ -825,14 +849,16 @@ class SectionImageAdminTests(TestCase):
         self.assertIn("field-dom_id", html)
         self.assertIn("field-inline_style", html)
 
-    def test_the_section_form_offers_the_preview_script(self):
+    def test_the_section_form_offers_the_editor_and_the_images(self):
         html = self.client.get(
             reverse("admin:content_section_change", args=[self.section.pk])
         ).content.decode()
-        self.assertIn("admin/js/section_editor.js", html)
-        # And the inline that holds the images.
+        self.assertIn("admin/js/rich_text.js", html)
+        self.assertIn("data-rte-surface", html)
+        # And the inline that holds the images, with the picker on each row.
         self.assertIn("images-TOTAL_FORMS", html)
         self.assertIn("section-image-thumb", html)
+        self.assertIn("data-picker-open", html)
 
     def test_section_list_offers_a_link_to_each_sections_images(self):
         html = self.client.get(
@@ -1029,21 +1055,37 @@ class SectionFormReadabilityTests(TestCase):
         self.assertIn("section-as-text", self.html)
         self.assertIn("Heading Body text.", self.html)
 
-    def test_the_html_box_is_still_there(self):
-        """It has to be: the page is a byte-exact mirror, so the markup is the
-        source of truth. This is about where it sits, not whether it exists."""
-        self.assertIn("field-content_html", self.html)
+    def test_no_html_box_is_offered_at_all(self):
+        """The captured markup is not editable, and is not shown as code.
 
-    def test_the_html_box_is_collapsed(self):
-        """Not what most edits are about, so it should not be the loudest
-        thing on the screen."""
-        box_at = self.html.index('name="content_html"')
-        heading_at = self.html.index("HTML (only if you need it)")
-        self.assertLess(heading_at, box_at)
-        # The class is on the wrapping fieldset, which opens before the
-        # heading, so the window has to start before it.
-        self.assertIn('class="module aligned collapse"',
-                      self.html[heading_at - 400:heading_at])
+        It used to be a textarea full of escaped angle brackets and
+        `{% static %}` tags. That is accurate and unusable, and it was the
+        reason the CMS was not usable by anyone but a developer.
+        """
+        self.assertNotIn("field-content_html", self.html)
+        self.assertNotIn('name="content_html"', self.html)
+        self.assertNotIn("content_html", self.html)
+
+    def test_the_editor_is_offered_instead(self):
+        self.assertIn("field-content_body", self.html)
+        self.assertIn("data-rte-surface", self.html)
+        self.assertIn("admin/js/rich_text.js", self.html)
+
+    def test_the_system_managed_fields_are_not_offered(self):
+        """key, is_locked and position decide the page's structure.
+
+        key is how a re-import matches a section, so editing it silently
+        detaches the row from its copy. is_locked marks the structural chunks
+        -- the page <style>, a nested <main> -- whose loss breaks the page.
+        """
+        for field in ("id_key", "id_is_locked", "id_position"):
+            with self.subTest(field=field):
+                self.assertNotIn(field, self.html)
+
+    def test_the_form_explains_which_copy_is_live(self):
+        """Otherwise nobody can tell a section they edited from one they did not."""
+        self.assertIn("studio-hint", self.html)
+        self.assertIn("captured from the live site", self.html)
 
     def test_the_images_table_is_on_this_form(self):
         self.assertIn("images-TOTAL_FORMS", self.html)
@@ -1142,3 +1184,171 @@ class VisibleTextTests(TestCase):
         self.assertTrue(text.endswith("…"))
         self.assertLessEqual(len(text), 51)
         self.assertFalse(text.endswith(" …"))
+
+
+class SectionEditorTests(TestCase):
+    """Editing a section must not require touching markup.
+
+    `content_html` is the copy captured from the live site and stays exactly as
+    it was. What an editor writes goes in `content_body`, and that is what
+    renders once it is non-empty. The captured copy is the fallback, so all 19
+    pages keep rendering exactly as they do while someone works through them
+    one section at a time.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser("e", "e@e.com", "pw")
+        cls.page = Page.objects.create(slug="p", title="P", path="/p/")
+        cls.section = Section.objects.create(
+            page=cls.page, key="s", label="S", position=0,
+            content_html='<section class="hero"><h1>Captured</h1>'
+                        '<!--rlecd-image:1--><p>Original copy.</p></section>')
+        SectionImage.objects.create(
+            section=cls.section, position=0, image="img/hero.jpg", alt_text="H")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        self.url = reverse("admin:content_section_change", args=[self.section.pk])
+
+    # --- the fallback contract -----------------------------------------
+    def test_an_untouched_section_renders_the_captured_markup(self):
+        self.assertFalse(self.section.is_edited())
+        self.assertEqual(self.section.render_source(), self.section.content_html)
+
+    def test_a_written_section_renders_the_editor_body(self):
+        self.section.content_body = "<p>New copy</p>"
+        self.assertTrue(self.section.is_edited())
+        self.assertTrue(self.section.render_source().startswith("<p>New copy</p>"))
+
+    def test_an_edited_section_keeps_its_images(self):
+        """Fixing a typo must not silently delete every photo on a section.
+
+        The images used to live inside the captured markup, so replacing that
+        markup with the editor's text dropped them. They are appended to an
+        edited body instead.
+        """
+        self.section.content_body = "<p>New copy</p>"
+        rendered = self.section.render_source()
+        self.assertIn("New copy", rendered)
+        self.assertIn("<img", rendered)
+        self.assertIn("img/hero.jpg", rendered)
+
+    def test_an_edited_section_with_no_image_rows_is_just_the_body(self):
+        self.section.images.all().delete()
+        self.section.content_body = "<p>Text only</p>"
+        self.assertEqual(self.section.render_source(), "<p>Text only</p>")
+
+    def test_whitespace_only_is_not_an_edit(self):
+        """A stray space in the box must not blank the section.
+
+        The editor sends an empty string for an untouched box; a space would
+        come from someone pressing space and leaving, and it would silently
+        replace the captured copy with nothing.
+        """
+        self.section.content_body = "   \n  "
+        self.assertFalse(self.section.is_edited())
+        self.assertEqual(self.section.render_source(), self.section.content_html)
+
+    def test_clearing_the_body_restores_the_captured_copy(self):
+        self.section.content_body = "<p>New</p>"
+        self.section.content_body = ""
+        self.assertEqual(self.section.render_source(), self.section.content_html)
+
+    def test_the_page_renders_the_captured_copy_while_untouched(self):
+        html = render_sections(self.page)
+        self.assertIn("Captured", html)
+        self.assertIn("<img", html)
+
+    def test_the_page_renders_the_body_once_written(self):
+        self.section.content_body = "<h2>Fresh heading</h2><p>Fresh copy.</p>"
+        self.section.save()
+        html = render_sections(self.page)
+        self.assertIn("Fresh heading", html)
+        self.assertIn("Fresh copy.", html)
+        self.assertNotIn("Captured", html)
+        # The image is unaffected: images live in their own rows.
+        self.assertIn("<img", html)
+
+    def test_the_captured_copy_is_never_destroyed_by_an_edit(self):
+        self.section.content_body = "<p>Replaced</p>"
+        self.section.save()
+        self.section.refresh_from_db()
+        self.assertIn("Captured", self.section.content_html)
+
+    def test_editor_markup_survives_rendering(self):
+        self.section.content_body = (
+            "<h2>Heading</h2><p>Body with <strong>bold</strong> and "
+            "<em>italic</em>.</p><ul><li>One</li><li>Two</li></ul>")
+        self.section.save()
+        html = render_sections(self.page)
+        for fragment in ("<h2>", "<strong>", "<em>", "<ul>", "<li>"):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, html)
+
+    def test_plain_text_reads_the_body_when_edited(self):
+        self.section.content_body = "<h2>Heading</h2><p>The words matter.</p>"
+        self.assertEqual(self.section.plain_text(), "Heading The words matter.")
+
+    def test_plain_text_falls_back_to_the_captured_copy(self):
+        self.assertIn("Original copy", self.section.plain_text())
+
+    # --- what the form actually exposes ---------------------------------
+    def test_the_form_offers_the_editor_and_not_the_markup(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn("field-content_body", html)
+        self.assertIn("data-rte-surface", html)
+        self.assertNotIn("content_html", html)
+        self.assertNotIn("content_html", html)
+
+    def test_the_editor_carries_its_script(self):
+        self.assertIn("admin/js/rich_text.js",
+                      self.client.get(self.url).content.decode())
+
+    def test_the_editor_ships_a_hidden_input_not_a_textarea(self):
+        """The hidden input is the form field, so inlines and validation keep
+        working; the contenteditable is only the surface."""
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('type="hidden" name="content_body"', html)
+        self.assertIn("data-rte=", html)
+
+    def test_no_admin_form_anywhere_exposes_a_raw_markup_field(self):
+        """The complaint was that raw HTML was still visible in places.
+
+        Checked across every registered model rather than one screen, because
+        the leaks were spread: the section body, the page <head>, and the
+        <main> attributes were three separate fields on three separate forms.
+        """
+        from django.contrib import admin as dj
+
+        found = []
+        for model in dj.site._registry.values():
+            try:
+                url = reverse(
+                    f"admin:{model.model._meta.app_label}_"
+                    f"{model.model._meta.model_name}_add")
+            except Exception:
+                continue
+            response = self.client.get(url)
+            if response.status_code != 200:
+                continue
+            body = response.content.decode()
+            for probe in ("id_content_html", "id_head_html", "id_main_attrs"):
+                if probe in body:
+                    found.append(f"{model.model._meta.label}: {probe}")
+        self.assertEqual(found, [], f"raw markup still editable: {found}")
+
+    def test_the_page_address_is_a_link_not_a_text_box(self):
+        page = self.client.get(
+            reverse("admin:content_page_change", args=[self.page.pk])
+        ).content.decode()
+        self.assertIn("url_preview", page)
+        self.assertNotIn('name="path"', page)
+        self.assertNotIn('name="slug"', page)
+
+    def test_the_page_head_is_not_offered(self):
+        """head_html is meta tags and JSON-LD, 3,853 characters of it."""
+        page = self.client.get(
+            reverse("admin:content_page_change", args=[self.page.pk])
+        ).content.decode()
+        self.assertNotIn("head_html", page)
