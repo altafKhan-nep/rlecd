@@ -1916,6 +1916,26 @@ input:focus, select:focus, textarea:focus {
     font-weight: 700;
 }
 
+/* The object name -- "About (/about/)" -- is an <h2> that is a *sibling* of
+   #content-main, not a descendant of it, sitting between the page heading and
+   the first card. It is the only heading in the shell that is neither a page
+   title nor a card label, and it is what makes "About (/about/)" compete with
+   "Change page" for attention on every change form.
+
+   `:has(+ #content-main)` pins it by what follows rather than by how deeply it
+   is nested, which is the only part of this that has stayed stable across
+   Django releases. Card labels still win on specificity: they are declared
+   later and match `#content-main .module > h2`. */
+h2:has(+ #content-main) {
+    margin: -2px 0 16px;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
 /* The change form's own tools sit opposite the title, and are secondary: they
    are ways of leaving the screen, not of acting on the record. */
 #content-main > .object-tools {

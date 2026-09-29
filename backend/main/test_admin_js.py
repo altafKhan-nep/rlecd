@@ -126,3 +126,31 @@ class RichTextScriptTests(SimpleTestCase):
             guard.start(), first_append,
             "the re-entry guard must be set before mount() appends anything, "
             "or the append retriggers the observer before the guard exists")
+
+
+class ChangeFormHeadingTests(SimpleTestCase):
+    """The object name is a sibling of #content-main, not a descendant.
+
+    It rendered as a second, larger heading directly under "Change page", on
+    every change form. It was hunted for a long time inside #content-main --
+    as a breadcrumb fragment, then as a direct child of the form, then as any
+    heading inside the content area -- and none of those could match, because
+    Django emits it as `<h1>`, then `<h2>{{ original }}`, then
+    `<div id="content-main">` as three siblings. Every probe scoped to
+    #content-main returned empty, which was the clue, and it was read as "the
+    element is not there" rather than "the element is not in there".
+    """
+    def test_the_rule_follows_the_element_out_of_content_main(self):
+        admin_css = (pathlib.Path(__file__).resolve().parents[2]
+                     / "frontend" / "static" / "admin" / "css" / "admin.css")
+        css = admin_css.read_text()
+        self.assertRegex(
+            css, r"h2:has\(\+ #content-main\)",
+            "no rule for the object-name heading, so it renders at heading "
+            "size and competes with the page title")
+        # And the descendant-scoped rule that silently never matched should be
+        # gone, so the next person does not re-add a selector that cannot work.
+        self.assertNotIn(
+            "#content-main > h2", css,
+            "the object name is not a child of #content-main; that selector "
+            "cannot match it")
