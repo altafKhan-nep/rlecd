@@ -34,6 +34,29 @@ services:
       # values worth setting.
       - key: DATABASE_URL
         sync: false
+      # The web service queues lead notifications rather than sending them, so
+      # it does not need these for the contact form to work -- a visitor is
+      # never made to wait on SMTP. It does need them for the admin's
+      # "send notification now" action on a lead, and because
+      # scripts/preflight.py fails the deploy on the console backend. Same
+      # values as the rlecd-send-outbox cron job below; Render prompts per
+      # resource, so paste the same ones in both places.
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
       - key: SESSION_COOKIE_SECURE
         value: "true"
       - key: CSRF_COOKIE_SECURE
@@ -46,3 +69,56 @@ services:
         value: "true"
       - key: SECURE_HSTS_PRELOAD
         value: "false"
+
+# Background work. Nothing on a request/response web service runs these, so a
+# web service alone silently drops them: enquiry notifications would sit in
+# the outbox as `queued` forever, and a page scheduled to publish in the future
+# would never go live. Both commands are one-shot and safe to re-run, which is
+# what a cron job needs.
+#
+# Note: Render Cron Jobs require a paid instance type, so the `plan` below is
+# not `starter` for nothing. The web service can stay on `free`.
+cronjobs:
+  - type: cron
+    name: rlecd-send-outbox
+    schedule: "*/5 * * * *"
+    command: python backend/manage.py send_outbox --limit 50
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: "False"
+      # The cron job inherits the mail configuration from here rather than
+      # duplicating it, so there is one place to change when the provider or
+      # password changes. Without these the job runs happily and writes every
+      # notification to a log nobody reads.
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+
+  - type: cron
+    name: rlecd-publish-due
+    schedule: "*/10 * * * *"
+    command: python backend/manage.py publish_due
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: "False"
