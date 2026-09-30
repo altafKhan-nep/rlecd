@@ -927,9 +927,13 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
     opacity: .6;
 }
 
-/* #fcfbfa is the row-hover tint the changelist and form already use, so a
-   search result and a changelist row respond to hover identically. */
-.search-result:hover { background: #fcfbfa; color: var(--primary); }
+/* --row-hover is the one tint the changelist, the form rows, the dashboard
+   and search results all share, so every one of them responds to hover
+   identically. It has to be the token rather than the #fcfbfa it resolves to
+   on the light theme: a literal near-white kept landing under the dark
+   theme's #e9f0eb text and blanking the row the instant the cursor crossed
+   it. Anything that tints a row the text then sits on goes through this. */
+.search-result:hover { background: var(--row-hover); color: var(--primary); }
 .search-result:hover svg { stroke: var(--c-teal); opacity: 1; }
 
 /* Truncation rather than wrapping: a long page title should not push the
@@ -1260,7 +1264,7 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 
 .dash-table tbody tr:last-child td { border-bottom: 0; }
 .dash-table .row-link { cursor: pointer; transition: background .14s ease; }
-.dash-table .row-link:hover { background: #F2F8F5; }
+.dash-table .row-link:hover { background: var(--row-hover); }
 .dash-table tr.is-overdue td { background: #FFF9F7; }
 
 .lead-name { display: block; font-weight: 600; color: var(--ink); }
@@ -1621,7 +1625,7 @@ html.sidebar-collapsed .sidebar-user { justify-content: center; padding-left: 0;
 #changelist td.nowrap,
 #changelist th.nowrap { white-space: normal; }
 
-#changelist table tbody tr:hover { background: #fcfbfa; }
+#changelist table tbody tr:hover { background: var(--row-hover); }
 #changelist table tbody tr.selected { background: var(--selected-row); }
 
 .result-list a { font-weight: 600; }
@@ -1660,7 +1664,7 @@ fieldset.module h2 {
 }
 
 .form-row { border-radius: var(--radius-sm); }
-.form-row:hover { background: #fcfbfa; }
+.form-row:hover { background: var(--row-hover); }
 
 input[type=text], input[type=password], input[type=email], input[type=url],
 input[type=number], input[type=tel], select, textarea {

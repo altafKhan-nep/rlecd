@@ -61,6 +61,7 @@
   --surface: #ffffff;
   --surface-2: #f7f9f7;
   --surface-3: #eef2ef;
+  --row-hover: #fcfbfa;
   --ink: #16211b;
   --ink-soft: #4d5a52;
   --muted: #5f6c65;
@@ -166,6 +167,7 @@
   --surface: #151f1a;
   --surface-2: #1b2822;
   --surface-3: #22312a;
+  --row-hover: #22312a;
   --ink: #e9f0eb;
   --ink-soft: #b3c2b8;
   --muted: #93a399;

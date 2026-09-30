@@ -339,6 +339,89 @@ class AdminStylesheetContrastTests(SimpleTestCase):
         self.assertIn(".stat-icon svg", self.css)
         self.assertIn(".stat-inner", self.css)
 
+    def test_hover_tints_survive_the_dark_theme(self):
+        """A hover background is a surface, and has to be legible as one.
+
+        The Pages changelist, the form rows, the dashboard and the search
+        results all tinted themselves with a literal near-white. On the light
+        theme that is a deliberate whisper. On the dark theme it painted a
+        near-white wash under #e9f0eb body text, and the row went blank the
+        moment the cursor crossed it -- reported as "a white shade that hides
+        the text". No single rule was wrong; each was correct for the theme it
+        was written in.
+
+        So a hover background may only be a literal when it brings a literal
+        text colour with it and that pair clears 4.5. Everything else has to go
+        through a token, which build_tokens.py then checks once per theme.
+        """
+        source = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        rules = re.findall(r"([^{}]+)\{([^{}]*)\}", source)
+        themes = {t: self._resolve(self._theme_vars(t)["--ink"], t)
+                  for t in ("light", "dark")}
+        # A hover block usually only moves the background; the text colour
+        # lives on the base rule. Judging the pair from the hover block alone
+        # reads a white-on-green button as dark-on-green and fails it.
+        resting = {selector.strip(): body
+                   for selector, body in rules if ":hover" not in selector}
+
+        def as_hex(value):
+            """#abc or #aabbcc as #aabbcc, or None if it is not a flat colour."""
+            value = value.strip()
+            if re.fullmatch(r"#[0-9a-fA-F]{3}", value):
+                return "#" + "".join(c * 2 for c in value[1:])
+            if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                return value
+            return None
+
+        def text_colours(selector, body):
+            """Every colour this element's text can be, across both themes."""
+            found = re.search(r"(?<![-\w])color\s*:\s*([^;]+)", body)
+            if found is None:
+                plain = re.sub(r":(?:hover|focus|focus-visible)", " ",
+                               selector).strip()
+                found = re.search(r"(?<![-\w])color\s*:\s*([^;]+)",
+                                  resting.get(plain, ""))
+            if found is None:
+                # Nothing anywhere, so it inherits the body ink. This is the
+                # case that failed on dark and only on dark.
+                return list(themes.values())
+            value = found.group(1).strip()
+            if value.startswith("#"):
+                colour = as_hex(value)
+                return [colour] if colour else []
+            return [c for c in (as_hex(self._resolve(value, t))
+                                for t in themes) if c]
+
+        checked = 0
+        for selector, body in rules:
+            if ":hover" not in selector:
+                continue
+            tint = re.search(
+                r"(?<![-\w])background(?:-color)?\s*:\s*([^;]+)", body)
+            if not tint:
+                continue
+            value = tint.group(1).strip()
+            # var() is theme-aware, color-mix() follows a token, and an alpha
+            # is a wash over whatever is already underneath.
+            if "var(" in value or "color-mix(" in value or re.search(r"rgba?\(", value):
+                continue
+            literal = re.fullmatch(r"(#[0-9a-fA-F]{3,8})", value)
+            if not literal:
+                continue
+            background = literal.group(1)
+            for ink in text_colours(selector, body):
+                checked += 1
+                ratio = contrast_ratio(ink, background)
+                self.assertGreaterEqual(
+                    ratio, 4.5,
+                    f"{selector.strip()} tints itself {background} on hover, "
+                    f"leaving {ink} text at {ratio:.2f}:1. Use "
+                    f"var(--row-hover) so the tint follows the theme.")
+        self.assertTrue(
+            checked,
+            "no literal hover tint was found, so this test is not checking "
+            "anything; the rule parser probably stopped matching")
+
 
 class DesignTokenTests(SimpleTestCase):
     """The palette is generated and theme-scoped, and that has to stay true.

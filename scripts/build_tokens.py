@@ -53,6 +53,13 @@ LIGHT = {
     "surface": "#ffffff",
     "surface-2": "#f7f9f7",
     "surface-3": "#eef2ef",
+    # Hover had #fcfbfa hard-coded in four places in admin.css. That reads as a
+    # deliberate, almost invisible tint on this theme's white surface, but it
+    # was a literal, so on the dark theme it painted a near-white wash under
+    # #e9f0eb body text and the row went blank the moment the cursor crossed
+    # it. A hover tint has to be a token like any other surface, or it only
+    # ever works on the theme it was written for.
+    "row-hover": "#fcfbfa",
     "ink": "#16211b",
     "ink-soft": "#4d5a52",
     "muted": "#5f6c65",
@@ -110,6 +117,10 @@ DARK = {
     "surface": "#151f1a",
     "surface-2": "#1b2822",
     "surface-3": "#22312a",
+    # The light theme's #fcfbfa is the same idea run the other way: a shade
+    # just off the surface it sits on. surface-3 already has ink-soft on it at
+    # 4.5, so body text survives the hover here too.
+    "row-hover": "#22312a",
     "ink": "#e9f0eb",
     "ink-soft": "#b3c2b8",
     "muted": "#93a399",
@@ -183,11 +194,16 @@ PAIRS = [
     ("violet", "surface", 3.0), ("amber", "surface", 3.0), ("rose", "surface", 3.0),
     ("mint-deep", "surface", 3.0), ("ink", "selected-bg", 4.5),
     ("ink", "input-bg", 4.5), ("ink-soft", "surface-3", 4.5),
+    # A hover tint is a background the row's own text then sits on, so it
+    # owes the same 4.5 as any other surface. This pair is the regression
+    # guard for the blank-row bug.
+    ("ink", "row-hover", 4.5), ("ink-soft", "row-hover", 4.5),
 ]
 
 NON_TEXT = [
     ("line", "surface", 1.0), ("line-soft", "surface", 1.0),
     ("input-border", "surface", 1.0), ("teal", "surface", 3.0),
+    ("row-hover", "surface", 1.0),
 ]
 
 
