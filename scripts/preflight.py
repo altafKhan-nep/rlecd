@@ -18,7 +18,9 @@ Exit code 0 = safe to deploy. Non-zero = do not deploy.
 """
 
 import os
+import re
 import sys
+from html import unescape
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -190,7 +192,7 @@ def check_seeded_content():
     that fixes it, which is the useful part of the message.
     """
     try:
-        from content.models import MenuItem, Page
+        from content.models import MenuItem, Page, Section, SiteSetting
         from crm.models import Service
 
         pages = Page.objects.live().count()
@@ -217,6 +219,36 @@ def check_seeded_content():
                  "Run `python manage.py seed_navigation`.")
         else:
             ok(f"{items} navigation items.")
+
+        # The one check here that is not about an empty table. An empty
+        # SiteSetting is the failure that looks like success: every page
+        # returns 200, and the site is simply missing the phone number, the
+        # address, the social links and its meta description, because those
+        # live in this row and nowhere else. A blank phone also strips the
+        # dial link out of the nav CTA, which falls back to /contact/.
+        site = SiteSetting.load()
+        if not site.effective_phone_tel:
+            fail("SiteSetting has no phone number. Every template reads it from "
+                 "there, so the site would deploy with nothing to call and a "
+                 "blank address. Run `python manage.py seed_site_settings`.")
+        else:
+            ok(f"Business phone -> tel:{site.effective_phone_tel}")
+
+        # The captured sections contain a broken dial link that survives
+        # re-capture, because capture_content copies source HTML verbatim.
+        broken = []
+        for section in Section.objects.exclude(content_html=""):
+            for _, _, number in re.findall(
+                    r'(href=(["\']))tel:([^"\']*)\2', section.content_html):
+                if unescape(number).strip() != site.effective_phone_tel:
+                    broken.append(f"{section.page.slug}/{section.key}")
+                    break
+        if broken:
+            fail(f"{len(broken)} section(s) have a tel: link that does not match "
+                 "the SiteSetting phone, so tapping it dials nothing. Run "
+                 "`python manage.py normalize_captured_phones`.")
+        else:
+            ok("All captured tel: links match the SiteSetting phone.")
     except Exception as exc:
         warn(f"Could not verify seeded content: {type(exc).__name__}: {exc}")
 

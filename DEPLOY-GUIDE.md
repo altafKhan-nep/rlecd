@@ -206,8 +206,10 @@ export DEBUG='False'
 
 python backend/manage.py migrate --noinput
 python backend/manage.py capture_content
+python backend/manage.py seed_site_settings
 python backend/manage.py seed_services
 python backend/manage.py seed_navigation
+python backend/manage.py normalize_captured_phones
 python backend/manage.py createsuperuser
 ```
 
@@ -295,8 +297,10 @@ export DEBUG='False'
 export SITE_URL='https://YOUR-SERVICE.onrender.com'
 
 python backend/manage.py capture_content
+python backend/manage.py seed_site_settings
 python backend/manage.py seed_services
 python backend/manage.py seed_navigation
+python backend/manage.py normalize_captured_phones
 python backend/manage.py sync_roles
 python backend/manage.py createsuperuser
 ```
@@ -306,6 +310,29 @@ idempotent — safe to re-run. **Never** pass `--reset`; it deletes rows first.
 `seed_navigation` builds the 25 header/footer items the Studio menu screens
 edit; without it the navbar still works (it falls back to the service list) but
 those screens would be editing rows that do not exist.
+
+Two of these are not optional on a fresh database, because the failure they
+prevent is a page that returns 200 while carrying nothing:
+
+- **`seed_site_settings`** fills the `SiteSetting` singleton. Nothing in the
+  codebase creates that row — `SiteSetting.load()` is a `get_or_create`, so on
+  a brand new database it appears by itself the first time any page renders,
+  and it appears *empty*. Every template reads the phone number, address,
+  email and social links from it and nowhere else. Skip it and you deploy a
+  contractor with no number to call, a blank address, a blank meta
+  description, and an empty meta description on every page. The nav `Call` CTA
+  is seeded without a URL on purpose, deferring to this row for the dial link,
+  so it degrades to `/contact/` when the phone is blank. Fill-in-the-blanks by
+  default so a re-run cannot undo an editor; `--force` restores the original
+  values.
+- **`normalize_captured_phones`** repairs the dial links inside captured
+  section HTML. The original site wrote `href="tel:(443) 898-3143"` — a display
+  number in a dial link, which a handset cannot call — on the homepage, About
+  and Contact. The visible text was right, so it reads fine in a screenshot
+  and fails in a phone. Re-capturing puts the broken href back, so this has to
+  be re-run after any `capture_content`. It takes the number from
+  `SiteSetting` rather than hardcoding it, so it follows an editor's change.
+  Locked sections are skipped; `--force` rewrites them, `--dry-run` previews.
 
 ### 4.5 Verify
 
@@ -421,8 +448,10 @@ export DEBUG='False'
 
 python backend/manage.py migrate --noinput
 python backend/manage.py capture_content
+python backend/manage.py seed_site_settings
 python backend/manage.py seed_services
 python backend/manage.py seed_navigation
+python backend/manage.py normalize_captured_phones
 python backend/manage.py sync_roles
 python backend/manage.py createsuperuser
 ```
@@ -548,8 +577,11 @@ python backend/manage.py capture_content
 
 # Content commands
 python backend/manage.py sync_roles
+python backend/manage.py seed_site_settings          # fill blank business facts
+python backend/manage.py seed_site_settings --force  # restore original values
 python backend/manage.py seed_navigation --prune     # delete items removed from the seed
 python backend/manage.py seed_navigation --rebuild   # discard all menu edits
+python backend/manage.py normalize_captured_phones --dry-run  # preview dial-link repairs
 
 # Scheduled jobs
 python backend/manage.py publish_due

@@ -2542,3 +2542,160 @@ class WsgiEntrypointTests(SimpleTestCase):
         module = self._load_fresh()
         self.assertTrue(callable(module.application),
                         "wsgi.py must expose a module-level `application`")
+
+
+class SeedSiteSettingsTests(TestCase):
+    """A brand new database must not produce a site with no business identity.
+
+    SiteSetting.load() is a get_or_create, so on an empty database the row
+    appears by itself the first time any page renders, and it appears empty.
+    Every template reads the phone, address and socials from that row, so the
+    failure is a 200 response with nothing in it -- no exception, nothing in
+    the logs, just a home remodeling contractor who cannot be telephoned.
+    """
+
+    def test_creates_the_row_with_the_original_business_facts(self):
+        SiteSetting.objects.all().delete()
+        call_command("seed_site_settings", verbosity=0)
+        site = SiteSetting.load()
+        self.assertEqual(site.effective_phone_tel, "+14438983143")
+        self.assertEqual(site.effective_phone_display, "(443) 898-3143")
+        self.assertEqual(site.email, "agm@rlecd.com")
+        self.assertEqual(
+            site.effective_address,
+            "Serving Greater Maryland Metro, Reisterstown, MD, 21136")
+
+    def test_the_nav_cta_gets_a_working_dial_link(self):
+        # seed_navigation seeds a Call CTA with no url precisely because it
+        # defers to this model for the number. Empty phone is what makes it
+        # fall back to /contact/ instead of a dial link.
+        SiteSetting.objects.all().delete()
+        call_command("seed_site_settings", verbosity=0)
+        self.assertEqual(SiteSetting.load().effective_cta_url,
+                         "tel:+14438983143")
+
+    def test_is_idempotent(self):
+        call_command("seed_site_settings", verbosity=0)
+        first = SiteSetting.load()
+        call_command("seed_site_settings", verbosity=0)
+        first.refresh_from_db()
+        self.assertEqual(first.phone, "+14438983143")
+
+    def test_does_not_clobber_an_editor(self):
+        site = SiteSetting.load()
+        site.phone = "+15555550123"
+        site.city = "Baltimore"
+        site.save()
+        call_command("seed_site_settings", verbosity=0)
+        site.refresh_from_db()
+        self.assertEqual(site.phone, "+15555550123")
+        self.assertEqual(site.city, "Baltimore")
+
+    def test_force_restores_the_seeded_values(self):
+        site = SiteSetting.load()
+        site.phone = "+15555550123"
+        site.save()
+        call_command("seed_site_settings", "--force", verbosity=0)
+        site.refresh_from_db()
+        self.assertEqual(site.phone, "+14438983143")
+
+
+class NormalizeCapturedPhonesTests(TestCase):
+    """The captured tel: hrefs are broken and cannot be fixed by re-capturing.
+
+    The original site wrote href="tel:(443) 898-3143" -- a display number in a
+    dial link, which a handset cannot call. capture_content copies source HTML
+    through verbatim, so running it again would restore the broken href. These
+    tests pin the repair and its two guard rails: it must be idempotent, and it
+    must not edit a section a human has locked.
+    """
+
+    BROKEN = '<a href="tel:(443) 898-3143" class="phone-number">(443) 898-3143</a>'
+    GOOD = '<a href="tel:+14438983143" class="phone-number">(443) 898-3143</a>'
+
+    def setUp(self):
+        site = SiteSetting.load()
+        site.phone = "+14438983143"
+        site.phone_display = "(443) 898-3143"
+        site.save()
+        self.page = make_page("tel-page")
+        self.section = Section.objects.create(
+            page=self.page, key="block", label="Block", position=0,
+            content_html=self.BROKEN)
+
+    def test_rewrites_only_the_href(self):
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, self.GOOD)
+        self.assertIn('class="phone-number"', self.section.content_html)
+        self.assertIn("(443) 898-3143</a>", self.section.content_html,
+                      "the visible text must stay in display form")
+
+    def test_leaves_surrounding_markup_alone(self):
+        before = self.section.content_html
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(
+            self.section.content_html.replace(self.GOOD, before), before)
+
+    def test_is_idempotent(self):
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        once = self.section.content_html
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, once)
+
+    def test_follows_a_phone_change(self):
+        site = SiteSetting.load()
+        site.phone = "+15555550123"
+        site.save()
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertIn('href="tel:+15555550123"', self.section.content_html)
+
+    def test_skips_a_locked_section(self):
+        self.section.is_locked = True
+        self.section.save()
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, self.BROKEN)
+
+    def test_force_rewrites_a_locked_section(self):
+        self.section.is_locked = True
+        self.section.save()
+        call_command("normalize_captured_phones", "--force", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, self.GOOD)
+
+    def test_dry_run_writes_nothing(self):
+        call_command("normalize_captured_phones", "--dry-run", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, self.BROKEN)
+
+    def test_an_already_correct_href_is_left_alone(self):
+        self.section.content_html = '<a href="tel:+14438983143">Call</a>'
+        self.section.save()
+        call_command("normalize_captured_phones", "--force", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(
+            self.section.content_html, '<a href="tel:+14438983143">Call</a>')
+
+    def test_single_quoted_hrefs_are_rewritten(self):
+        self.section.content_html = "<a href='tel:(443) 898-3143'>Call</a>"
+        self.section.save()
+        call_command("normalize_captured_phones", verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(
+            self.section.content_html, "<a href='tel:+14438983143'>Call</a>")
+
+    def test_refuses_to_guess_when_there_is_no_phone(self):
+        site = SiteSetting.load()
+        site.phone = ""
+        site.save()
+        out, err = StringIO(), StringIO()
+        call_command("normalize_captured_phones", stdout=out, stderr=err,
+                     verbosity=0)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.content_html, self.BROKEN)
+        self.assertIn("no phone", err.getvalue())
