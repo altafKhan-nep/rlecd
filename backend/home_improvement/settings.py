@@ -296,6 +296,9 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'main.context_processors.site',
+                'main.context_processors.site_settings',
+                'main.context_processors.navigation',
+                'main.context_processors.services',
             ],
             # Stored page content is compiled on its own by content.render, so
             # it cannot rely on a {% load static %} in a parent template.
@@ -475,6 +478,30 @@ if not DEBUG:
 # Pin test discovery to backend/ so `manage.py test` finds the apps no matter
 # which directory it is invoked from. See home_improvement/runner.py.
 TEST_RUNNER = 'home_improvement.runner.BackendDiscoverRunner'
+
+
+# Content cache.
+#
+# The database backend, not the default local-memory one, and that distinction
+# decides whether the site is correct. Gunicorn runs two workers
+# (see render.yaml); local-memory cache is per-process, so an editor who saves
+# a menu in the worker handling the POST invalidates only that worker's copy
+# and the other one keeps serving the old navigation until the next deploy. The
+# django_cache table is created by a migration, so it exists on every deploy and
+# in the test database without a manual `createcachetable` step.
+#
+# Nothing here expires on a timer. The cached values (site settings, navigation
+# tree, service list) are invalidated by the admin write paths in
+# content.cache, and a stale entry that is never invalidated is a bug worth
+# seeing rather than one worth papering over with a short TTL.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': _blank_to_default('CACHE_TABLE', 'django_cache',
+                                      lambda v: v),
+        'TIMEOUT': _int_env('CACHE_TIMEOUT', 0, minimum=0),
+    }
+}
 
 #django message framework
 from django.contrib.messages import constants as messages

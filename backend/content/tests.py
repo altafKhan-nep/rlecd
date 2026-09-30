@@ -7,18 +7,31 @@ the mirror: if a future import stops reproducing the markup byte for byte, it
 fails here rather than silently drifting from the live site.
 """
 import re
+from io import StringIO
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.template.loader import render_to_string
+from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.client import RequestFactory
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
-from content import importer
+from content import importer, registry
 from content.models import (
-    FAQ, Page, Project, Section, SectionImage, ServiceArea, SiteSetting,
-    Testimonial, TrustBadge, visible_text,
+    ContentRevision, FAQ, MenuItem, Navigation, Page, Project, Section,
+    SectionImage, ServiceArea, SiteSetting, Testimonial, TrustBadge,
+    visible_text,
 )
+from content.nav import is_current_url, mark_current, navigation_tree
+from main.context_processors import navigation as nav_context
+from crm.models import Service
 from content import render as render_module
 from content.render import (
     ContentRenderError, clear_template_cache, render_sections,
@@ -515,8 +528,9 @@ class HollowPageTests(TestCase):
         Without this, a rename of the captured heading would turn the assertion
         above into a permanent no-op.
         """
+        from content.models import SiteSetting
         self.assertIn("Our Story", strip_tags(
-            render_to_string("main/about.html")))
+            render_to_string("main/about.html", {"site_settings": SiteSetting.load()})))
 
     def test_hollow_page_without_a_mirror_template_is_a_404(self):
         """Falling back is a courtesy; a genuine typo must still 404."""
@@ -1352,3 +1366,1130 @@ class SectionEditorTests(TestCase):
             reverse("admin:content_page_change", args=[self.page.pk])
         ).content.decode()
         self.assertNotIn("head_html", page)
+
+
+def make_page(slug="workflow", path=None, **kwargs):
+    return Page.objects.create(
+        title=kwargs.pop("title", slug.title()),
+        slug=slug,
+        path=path or f"/{slug}/",
+        **kwargs,
+    )
+
+
+class PublishWorkflowTests(TestCase):
+    """A page is only public when it is published and visible.
+
+    Both halves are checked, because the failure this guards against is a
+    draft that renders for real visitors: the flag said yes, the workflow said
+    no, and nothing noticed.
+    """
+
+    def test_a_new_page_is_live_by_default(self):
+        self.assertTrue(make_page().is_live)
+
+    def test_switching_the_flag_off_takes_the_page_down(self):
+        page = make_page()
+        page.is_published = False
+        page.save()
+        page.refresh_from_db()
+        self.assertFalse(page.is_live)
+        self.assertEqual(page.status, Page.Status.DRAFT,
+                         "a hidden page cannot still claim to be published")
+
+    def test_a_draft_is_not_served_even_with_the_flag_on(self):
+        page = make_page(status=Page.Status.DRAFT, is_published=True)
+        self.assertFalse(page.is_live)
+        self.assertNotIn(page, Page.objects.live())
+
+    def test_unpublish_then_publish_round_trips(self):
+        page = make_page()
+        page.unpublish()
+        self.assertFalse(page.is_live)
+        page.publish()
+        self.assertTrue(page.is_live)
+        self.assertIsNotNone(page.published_at)
+
+    def test_publish_records_who_released_it(self):
+        author = User.objects.create_user("editor", password="pw-editor-123")
+        page = make_page()
+        page.publish(user=author)
+        page.refresh_from_db()
+        self.assertEqual(page.published_by, author)
+
+    def test_archive_keeps_the_content_but_loses_the_page(self):
+        page = make_page()
+        page.archive()
+        self.assertFalse(page.is_live)
+        self.assertTrue(Page.objects.filter(pk=page.pk).exists())
+
+    def test_a_scheduled_page_waits_for_its_time(self):
+        soon = timezone.now() + timezone.timedelta(hours=1)
+        page = make_page(status=Page.Status.SCHEDULED, scheduled_for=soon)
+        self.assertFalse(page.is_live)
+        self.assertNotIn(page, Page.objects.live())
+
+    def test_a_scheduled_page_goes_live_once_its_time_arrives(self):
+        past = timezone.now() - timezone.timedelta(minutes=1)
+        page = make_page(status=Page.Status.SCHEDULED, scheduled_for=past)
+        self.assertTrue(page.is_live)
+        self.assertIn(page, Page.objects.live())
+
+    def test_a_scheduled_page_with_no_date_stays_offline(self):
+        page = make_page(status=Page.Status.SCHEDULED, scheduled_for=None)
+        self.assertFalse(page.is_live)
+
+    def test_schedule_without_a_date_is_refused(self):
+        page = make_page()
+        with self.assertRaises(ValidationError):
+            page.schedule(None)
+
+    def test_publish_if_due_leaves_other_pages_alone(self):
+        page = make_page()
+        self.assertFalse(page.publish_if_due())
+
+    def test_publish_if_due_stamps_the_scheduled_moment(self):
+        past = timezone.now() - timezone.timedelta(minutes=5)
+        page = make_page(status=Page.Status.SCHEDULED, scheduled_for=past)
+        self.assertTrue(page.publish_if_due())
+        page.refresh_from_db()
+        self.assertEqual(page.status, Page.Status.PUBLISHED)
+        self.assertIsNone(page.scheduled_for)
+        self.assertAlmostEqual(page.published_at, past, delta=timezone.timedelta(seconds=5))
+
+    def test_a_draft_page_falls_back_to_the_mirror_template(self):
+        make_page("about", path="/about/", status=Page.Status.DRAFT)
+        response = self.client.get("/about/")
+        self.assertEqual(response.status_code, 200)
+
+
+class PublishDueCommandTests(TestCase):
+    def setUp(self):
+        self.now = timezone.now()
+
+    def test_it_publishes_only_what_is_due(self):
+        due = make_page("due", status=Page.Status.SCHEDULED,
+                        scheduled_for=self.now - timezone.timedelta(minutes=1))
+        later = make_page("later", status=Page.Status.SCHEDULED,
+                          scheduled_for=self.now + timezone.timedelta(days=1))
+        call_command("publish_due", stdout=StringIO())
+        due.refresh_from_db()
+        later.refresh_from_db()
+        self.assertEqual(due.status, Page.Status.PUBLISHED)
+        self.assertEqual(later.status, Page.Status.SCHEDULED)
+
+    def test_a_dry_run_changes_nothing(self):
+        page = make_page("due", status=Page.Status.SCHEDULED,
+                         scheduled_for=self.now - timezone.timedelta(minutes=1))
+        out = StringIO()
+        call_command("publish_due", "--dry-run", stdout=out)
+        page.refresh_from_db()
+        self.assertEqual(page.status, Page.Status.SCHEDULED)
+        self.assertIn("would publish", out.getvalue())
+
+    def test_it_does_not_override_a_page_someone_unpublished_meanwhile(self):
+        page = make_page("due", status=Page.Status.SCHEDULED,
+                         scheduled_for=self.now - timezone.timedelta(minutes=1))
+        page.is_published = False
+        page.status = Page.Status.DRAFT
+        page.save()
+        call_command("publish_due", stdout=StringIO())
+        page.refresh_from_db()
+        self.assertEqual(page.status, Page.Status.DRAFT)
+
+    def test_it_says_so_when_nothing_is_due(self):
+        out = StringIO()
+        call_command("publish_due", stdout=out)
+        self.assertIn("Nothing due", out.getvalue())
+
+
+class PageAdminWorkflowTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.client.force_login(self.admin)
+
+    def test_publishing_from_the_page_form_button(self):
+        page = make_page("draft", status=Page.Status.DRAFT)
+        url = reverse("admin:content_page_publish", args=[page.pk])
+        self.assertEqual(self.client.get(url).status_code, 302)
+        page.refresh_from_db()
+        self.assertTrue(page.is_live)
+
+    def test_unpublishing_from_the_page_form_button(self):
+        page = make_page("live")
+        url = reverse("admin:content_page_unpublish", args=[page.pk])
+        self.client.get(url)
+        page.refresh_from_db()
+        self.assertFalse(page.is_live)
+
+    def test_the_bulk_publish_action(self):
+        draft = make_page("draft", status=Page.Status.DRAFT)
+        self.client.post(reverse("admin:content_page_changelist"), {
+            "action": "action_publish",
+            "_selected_action": [str(draft.pk)],
+        })
+        draft.refresh_from_db()
+        self.assertTrue(draft.is_live)
+
+    def test_publishing_something_already_published_says_nothing_to_do(self):
+        page = make_page("live")
+        response = self.client.post(reverse("admin:content_page_changelist"), {
+            "action": "action_publish",
+            "_selected_action": [str(page.pk)],
+        }, follow=True)
+        self.assertContains(response, "Nothing to publish")
+
+    def test_a_draft_offers_a_preview_instead_of_a_dead_public_link(self):
+        page = make_page("draft", status=Page.Status.DRAFT)
+        html = self.client.get(
+            reverse("admin:content_page_change", args=[page.pk])).content.decode()
+        self.assertIn(reverse("content_preview", args=[page.slug]), html)
+        self.assertIn("not public", html)
+
+    def test_a_live_page_offers_its_public_url(self):
+        page = make_page("live")
+        html = self.client.get(
+            reverse("admin:content_page_change", args=[page.pk])).content.decode()
+        self.assertIn("/live/", html)
+        self.assertNotIn(reverse("content_preview", args=[page.slug]), html)
+
+    def test_the_list_shows_the_workflow_stage(self):
+        page = make_page("live")
+        page.unpublish()
+        html = self.client.get(
+            reverse("admin:content_page_changelist")).content.decode()
+        self.assertIn("Draft", html)
+
+
+class PreviewTests(TestCase):
+    def setUp(self):
+        self.page = make_page("draft", status=Page.Status.DRAFT)
+        Section.objects.create(page=self.page, key="body", position=0,
+                               content_html="<h1>Draft copy</h1>")
+
+    def test_a_stranger_gets_a_404(self):
+        self.assertEqual(self.client.get("/preview/draft/").status_code, 404)
+
+    def test_a_staff_user_with_no_page_permission_gets_a_404(self):
+        from django.contrib.auth.models import Permission
+        user = User.objects.create_user("nobody", password="pw-nobody-123",
+                                        is_staff=True)
+        user.user_permissions.add(*Permission.objects.filter(
+            codename="view_lead"))
+        self.client.force_login(user)
+        self.assertEqual(self.client.get("/preview/draft/").status_code, 404)
+
+    def test_an_editor_can_preview_a_draft(self):
+        from django.contrib.auth.models import Permission
+        user = User.objects.create_user("editor", password="pw-editor-123",
+                                        is_staff=True)
+        user.user_permissions.add(*Permission.objects.filter(
+            codename__in=["view_page", "change_page"]))
+        self.client.force_login(user)
+        response = self.client.get("/preview/draft/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Draft copy")
+
+    def test_a_draft_is_still_not_public(self):
+        self.client.get("/draft/")
+        self.assertEqual(Page.objects.live().filter(slug="draft").count(), 0)
+
+
+class RevisionTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.client.force_login(self.admin)
+        self.page = make_page("history")
+        self.hero = Section.objects.create(
+            page=self.page, key="hero", position=0,
+            content_html="<h1>First heading</h1>")
+
+    def snapshot(self, note=""):
+        return ContentRevision.snapshot(self.page, user=self.admin, note=note)
+
+    def test_a_snapshot_carries_the_sections(self):
+        revision = self.snapshot()
+        self.assertEqual([row["key"] for row in revision.section_rows()], ["hero"])
+        self.assertIn("First heading", revision.content_html)
+
+    def test_saving_a_page_takes_a_snapshot(self):
+        self.client.post(reverse("admin:content_page_change", args=[self.page.pk]), {
+            "title": "History", "status": Page.Status.PUBLISHED,
+            "is_published": "on", "show_in_menu": "on", "scheduled_for": "",
+            "seo_title": "", "seo_description": "", "og_image": "", "main_attrs": "",
+            "_save": "Save",
+        })
+        self.assertTrue(self.page.revisions.exists())
+        revision = self.page.revisions.first()
+        self.assertEqual(revision.created_by, self.admin)
+
+    def test_restoring_puts_the_old_copy_back(self):
+        old = self.snapshot()
+        self.hero.content_html = "<h1>Broken heading</h1>"
+        self.hero.save()
+        old.restore()
+        self.hero.refresh_from_db()
+        self.assertEqual(self.hero.content_html, "<h1>First heading</h1>")
+
+    def test_restoring_reinstates_a_hidden_section(self):
+        old = self.snapshot()
+        self.hero.is_visible = False
+        self.hero.save()
+        old.restore()
+        self.hero.refresh_from_db()
+        self.assertTrue(self.hero.is_visible)
+
+    def test_restoring_keeps_sections_added_afterwards(self):
+        old = self.snapshot()
+        Section.objects.create(page=self.page, key="extra", position=1,
+                               content_html="<p>New</p>")
+        old.restore()
+        self.assertTrue(
+            Section.objects.filter(page=self.page, key="extra").exists(),
+            "a restore must not delete work it did not capture")
+
+    def test_restoring_does_not_touch_the_workflow_stage(self):
+        old = self.snapshot()
+        self.page.unpublish()
+        old.restore()
+        self.page.refresh_from_db()
+        self.assertFalse(self.page.is_live,
+                         "restoring a copy must not quietly publish a draft")
+
+    def test_the_restore_action_is_offered(self):
+        self.snapshot()
+        html = self.client.get(
+            reverse("admin:content_contentrevision_changelist")).content.decode()
+        self.assertIn("restore_selected", html)
+
+    def test_the_restore_action_puts_the_page_back(self):
+        old = self.snapshot()
+        self.hero.content_html = "<h1>Broken heading</h1>"
+        self.hero.save()
+        self.client.post(reverse("admin:content_contentrevision_changelist"), {
+            "action": "restore_selected",
+            "_selected_action": [str(old.pk)],
+        })
+        self.hero.refresh_from_db()
+        self.assertEqual(self.hero.content_html, "<h1>First heading</h1>")
+
+    def test_the_history_list_is_reachable_from_the_page(self):
+        self.snapshot()
+        self.assertEqual(
+            self.client.get(reverse("admin:content_contentrevision_changelist")
+                            + f"?page__id__exact={self.page.pk}").status_code, 200)
+
+    def test_revisions_cannot_be_added_by_hand(self):
+        response = self.client.get(reverse("admin:content_contentrevision_add"))
+        self.assertIn(response.status_code, (403, 302))
+
+
+class SitemapAndRobotsTests(TestCase):
+    def setUp(self):
+        SiteSetting.load()
+
+    def test_robots_points_at_the_sitemap(self):
+        response = self.client.get("/robots.txt")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Sitemap:", body)
+        self.assertIn("/sitemap.xml", body)
+
+    def test_robots_does_not_500(self):
+        """It used to read a field SiteSetting never had."""
+        self.assertEqual(self.client.get("/robots.txt").status_code, 200)
+
+    def test_the_sitemap_lists_a_live_page(self):
+        make_page("kitchen", path="/kitchen-remodeling/")
+        body = self.client.get("/sitemap.xml").content.decode()
+        self.assertIn("/kitchen-remodeling/", body)
+
+    def test_the_sitemap_omits_a_draft(self):
+        make_page("secret", path="/secret/", status=Page.Status.DRAFT)
+        body = self.client.get("/sitemap.xml").content.decode()
+        self.assertNotIn("/secret/", body)
+
+    def test_the_sitemap_omits_a_scheduled_page_until_it_is_due(self):
+        make_page("later", path="/later/", status=Page.Status.SCHEDULED,
+                  scheduled_for=timezone.now() + timezone.timedelta(days=1))
+        self.assertNotIn("/later/", self.client.get("/sitemap.xml").content.decode())
+
+    def test_the_sitemap_lists_a_visible_service(self):
+        Service.objects.create(name="Outdoor Kitchens", slug="outdoor-kitchens")
+        self.assertIn("/outdoor-kitchens/",
+                      self.client.get("/sitemap.xml").content.decode())
+
+    def test_the_sitemap_omits_a_switched_off_service(self):
+        Service.objects.create(name="Hidden", slug="hidden",
+                               is_active=False)
+        self.assertNotIn("/hidden/",
+                         self.client.get("/sitemap.xml").content.decode())
+
+    def test_a_service_and_page_with_the_same_path_are_listed_once(self):
+        make_page("cabinets", path="/cabinets/")
+        Service.objects.create(name="Cabinets", slug="cabinets")
+        body = self.client.get("/sitemap.xml").content.decode()
+        self.assertEqual(body.count("/cabinets/"), 1)
+
+    def test_the_root_page_is_listed_at_the_root(self):
+        make_page("index", path="/")
+        self.assertIn("<loc>http://testserver/</loc>",
+                      self.client.get("/sitemap.xml").content.decode())
+
+
+class ServicePageTests(TestCase):
+    def setUp(self):
+        SiteSetting.load()
+
+    def test_a_service_with_no_captured_page_gets_a_page(self):
+        Service.objects.create(name="Outdoor Kitchens", slug="outdoor-kitchens",
+                               short_description="Cook outside all year.")
+        response = self.client.get("/outdoor-kitchens/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Outdoor Kitchens")
+        self.assertContains(response, "Cook outside all year.")
+
+    def test_an_inactive_service_is_a_404(self):
+        Service.objects.create(name="Retired", slug="retired", is_active=False)
+        self.assertEqual(self.client.get("/retired/").status_code, 404)
+
+    def test_an_unpublished_service_is_a_404(self):
+        Service.objects.create(name="Draft", slug="draft-service",
+                               is_published=False)
+        self.assertEqual(self.client.get("/draft-service/").status_code, 404)
+
+    def test_an_unknown_slug_is_a_404_rather_than_an_empty_page(self):
+        self.assertEqual(self.client.get("/nothing-here/").status_code, 404)
+
+    def test_a_captured_service_page_still_wins(self):
+        """The fifteen captured pages must not be shadowed by the fallback."""
+        make_page("painting", path="/painting/",
+                  head_html="", nav_variant="partials/_nav_1.html")
+        Section.objects.create(page=Page.objects.get(slug="painting"),
+                               key="captured", position=0,
+                               content_html="<p>CAPTURED MARKUP</p>")
+        Service.objects.create(name="Painting", slug="painting")
+        response = self.client.get("/painting/")
+        self.assertContains(response, "CAPTURED MARKUP")
+
+    def test_the_service_page_uses_site_settings_for_its_cta(self):
+        settings_row = SiteSetting.load()
+        settings_row.phone = "(410) 555-0100"
+        settings_row.primary_cta_label = "Call the office"
+        settings_row.save()
+        Service.objects.create(name="Decks", slug="decks")
+        response = self.client.get("/decks/")
+        self.assertContains(response, "Call the office")
+        self.assertContains(response, "tel:4105550100")
+
+
+class NavigationTests(TestCase):
+    """Navigation is one database tree, cached, and it knows where it is.
+
+    The captured site shipped six copies of the navbar, one per service page,
+    each identical except for which link carried class="active". That is the
+    problem these tests exist to keep solved: the highlight is now derived from
+    the request path, so a new service needs one row, not a new template.
+    """
+
+    def _nav(self, name="Header", slug=None):
+        from content.models import Navigation
+        return Navigation.objects.create(name=name, slug=slug or name.lower(),
+                                         is_active=True)
+
+    def _item(self, nav, label, url="", parent=None, sort_order=0, **kwargs):
+        from content.models import MenuItem
+        return MenuItem.objects.create(
+            navigation=nav, label=label, url=url, parent=parent,
+            sort_order=sort_order, **kwargs)
+
+    def test_it_builds_one_group_per_active_navigation(self):
+        header = self._nav("Header")
+        self._item(header, "Home", "/")
+        self._item(self._nav("Footer"), "Quick Links", "/")
+        Navigation.objects.create(name="Retired", slug="retired",
+                                  is_active=False)
+        tree = navigation_tree()
+        self.assertEqual(sorted(tree), ["footer", "header"])
+        self.assertEqual(tree["header"][0]["label"], "Home")
+
+    def test_a_hidden_navigation_is_not_built(self):
+        Navigation.objects.create(name="Draft", slug="draft", is_active=False)
+        self.assertEqual(navigation_tree(), {})
+
+    def test_a_cached_tree_asks_the_content_tables_for_nothing(self):
+        """The second reader gets the tree without touching content again.
+
+        Asserted on the content tables specifically rather than on a total
+        count: the database cache backend is itself a query, so "zero queries"
+        is not the property that matters. What matters is that walking the
+        navigation -- including every dropdown child -- reads no MenuItem or
+        Navigation row, which is what would otherwise happen once per item.
+        """
+        header = self._nav("Header")
+        services = self._item(header, "Services", "#")
+        for i in range(15):
+            self._item(header, f"Service {i}", f"/service-{i}/", parent=services)
+        self._item(header, "Contact", "/contact/")
+
+        first = CaptureQueriesContext(connection)
+        with first:
+            marked = mark_current(navigation_tree()["header"], "/")
+        second = CaptureQueriesContext(connection)
+        with second:
+            again = mark_current(navigation_tree()["header"], "/")
+        self.assertEqual(
+            [q["sql"] for q in second.captured_queries
+             if "content_menuitem" in q["sql"] or "content_navigation" in q["sql"]],
+            [],
+        )
+        self.assertEqual(len(again), len(marked))
+
+    def test_the_query_count_does_not_grow_with_the_number_of_services(self):
+        """The N+1 the old template properties caused, asserted as a slope.
+
+        Building the tree for one dropdown item and for twelve must cost the
+        same number of queries. A regression to lazy per-item lookups shows up
+        here as a difference, which is the thing that actually went wrong
+        before.
+        """
+        def queries_for_children(count):
+            cache.clear()
+            slug = f"header{count}"
+            header = self._nav(f"Header {count}", slug=slug)
+            services = self._item(header, "Services", "#")
+            for i in range(count):
+                self._item(header, f"Service {i}", f"/service-{i}/",
+                           parent=services)
+            with CaptureQueriesContext(connection) as ctx:
+                marked = mark_current(navigation_tree()[slug], "/")
+            self.assertEqual(len(marked[0]["children"]), count)
+            queries = len([q for q in ctx.captured_queries
+                           if "content_menuitem" in q["sql"]
+                           or "content_navigation" in q["sql"]])
+            # Leave the database as it was found, so the next measurement sees
+            # one menu and not two and quietly measures the wrong thing.
+            header.delete()
+            return queries
+
+        self.assertEqual(queries_for_children(1), queries_for_children(12))
+
+    def test_editing_a_menu_item_drops_the_cache(self):
+        """Otherwise the change an editor just saved is invisible to visitors."""
+        header = self._nav("Header")
+        contact = self._item(header, "Contact", "/contact/")
+        self.assertEqual(len(navigation_tree()["header"]), 1)
+        contact.label = "Get in touch"
+        contact.save()
+        self.assertEqual(navigation_tree()["header"][0]["label"], "Get in touch")
+
+    def test_deleting_a_menu_item_drops_the_cache(self):
+        header = self._nav("Header")
+        contact = self._item(header, "Contact", "/contact/")
+        nav_context(RequestFactory().get("/"))
+        contact.delete()
+        self.assertEqual(navigation_tree()["header"], [])
+
+    def test_a_menus_own_children_never_appear_as_top_level_items(self):
+        header = self._nav("Header")
+        services = self._item(header, "Services", "#")
+        self._item(header, "Painting", "/painting/", parent=services)
+        self.assertEqual([i["label"] for i in navigation_tree()["header"]],
+                         ["Services"])
+
+
+class CurrentUrlTests(TestCase):
+    """Which link counts as "the page you are on".
+
+    A prefix match is the tempting shortcut and it is wrong: with a nav link to
+    /kitchen/, it lights up on /kitchen-renovation-guide/ too, and a site ends
+    up with two highlighted items. These are the rules, pinned.
+    """
+
+    def test_the_exact_page_matches(self):
+        self.assertTrue(is_current_url("/kitchen/", "/kitchen/"))
+
+    def test_a_missing_trailing_slash_is_the_same_page(self):
+        """Captured nav markup is inconsistent about the slash."""
+        self.assertTrue(is_current_url("/kitchen/", "/kitchen"))
+        self.assertTrue(is_current_url("/kitchen", "/kitchen/"))
+
+    def test_the_root_matches_only_the_root(self):
+        self.assertTrue(is_current_url("/", "/"))
+        self.assertFalse(is_current_url("/", "/kitchen/"))
+
+    def test_a_longer_path_is_not_the_same_page(self):
+        self.assertFalse(is_current_url("/kitchen/", "/kitchen-renovation/"))
+
+    def test_a_sibling_page_does_not_match(self):
+        self.assertFalse(is_current_url("/kitchen/", "/bathroom/"))
+
+    def test_a_query_string_is_not_part_of_the_page(self):
+        self.assertTrue(is_current_url("/kitchen/?ref=nav", "/kitchen/"))
+
+    def test_an_external_link_is_never_the_current_page(self):
+        self.assertFalse(is_current_url("https://example.com/", "/kitchen/"))
+        self.assertFalse(is_current_url("//example.com/", "/kitchen/"))
+
+    def test_a_telephone_or_mail_link_is_never_the_current_page(self):
+        self.assertFalse(is_current_url("tel:+14438983143", "/kitchen/"))
+        self.assertFalse(is_current_url("mailto:a@b.com", "/kitchen/"))
+
+    def test_the_placeholder_link_does_not_claim_to_be_a_page(self):
+        self.assertFalse(is_current_url("#", "/kitchen/"))
+        self.assertFalse(is_current_url("", "/kitchen/"))
+        self.assertFalse(is_current_url(None, "/kitchen/"))
+
+    def test_nothing_matches_when_there_is_no_page(self):
+        self.assertFalse(is_current_url("/kitchen/", None))
+        self.assertFalse(is_current_url("/kitchen/", ""))
+
+    def test_it_accepts_a_request(self):
+        request = RequestFactory().get("/kitchen/")
+        self.assertTrue(is_current_url("/kitchen/", request))
+        self.assertFalse(is_current_url("/bathroom/", request))
+
+
+class NavigationRenderingTests(TestCase):
+    """What a visitor actually gets, in the markup.
+
+    These are the tests that would catch a nav edit going to the database and
+    not reaching the page, which is the failure mode that matters.
+    """
+
+    def setUp(self):
+        from content.models import Navigation
+        cache.clear()
+        self.header = Navigation.objects.create(name="Header", slug="header",
+                                                is_active=True)
+        self.services_item = MenuItem.objects.create(
+            navigation=self.header, label="Services", url="#", sort_order=1)
+        for i, (label, url) in enumerate([
+            ("Bathroom Remodeling", "/bathroom-remodeling/"),
+            ("Kitchen Remodeling", "/kitchen-remodeling/"),
+            ("Painting", "/painting/"),
+        ]):
+            MenuItem.objects.create(navigation=self.header, label=label,
+                                    url=url, parent=self.services_item,
+                                    sort_order=i)
+        MenuItem.objects.create(navigation=self.header, label="Contact",
+                                url="/contact/", sort_order=2)
+        SiteSetting.load()
+
+    def _nav_html(self, path):
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_the_database_drives_the_navbar(self):
+        html = self._nav_html("/")
+        for label in ("Bathroom Remodeling", "Kitchen Remodeling", "Painting"):
+            self.assertIn(label, html)
+
+    def test_a_service_added_in_the_crm_appears_without_a_new_template(self):
+        MenuItem.objects.create(navigation=self.header, label="HVAC",
+                                url="/hvac/", parent=self.services_item)
+        self.assertIn("HVAC", self._nav_html("/"))
+
+    def test_the_visited_page_is_the_only_one_marked_active(self):
+        html = self._nav_html("/painting/")
+        active = re.findall(r'<a href="([^"]+)" class="active"', html)
+        self.assertIn("/painting/", active)
+        self.assertNotIn("/kitchen-remodeling/", active)
+
+    def test_a_visitor_elsewhere_marks_their_own_page(self):
+        active = re.findall(r'<a href="([^"]+)" class="active"',
+                            self._nav_html("/kitchen-remodeling/"))
+        self.assertIn("/kitchen-remodeling/", active)
+        self.assertNotIn("/painting/", active)
+
+    def test_the_highlight_is_recomputed_per_request(self):
+        """A cached tree must not carry the previous visitor's path."""
+        first = re.findall(r'<a href="([^"]+)" class="active"',
+                           self._nav_html("/painting/"))
+        second = re.findall(r'<a href="([^"]+)" class="active"',
+                            self._nav_html("/kitchen-remodeling/"))
+        self.assertIn("/painting/", first)
+        self.assertNotIn("/kitchen-remodeling/", first)
+        self.assertIn("/kitchen-remodeling/", second)
+        self.assertNotIn("/painting/", second)
+
+    def test_the_footer_marks_its_current_link_too(self):
+        footer = Navigation.objects.create(name="Footer", slug="footer",
+                                          is_active=True)
+        MenuItem.objects.create(navigation=footer, label="Quick Links",
+                                url="/", sort_order=0)
+        html = self._nav_html("/")
+        self.assertIn("Quick Links", html)
+
+    def test_a_menu_item_hidden_from_mobile_stays_out_of_the_drawer(self):
+        """show_on_mobile is the editor's decision and the template must keep it."""
+        MenuItem.objects.filter(label="Painting").update(show_on_mobile=False)
+        html = self._nav_html("/")
+        drawer = html.split('class="mobile-services-list"')[1].split("</ul>")[0]
+        self.assertNotIn("Painting", drawer)
+        self.assertIn("Kitchen Remodeling", drawer)
+
+    def test_the_same_item_stays_in_the_desktop_dropdown(self):
+        MenuItem.objects.filter(label="Painting").update(show_on_mobile=False)
+        html = self._nav_html("/")
+        mega = html.split('class="mega-grid"')[1].split("</ul>")[0]
+        self.assertIn("Painting", mega)
+
+
+class CapturedVariantTests(TestCase):
+    """The captured partials all point at the dynamic one.
+
+    Six hand-maintained service lists is six places for a service to go missing.
+    The mirror evidence that the six were the same bar is in the git history of
+    these files; what is asserted here is the state we are keeping.
+    """
+
+    def _partials(self):
+        import pathlib
+        root = pathlib.Path(settings.FRONTEND_DIR) / "templates_main" / "partials"
+        return root
+
+    def test_every_nav_variant_delegates_to_the_dynamic_partial(self):
+        root = self._partials()
+        for i in range(1, 7):
+            text = (root / f"_nav_{i}.html").read_text()
+            self.assertIn('{% include "partials/_nav_dynamic.html" %}', text,
+                          f"_nav_{i}.html does not delegate")
+
+    def test_every_footer_variant_delegates_to_the_dynamic_partial(self):
+        root = self._partials()
+        for i in range(1, 4):
+            text = (root / f"_foot_{i}.html").read_text()
+            self.assertIn('{% include "partials/_foot_dynamic.html" %}', text,
+                          f"_foot_{i}.html does not delegate")
+
+    def test_no_partial_hardcodes_a_service_list(self):
+        """The guard against the six copies coming back."""
+        root = self._partials()
+        for name in [f"_nav_{i}.html" for i in range(1, 7)] + \
+                    [f"_foot_{i}.html" for i in range(1, 4)]:
+            text = (root / name).read_text()
+            self.assertNotIn("fa-utensils", text, f"{name} hardcodes a service")
+            self.assertNotIn("fa-bath", text, f"{name} hardcodes a service")
+
+
+class SeedNavigationCommandTests(TestCase):
+    """The command that replaces six hardcoded navbars with rows.
+
+    The Navigation and MenuItem tables were empty on every database in the
+    project until this command existed, so the navbar only ever worked through
+    the template's fallback branch. These tests are the reason a fresh deploy
+    gets a real menu.
+    """
+
+    def _seed(self, *args):
+        out = StringIO()
+        call_command("seed_services", stdout=out)
+        call_command("seed_navigation", *args, stdout=out)
+        return out.getvalue()
+
+    def test_it_creates_a_header_with_the_dropdown_in_the_captured_order(self):
+        self._seed()
+        header = Navigation.objects.get(slug="header")
+        order = list(MenuItem.objects.filter(
+            navigation=header, parent__isnull=True
+        ).order_by("sort_order").values_list("label", flat=True))
+        self.assertEqual(
+            order, ["Home", "About", "Services", "Areas We Serve",
+                    "Contact", "Call"])
+
+    def test_the_dropdown_holds_the_fifteen_services_in_order(self):
+        self._seed()
+        dropdown = MenuItem.objects.get(navigation__slug="header",
+                                        label="Services")
+        children = MenuItem.objects.filter(parent=dropdown).order_by("sort_order")
+        self.assertEqual(children.count(), 15)
+        self.assertEqual(children.first().label, "Bathroom Remodeling")
+        self.assertEqual(children.last().label, "Home Additions")
+
+    def test_each_service_links_to_its_own_catalogue_row(self):
+        """Not a copied path: the link has to follow the slug."""
+        self._seed()
+        item = MenuItem.objects.get(navigation__slug="header",
+                                    label="Woodworking")
+        self.assertEqual(item.service.slug, "woodworking")
+        self.assertEqual(item.get_url(), "/woodworking/")
+
+    def test_the_icons_the_capture_had_are_kept(self):
+        self._seed()
+        item = MenuItem.objects.get(navigation__slug="header",
+                                    label="Lead Renovator")
+        self.assertEqual(item.icon, "fas fa-certificate")
+
+    def test_the_phone_cta_has_no_baked_in_number(self):
+        """A number written here would disagree with SiteSetting after an edit."""
+        self._seed()
+        cta = MenuItem.objects.get(navigation__slug="header", label="Call")
+        self.assertTrue(cta.is_cta)
+        self.assertEqual(cta.url, "")
+
+    def test_running_it_twice_changes_nothing(self):
+        self._seed()
+        first = MenuItem.objects.count()
+        output = self._seed()
+        self.assertEqual(MenuItem.objects.count(), first)
+        self.assertIn("0 created", output)
+
+    def test_rerunning_restores_a_corrected_label(self):
+        self._seed()
+        MenuItem.objects.filter(label="Areas We Serve").update(label="Coverage")
+        self._seed()
+        self.assertTrue(MenuItem.objects.filter(label="Coverage").exists())
+
+    def test_rebuild_discards_edits(self):
+        self._seed()
+        MenuItem.objects.filter(label="Coverage").delete()
+        call_command("seed_navigation", "--rebuild", stdout=StringIO())
+        self.assertTrue(MenuItem.objects.filter(label="Areas We Serve").exists())
+
+    def test_a_service_removed_from_the_command_survives_by_default(self):
+        """Otherwise a deploy would silently delete a service from the menu."""
+        from content.management.commands import seed_navigation as command
+        original = list(command.SERVICES)
+        try:
+            self._seed()
+            command.SERVICES = [s for s in original if s[0] != "Pergolas"]
+            self._seed()
+            self.assertTrue(MenuItem.objects.filter(label="Pergolas").exists())
+        finally:
+            command.SERVICES = original
+
+    def test_prune_removes_a_dropped_service(self):
+        from content.management.commands import seed_navigation as command
+        original = list(command.SERVICES)
+        try:
+            self._seed()
+            command.SERVICES = [s for s in original if s[0] != "Pergolas"]
+            self._seed("--prune")
+            self.assertFalse(MenuItem.objects.filter(label="Pergolas").exists())
+        finally:
+            command.SERVICES = original
+
+    def test_prune_leaves_the_others_alone(self):
+        from content.management.commands import seed_navigation as command
+        original = list(command.SERVICES)
+        try:
+            self._seed()
+            before = MenuItem.objects.count()
+            command.SERVICES = [s for s in original if s[0] != "Pergolas"]
+            self._seed("--prune")
+            self.assertEqual(MenuItem.objects.count(), before - 1)
+        finally:
+            command.SERVICES = original
+
+    def test_a_missing_service_is_reported_rather_than_linked_to_nowhere(self):
+        out = StringIO()
+        call_command("seed_services", stdout=out)
+        Service.objects.all().delete()
+        err = StringIO()
+        call_command("seed_navigation", stdout=out, stderr=err)
+        self.assertIn("run seed_services first", err.getvalue())
+
+
+class SeededNavigationEndToEndTests(TestCase):
+    """What a visitor sees once the command has run, on a real service page."""
+
+    def setUp(self):
+        cache.clear()
+        from content.management.commands import seed_navigation  # noqa: F401
+        call_command("seed_services", stdout=StringIO())
+        call_command("seed_navigation", stdout=StringIO())
+
+    def _nav(self, path):
+        html = self.client.get(path).content.decode()
+        return html.split('<nav class="navbar">')[1].split("</nav>")[0]
+
+    def test_a_captured_service_page_gets_the_seeded_menu(self):
+        """This is the page that used to render _nav_6.html."""
+        nav = self._nav("/painting/")
+        self.assertIn("fa-utensils", nav)
+        self.assertIn('href="/kitchen-remodeling/"', nav)
+
+    def test_each_service_page_highlights_itself(self):
+        for path in ("/painting/", "/kitchen-remodeling/", "/shed-builder/"):
+            with self.subTest(path=path):
+                active = re.findall(r'<a href="([^"]+)" class="active"',
+                                    self._nav(path))
+                self.assertIn(path, active)
+
+    def test_the_cta_follows_the_phone_in_settings(self):
+        settings_row = SiteSetting.load()
+        settings_row.phone = "(410) 555-0100"
+        settings_row.save()
+        nav = self._nav("/")
+        self.assertIn("tel:4105550100", nav)
+        self.assertIn("(410) 555-0100", nav)
+
+    def test_a_service_added_after_seeding_appears_once_added_to_the_menu(self):
+        """The point of the whole exercise: a new service needs no new template."""
+        header = Navigation.objects.get(slug="header")
+        dropdown = MenuItem.objects.get(navigation=header, label="Services")
+        MenuItem.objects.create(navigation=header, label="HVAC",
+                                url="/hvac/", parent=dropdown, sort_order=99)
+        self.assertIn("HVAC", self._nav("/"))
+
+
+class SectionRegistryTests(TestCase):
+    """The section render registry must stay inert unless deliberately used.
+
+    `content/templates/content/sections/` ships fourteen templates named after
+    section types. Every one of them reads fields `Section` does not have, so
+    registering them would render the 19 captured hero sections as
+    `<h1 class="hero-headline"></h1>` -- an empty H1 on all nineteen pages, with
+    a 200 response and a valid-looking document around it.
+
+    These tests pin the empty default so that registering a type is a visible
+    act with a test attached, rather than a plausible-looking one-liner.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        importer.import_pages(settings.REPO_ROOT, reset=True)
+        clear_template_cache()
+
+    def test_no_section_type_is_registered_by_default(self):
+        self.assertEqual(
+            registry.SECTION_TEMPLATES, {},
+            "SECTION_TEMPLATES must ship empty. A type may only be registered "
+            "once the model supplies its fields and a test covers the output.",
+        )
+
+    def test_no_captured_section_type_resolves_to_a_structured_template(self):
+        """The live corpus must render entirely from stored HTML.
+
+        This is the test that would have caught the original mapping: `hero`,
+        `gallery` and `form` are the only captured types that had an entry, and
+        those three account for 23 of the 58 sections.
+        """
+        types = set(Section.objects.values_list("type", flat=True))
+        self.assertTrue(types, "importer produced no sections")
+        for section_type in sorted(types):
+            with self.subTest(type=section_type):
+                self.assertIsNone(registry.template_for(section_type))
+
+    def test_unregistered_sections_resolve_to_the_raw_template(self):
+        for section_type in sorted(set(Section.objects.values_list("type", flat=True))):
+            with self.subTest(type=section_type):
+                section = Section(type=section_type)
+                self.assertEqual(
+                    registry.get_section_template(section).template.name,
+                    registry.RAW_SECTION,
+                )
+
+    def test_registering_a_type_routes_sections_to_that_template(self):
+        """The extension point works, so it is a real opt-in rather than dead code."""
+        registry.register("test_probe", "content/sections/_raw.html")
+        self.addCleanup(registry.unregister, "test_probe")
+        self.assertEqual(registry.template_for("test_probe"),
+                         "content/sections/_raw.html")
+
+    def test_unregistering_restores_raw_rendering(self):
+        registry.register("test_probe", "content/sections/_raw.html")
+        registry.unregister("test_probe")
+        self.assertIsNone(registry.template_for("test_probe"))
+
+    def test_shipped_sketches_reference_fields_the_model_lacks(self):
+        """The reference templates are unrenderable, which is why they are inert.
+
+        If someone later adds these fields to `Section`, this test is the signal
+        to revisit the registry rather than a silent failure.
+        """
+        real = {f.name for f in Section._meta.get_fields()}
+        for name in ("hero", "faq", "form", "gallery", "features"):
+            with self.subTest(template=name):
+                source = (Path(registry.__file__).parent / "templates"
+                          / "content" / "sections" / f"{name}.html").read_text()
+                body = re.sub(r"\{% comment %\}.*?\{% endcomment %\}", "", source,
+                              flags=re.S)
+                fields = set(re.findall(r"section\.([a-z_]+)", body))
+                # The templates are allowed to use relations that do exist.
+                self.assertTrue(fields - {"images", "faqs"} - real,
+                                f"{name}.html now only uses real fields; "
+                                f"consider registering it with a test")
+                self.assertNotIn(f'"{name}"', registry.SECTION_TEMPLATES)
+
+
+class DynamicHeadBlockTests(TestCase):
+    """base.html's own head_meta block must track the database.
+
+    Rendered from base.html directly, so this tests the block as written rather
+    than what any particular page ends up emitting -- see `PageHeadWiringTests`
+    for that, which is a different and less happy answer.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.page = Page.objects.create(
+            slug="head-probe", title="Head Probe", path="/head-probe/",
+            seo_title="Probe SEO Title",
+            seo_description="Probe description.",
+        )
+        cls.settings_row = SiteSetting.load()
+        cls.settings_row.company_name = "Probe Company"
+        cls.settings_row.seo_title_suffix = "Probe Suffix"
+        cls.settings_row.phone = "+14435550000"
+        cls.settings_row.city = "Reisterstown"
+        cls.settings_row.state = "MD"
+        cls.settings_row.zip_code = "21136"
+        cls.settings_row.save()
+
+    def setUp(self):
+        cache.clear()
+        self.request = RequestFactory().get("/head-probe/")
+        self.request.user = __import__(
+            "django.contrib.auth.models", fromlist=["AnonymousUser"]
+        ).AnonymousUser()
+
+    def _render(self):
+        return render_to_string("base.html", {
+            "page": self.page,
+            "site_settings": SiteSetting.load(),
+            "request": self.request,
+            "SITE_URL": "https://example.test",
+        })
+
+    def test_title_uses_the_page_seo_title_and_the_suffix(self):
+        self.assertIn("<title>Probe SEO Title | Probe Suffix</title>",
+                      self._render())
+
+    def test_title_falls_back_to_the_page_title_then_to_settings(self):
+        self.page.seo_title = ""
+        self.assertIn("<title>Head Probe | Probe Suffix</title>", self._render())
+        self.page.title = ""
+        # effective_seo_title is default_seo_title or company_name.
+        self.assertIn("<title>Probe Company | Probe Suffix</title>",
+                      self._render())
+
+    def test_description_uses_the_page_then_settings(self):
+        self.assertIn('name="description" content="Probe description."',
+                      self._render())
+        self.page.seo_description = ""
+        html = self._render()
+        self.assertIn('name="description" content="', html)
+        self.assertNotIn('name="description" content="Probe description."', html)
+
+    def test_author_and_site_name_come_from_settings(self):
+        html = self._render()
+        self.assertIn('name="author" content="Probe Company"', html)
+        self.assertIn('property="og:site_name" content="Probe Company"', html)
+
+    def test_robots_follows_the_page_flag(self):
+        self.assertIn('content="index, follow"', self._render())
+        self.page.noindex = True
+        self.assertIn('content="noindex, follow"', self._render())
+
+    def test_canonical_and_og_url_use_the_request_path(self):
+        html = self._render()
+        self.assertIn('rel="canonical" href="https://example.test/head-probe/"',
+                      html)
+        self.assertIn('property="og:url" content="https://example.test/head-probe/"',
+                      html)
+
+    def test_open_graph_and_twitter_track_the_page(self):
+        html = self._render()
+        self.assertIn('property="og:title" content="Probe SEO Title | Probe Suffix"',
+                      html)
+        self.assertIn('name="twitter:title" content="Probe SEO Title | Probe Suffix"',
+                      html)
+        self.assertIn('name="twitter:card" content="summary_large_image"', html)
+
+    def test_json_ld_carries_the_business_details(self):
+        html = self._render()
+        self.assertIn('"@type": "HomeAndConstructionBusiness"', html)
+        self.assertIn('"name": "Probe Company"', html)
+        self.assertIn('"telephone": "+14435550000"', html)
+        self.assertIn('"addressLocality": "Reisterstown"', html)
+
+    def test_verification_token_is_emitted_when_set(self):
+        self.assertNotIn("google-site-verification", self._render())
+        self.settings_row.google_site_verification = "probe-token"
+        self.settings_row.save()
+        cache.clear()
+        self.assertIn('name="google-site-verification" content="probe-token"',
+                      self._render())
+
+
+class PageHeadWiringTests(TestCase):
+    """Which head does a public page actually serve? (Known defect, pinned.)
+
+    `content/page.html` overrides base.html's `head_meta` with
+    `{% page_head page %}`, which renders the imported `Page.head_html`.
+
+    For the homepage that captured head is itself a template that reads
+    `page.effective_title` and `site_settings.effective_seo_title`, so the
+    Studio fields reach the served page. For the other 18 pages the captured
+    head is a frozen copy of the live markup: the title, description, keywords,
+    author and every Open Graph and Twitter tag are literal strings. Only
+    `canonical` and `og:url` are expressions.
+
+    The consequence, which is what these tests record: editing `seo_title` on
+    any page except the homepage changes nothing that a visitor or a crawler
+    sees. `DynamicHeadBlockTests` shows the dynamic block in base.html is
+    complete and correct, so the fix is to stop overriding it.
+    """
+
+    FROZEN_TITLE = "REAL LIFE EXPERIENCE LLC | About Renovation & Remodeling Maryland"
+
+    @classmethod
+    def setUpTestData(cls):
+        importer.import_pages(settings.REPO_ROOT, reset=True)
+        clear_template_cache()
+        cls.about = Page.objects.get(slug="about")
+        cls.home = Page.objects.get(slug="index")
+
+    def setUp(self):
+        cache.clear()
+
+    def test_the_page_template_overrides_the_dynamic_head(self):
+        """If this ever passes the other way, the defect below is fixed."""
+        source = (Path(__file__).resolve().parent / "templates" / "content"
+                  / "page.html").read_text()
+        self.assertIn("{% block head_meta %}{% page_head page %}{% endblock %}",
+                      source)
+
+    def test_imported_pages_serve_a_single_head(self):
+        html = self.client.get("/about/").content.decode()
+        self.assertEqual(html.count("<title>"), 1,
+                         "two <title> tags: head_html is being rendered "
+                         "alongside base.html's block")
+        self.assertEqual(html.lower().count('name="description"'), 1)
+
+    def test_eighteen_of_nineteen_pages_serve_a_frozen_title(self):
+        frozen = [p.slug for p in Page.objects.exclude(head_html__in=["", None])
+                  if "{{" not in p.head_html.split("</title>")[0]]
+        self.assertEqual(len(frozen), 18,
+                         f"expected 18 frozen head_html rows, found {len(frozen)}")
+        self.assertNotIn("index", frozen, "the homepage head is dynamic")
+
+    def test_the_about_page_serves_its_frozen_title(self):
+        html = self.client.get("/about/").content.decode()
+        self.assertIn(f"<title>{self.FROZEN_TITLE}</title>", html)
+
+    def test_editing_seo_title_does_not_reach_the_about_page(self):
+        """The defect. Editing the field is a no-op on 18 of 19 pages."""
+        self.about.seo_title = "A Title An Editor Carefully Chose"
+        self.about.save()
+        cache.clear()
+        html = self.client.get("/about/").content.decode()
+        self.assertIn(f"<title>{self.FROZEN_TITLE}</title>", html)
+        self.assertNotIn("A Title An Editor Carefully Chose", html)
+
+    def test_editing_the_company_name_does_not_reach_the_about_page(self):
+        self.assertNotIn("<title>Probe Company", self.client.get("/about/").content.decode())
+
+    def test_the_homepage_head_does_follow_the_settings(self):
+        """The one page where the captured head defers to the database."""
+        row = SiteSetting.load()
+        row.company_name = "Probe Company"
+        row.seo_title_suffix = "Probe Suffix"
+        row.save()
+        cache.clear()
+        html = self.client.get("/").content.decode()
+        self.assertIn("Probe Company", html)
+        self.assertIn("Probe Suffix", html)

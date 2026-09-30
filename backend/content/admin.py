@@ -4,22 +4,25 @@ Sections are edited inline on their page, so the common case — change this
 heading, reorder these blocks, hide that one — is a single screen. The raw HTML
 box is always available because captured sections are the mirror's own markup.
 """
-from django.contrib import admin
-from django.http import Http404
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
+from django.http import Http404, HttpResponseRedirect
 from django.db.models import Sum
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.urls import reverse
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils import timezone
+from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from content.models import (
-    FAQ, MediaItem, Page, Project, Section, SectionImage, ServiceArea,
-    SiteSetting,
-    Testimonial, TrustBadge,
+    ContentRevision, FAQ, MediaItem, Navigation, MenuItem, Page, Project,
+    Section, SectionImage, ServiceArea, SiteSetting, Testimonial, TrustBadge,
 )
 from content.render import clear_template_cache
+from content.cache import (
+    invalidate_page_cache,
+)
 from main.listview import StudioListMixin
 from main.widgets import MediaPickerFieldsMixin
 
@@ -92,8 +95,9 @@ class SectionImageAdmin(MediaPickerFieldsMixin, StudioListMixin,
 @admin.register(Page)
 class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
                 admin.ModelAdmin):
-    list_display = ("first_image", "path", "title", "summary", "is_published",
-                    "content_link", "image_count", "locked_count", "updated_at")
+    list_display = ("first_image", "path", "title", "summary", "status_chip",
+                    "is_published", "content_link", "image_count", "locked_count",
+                    "updated_at")
     list_display_links = ("path",)
     media_picker_fields = ("og_image",)
     # nav_variant and footer_variant are deliberately absent. They name which
@@ -101,9 +105,12 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
     # "partials/_nav_1.html" -- and an editor filtering pages by them is not a
     # task anyone has. Both are shown read-only on the change form under "Page
     # settings", which is where a value that is really a build detail belongs.
-    list_filter = ("is_published", "show_in_menu")
+    list_filter = ("status", "is_published", "show_in_menu")
     search_fields = ("path", "title", "seo_title", "seo_description")
     ordering = ("path",)
+    actions = (
+        "action_publish", "action_unpublish", "action_archive",
+    )
     # slug, path and sort_order decide the public URL; the shell variants
     # decide which navbar and footer render. Listing a field in a fieldset does
     # not make it read-only -- it has to be named here as well, which is what
@@ -112,9 +119,11 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
         "created_at", "updated_at", "preview_link", "edit_content",
         "url_preview", "main_attrs_readonly", "slug", "path", "sort_order",
         "nav_variant", "footer_variant", "post_variant", "head_summary",
+        "published_at", "published_by_readonly", "revision_history",
     )
     fieldsets = (
-        (None, {"fields": ("title", "is_published", "show_in_menu")}),
+        (None, {"fields": ("title", "status", "is_published", "show_in_menu",
+                           "scheduled_for")}),
         ("Page content", {
             "fields": ("preview_link", "edit_content"),
             "description": (
@@ -145,22 +154,67 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
         }),
         ("Timestamps", {
             "classes": ("collapse",),
-            "fields": ("created_at", "updated_at"),
+            "fields": ("created_at", "updated_at",
+                       "published_at", "published_by_readonly"),
+        }),
+        ("History", {
+            "classes": ("collapse",),
+            "fields": ("revision_history",),
+            "description": (
+                "Every save takes a snapshot. Restoring one puts the page back "
+                "as it was, including its sections."
+            ),
         }),
     )
 
     def get_urls(self):
-        """Add the page-content screen to the page admin's own namespace.
+        """Add the page's own screens to the page admin's namespace.
 
-        On PageAdmin rather than the AdminSite so it sits behind the same
-        change permission as the page it describes, and so `?page=<pk>` links
+        On PageAdmin rather than the AdminSite so they sit behind the same
+        change permission as the page they act on, and so `?page=<pk>` links
         from the section add form resolve.
         """
         return [
             path("<path:object_id>/content/",
                  self.admin_site.admin_view(self.page_content_view),
                  name="content_page_content"),
+            path("<path:object_id>/publish/",
+                 self.admin_site.admin_view(self.publish_view),
+                 name="content_page_publish"),
+            path("<path:object_id>/unpublish/",
+                 self.admin_site.admin_view(self.unpublish_view),
+                 name="content_page_unpublish"),
         ] + super().get_urls()
+
+    def _page_or_404(self, request, object_id):
+        page = self.get_object(request, object_id)
+        if page is None or not self.has_view_or_change_permission(request, page):
+            raise Http404(f"No page with id {object_id!r} or you cannot view it.")
+        return page
+
+    def publish_view(self, request, object_id):
+        """Release one page, from the button on its own form."""
+        page = self._page_or_404(request, object_id)
+        if not self.has_change_permission(request, page):
+            raise PermissionDenied
+        page.publish(user=request.user)
+        self.message_user(
+            request, _("Published %(path)s.") % {"path": page.path},
+            messages.SUCCESS)
+        return HttpResponseRedirect(
+            reverse("admin:content_page_change", args=[page.pk]))
+
+    def unpublish_view(self, request, object_id):
+        """Pull one page off the site, from the button on its own form."""
+        page = self._page_or_404(request, object_id)
+        if not self.has_change_permission(request, page):
+            raise PermissionDenied
+        page.unpublish(user=request.user)
+        self.message_user(
+            request, _("Unpublished %(path)s.") % {"path": page.path},
+            messages.SUCCESS)
+        return HttpResponseRedirect(
+            reverse("admin:content_page_change", args=[page.pk]))
 
     def page_content_view(self, request, object_id, extra_context=None):
         """One page's sections as cards: what each says, and what it looks like.
@@ -214,6 +268,7 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
             "created_at", "updated_at", "preview_link", "edit_content",
             "url_preview", "main_attrs_readonly", "head_summary",
             "nav_variant", "footer_variant", "post_variant",
+            "published_at", "published_by_readonly", "revision_history",
         ]
         if obj is not None:
             locked += ["slug", "path", "sort_order"]
@@ -351,32 +406,129 @@ class PageAdmin(MediaPickerFieldsMixin, StudioListMixin,
         """Public URL for the row's "view on site" action, or None.
 
         A draft has no public page, so offering the link would send the owner to
-        a 404 and imply the change is live. Publishing is the flag that decides,
-        not the presence of a path.
+        a 404 and imply the change is live. `is_live` is the flag that decides,
+        because it accounts for the workflow stage as well as the switch.
         """
-        if not obj.pk or not obj.is_published:
+        if not obj.pk or not obj.is_live:
             return None
         return reverse("index") if obj.path == "/" else obj.path
+
+    @admin.display(description="Status")
+    def status_chip(self, obj):
+        """Publish state in one word.
+
+        The bare flag cannot say "scheduled for Friday", and a scheduled page
+        that reads the same as a live one is how an editor ships something at
+        the wrong time.
+        """
+        if obj.status == Page.Status.SCHEDULED and obj.scheduled_for:
+            when = timezone.localtime(obj.scheduled_for).strftime("%b %-d, %H:%M")
+            return format_html('<span class="chip chip-muted">{}</span>', when)
+        return format_html(
+            '<span class="chip chip-{}">{}</span>',
+            "success" if obj.status == Page.Status.PUBLISHED else "muted",
+            obj.get_status_display())
+
+    @admin.display(description="Published by")
+    def published_by_readonly(self, obj):
+        if not obj.published_by:
+            return format_html('<span class="muted">—</span>')
+        return obj.published_by.get_username()
+
+    @admin.display(description="Revisions")
+    def revision_history(self, obj):
+        """The last few snapshots, newest first, each with its author."""
+        if not obj.pk:
+            return ""
+        revisions = obj.revisions.select_related("created_by")[:10]
+        if not revisions:
+            return format_html('<span class="muted">—</span>')
+        return format_html(
+            "<ul>{}</ul>",
+            format_html_join(
+                "", "<li>{} — {}</li>",
+                ((format_html("{}", revision.note or "auto"),
+                  format_html("{} · {}", revision.created_at.strftime("%b %-d, %H:%M"),
+                              revision.created_by.get_username()
+                              if revision.created_by else "system"))
+                 for revision in revisions),
+            ))
+
+    @admin.action(description=_("Publish selected pages"))
+    def action_publish(self, request, queryset):
+        published = 0
+        for page in queryset:
+            if page.status == Page.Status.PUBLISHED:
+                continue
+            page.publish(user=request.user)
+            self.message_user(
+                request, _("Published: %s") % page.path, messages.SUCCESS)
+            published += 1
+        if not published:
+            self.message_user(request, _("Nothing to publish."), messages.WARNING)
+
+    @admin.action(description=_("Unpublish selected pages"))
+    def action_unpublish(self, request, queryset):
+        count = 0
+        for page in queryset:
+            if page.status == Page.Status.DRAFT:
+                continue
+            page.unpublish(user=request.user)
+            count += 1
+        self.message_user(
+            request, _("Unpublished %(count)d page(s).") % {"count": count},
+            messages.SUCCESS)
+
+    @admin.action(description=_("Archive selected pages"))
+    def action_archive(self, request, queryset):
+        count = 0
+        for page in queryset:
+            if page.status == Page.Status.ARCHIVED:
+                continue
+            page.archive(user=request.user)
+            count += 1
+        self.message_user(
+            request, _("Archived %(count)d page(s).") % {"count": count},
+            messages.SUCCESS)
 
     def preview_link(self, obj):
         if not obj.pk:
             return "Save the page first."
-        url = reverse("index") if obj.path == "/" else obj.path
+        if obj.is_live:
+            url = reverse("index") if obj.path == "/" else obj.path
+            return format_html('<a class="button" href="{}" target="_blank">'
+                               'Open {} in a new tab</a>', url, obj.path)
         return format_html('<a class="button" href="{}" target="_blank">'
-                           'Open {} in a new tab</a>', url, obj.path)
+                           'Preview {} (not public)</a>',
+                           reverse("content_preview", args=[obj.slug]), obj.path)
 
     def save_model(self, request, obj, form, change):
-        # A compiled template of the old markup may still be cached.
         clear_template_cache()
+        if request.user.is_authenticated:
+            obj.updated_by = request.user
+            if obj.is_live and obj.published_at is None:
+                obj.published_at = timezone.now()
+                obj.published_by = request.user
         super().save_model(request, obj, form, change)
+        if change:
+            # Taken after the save, so the snapshot records the version that
+            # now exists rather than the one that just went away. History is
+            # only useful if the newest entry is what a visitor sees.
+            ContentRevision.snapshot(obj, user=request.user)
+        if obj.pk:
+            invalidate_page_cache(obj.pk)
 
     def save_related(self, request, form, formsets, change):
         clear_template_cache()
         super().save_related(request, form, formsets, change)
+        if change and hasattr(form.instance, 'pk'):
+            invalidate_page_cache(form.instance.pk)
 
     def delete_model(self, request, obj):
         clear_template_cache()
         super().delete_model(request, obj)
+        if obj.pk:
+            invalidate_page_cache(obj.pk)
 
 
 @admin.register(Section)
@@ -413,6 +565,27 @@ class SectionAdmin(MediaPickerFieldsMixin, StudioListMixin,
     )
     inlines = [SectionImageInline]
     actions = ["make_visible", "make_hidden"]
+
+    def save_model(self, request, obj, form, change):
+        clear_template_cache()
+        super().save_model(request, obj, form, change)
+        self._snapshot_page(obj.page, request.user, "section saved")
+
+    def _snapshot_page(self, page, user, note):
+        """Record the page a section edit just changed.
+
+        The revision belongs to the page, not the section, because that is what
+        somebody restores. Snapshotting after the save is what makes it the
+        version a visitor would now see.
+        """
+        if page is None:
+            return
+        ContentRevision.snapshot(page, user=user, note=note)
+        invalidate_page_cache(page.pk)
+
+    @admin.display(description="Sections")
+    def section_count(self, obj):
+        return obj.sections.count()
 
     @admin.display(description="Text")
     def excerpt(self, obj):
@@ -488,12 +661,84 @@ class SectionAdmin(MediaPickerFieldsMixin, StudioListMixin,
         n = queryset.update(is_visible=True)
         clear_template_cache()
         self.message_user(request, f"{n} section(s) shown.")
+        for page in Page.objects.filter(pk__in=queryset.values_list("page_id", flat=True)):
+            self._snapshot_page(page, request.user, "sections shown")
+            invalidate_page_cache(page.pk)
 
     @admin.action(description="Hide selected sections")
     def make_hidden(self, request, queryset):
         n = queryset.update(is_visible=False)
         clear_template_cache()
         self.message_user(request, f"{n} section(s) hidden.")
+        for page in Page.objects.filter(pk__in=queryset.values_list("page_id", flat=True)):
+            self._snapshot_page(page, request.user, "sections hidden")
+            invalidate_page_cache(page.pk)
+
+
+@admin.register(ContentRevision)
+class ContentRevisionAdmin(StudioListMixin, admin.ModelAdmin):
+    """Version history for a page, with the means to go back.
+
+    Read-only apart from the restore action: a revision is a record of
+    something that already happened, and editing one would make it a record of
+    something that did not.
+    """
+
+    list_display = ("page", "short_id", "title", "note", "author", "created_at")
+    list_filter = ("page",)
+    search_fields = ("page__title", "page__path", "note", "title")
+    readonly_fields = ("page", "title", "head_html", "seo_title",
+                       "seo_description", "content_html", "sections_json",
+                       "created_by", "created_at", "note", "size")
+    actions = ["restore_selected"]
+    fields = readonly_fields
+
+    @admin.display(description="Rev")
+    def short_id(self, obj):
+        return f"r{obj.pk}"
+
+    @admin.display(description="By")
+    def author(self, obj):
+        return obj.created_by.get_username() if obj.created_by else "system"
+
+    @admin.display(description="Sections")
+    def size(self, obj):
+        rows = obj.section_rows()
+        return f"{len(rows)} section(s)" if rows else "—"
+
+    def has_add_permission(self, request):
+        # Snapshots are taken by saving the page, never typed in.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Restore selected revisions")
+    def restore_selected(self, request, queryset):
+        """Put each revision back, one page at a time.
+
+        Only the oldest selected revision of each page is restored: applying
+        several to the same page in sequence would leave the page equal to the
+        oldest of them, which is what the editor asked for least often.
+        """
+        by_page = {}
+        for revision in queryset.select_related("page").order_by("created_at", "pk"):
+            by_page.setdefault(revision.page_id, revision)
+        restored = []
+        for page_id, revision in by_page.items():
+            page = revision.restore()
+            restored.append(page.path)
+            invalidate_page_cache(page.pk)
+            ContentRevision.snapshot(
+                page, user=request.user,
+                note=f"restored r{revision.pk}")
+        self.message_user(
+            request,
+            _("Restored %(count)s page(s): %(paths)s")
+            % {"count": len(restored), "paths": ", ".join(restored)},
+            messages.SUCCESS,
+        )
+        return None
 
 
 @admin.register(ServiceArea)
@@ -655,10 +900,33 @@ class SiteSettingAdmin(StudioListMixin, admin.ModelAdmin):
         return False
 
     def save_model(self, request, obj, form, change):
-        # Singleton: never let a second row appear.
+        # Singleton: never let a second row appear. The cache drop is a
+        # post_save signal on the model, so it covers every writer.
         obj.pk = 1
         clear_template_cache()
         super().save_model(request, obj, form, change)
+
+
+@admin.register(Navigation)
+class NavigationAdmin(StudioListMixin, admin.ModelAdmin):
+    list_display = ("name", "slug", "is_active", "sort_order")
+    list_editable = ("is_active", "sort_order")
+    list_filter = ("is_active",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(MenuItem)
+class MenuItemAdmin(StudioListMixin, admin.ModelAdmin):
+    list_display = ("label", "navigation", "parent", "service", "page",
+                    "sort_order", "is_visible", "show_on_desktop", "show_on_mobile",
+                    "is_cta", "is_featured")
+    list_editable = ("sort_order", "is_visible", "show_on_desktop",
+                     "show_on_mobile", "is_cta", "is_featured")
+    list_filter = ("navigation", "is_visible", "show_on_desktop",
+                   "show_on_mobile", "is_cta", "is_featured")
+    search_fields = ("label", "url")
+    raw_id_fields = ("service", "page")
 
 
 class MediaItemInline(admin.TabularInline):
@@ -746,10 +1014,9 @@ class MediaItemAdmin(StudioListMixin, admin.ModelAdmin):
                 format_html('<li><a href="{}">{}</a></li>', row["url"], text)
                 if row["url"] else format_html("<li>{}</li>", text)
             )
-        # Each item is already escaped by format_html, so joining them is the
-        # one place that must not escape a second time.
         return format_html('<ul class="used-by-list">{}</ul>',
-                           mark_safe("".join(items)))
+                           format_html_join("", "<li>{}</li>",
+                                            ((item,) for item in items)))
 
     @admin.display(description="Size", ordering="image")
     def size_display(self, obj):

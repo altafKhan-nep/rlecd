@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% load static %}
+{% comment %}
+A service page built from its CRM row, for services that have no captured
+Page of their own.
+
+The fifteen services the site shipped with have captured pages and are served
+by their own URLs in main/urls.py. A service added in the CRM afterwards has
+no captured markup, so this is what its URL renders: the service's own fields,
+in the same shell as every other page. Without it, `Service.get_absolute_url()`
+returns an address that 404s, which is the failure that makes a catalogue row
+look broken the moment somebody adds one.
+{% endcomment %}
+
+{% block head_meta %}
+    <title>{{ service.effective_seo_title }}{% if site_settings.seo_title_suffix %} | {{ site_settings.seo_title_suffix }}{% endif %}</title>
+    <meta name="description" content="{{ service.effective_seo_description }}">
+    <link rel="canonical" href="{{ SITE_URL }}{{ service.get_absolute_url }}">
+    <meta name="robots" content="index, follow">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ SITE_URL }}{{ service.get_absolute_url }}">
+    <meta property="og:title" content="{{ service.effective_seo_title }}">
+    <meta property="og:description" content="{{ service.effective_seo_description }}">
+    <meta property="og:image" content="{{ SITE_URL }}{{ service.og_image|default:site_settings.effective_og_image }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ service.effective_seo_title }}">
+    <meta name="twitter:description" content="{{ service.effective_seo_description }}">
+{% endblock %}
+
+{% block content %}
+    <section class="service-page">
+        <div class="container">
+            {% if service.hero_image %}
+            <img src="{{ service.hero_image }}" alt="{{ service.name }}"
+                 class="service-hero-image" loading="eager">
+            {% elif service.featured_image %}
+            <img src="{{ service.featured_image }}" alt="{{ service.name }}"
+                 class="service-hero-image" loading="eager">
+            {% endif %}
+
+            <h1>{{ service.name }}</h1>
+            {% if service.short_description %}
+            <p class="service-intro">{{ service.short_description }}</p>
+            {% endif %}
+
+            {% if service.page_body %}
+            <div class="service-body">{{ service.page_body|safe }}</div>
+            {% elif service.full_description %}
+            <div class="service-body">{{ service.full_description|linebreaks }}</div>
+            {% endif %}
+        </div>
+
+        <div class="service-cta">
+            <div class="container">
+                <h2>Ready to talk about your {{ service.name|lower }}?</h2>
+                <a class="btn btn-primary" href="{{ site_settings.effective_cta_url }}">
+                    {{ service.cta_label|default:site_settings.effective_cta_label }}
+                </a>
+                <a class="btn btn-secondary" href="/contact/">Request a quote</a>
+            </div>
+        </div>
+    </section>
+{% endblock %}

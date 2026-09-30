@@ -53,6 +53,9 @@ NAV_GROUPS = (
         ("Testimonials", "quote", "admin:content_testimonial_changelist", None),
         ("FAQs", "help-circle", "admin:content_faq_changelist", None),
         ("Trust badges", "shield", "admin:content_trustbadge_changelist", None),
+        ("Navigation", "menu", "admin:content_navigation_changelist", None),
+        ("Menu items", "list", "admin:content_menuitem_changelist", None),
+        ("Revisions", "history", "admin:content_contentrevision_changelist", None),
         ("Site settings", "settings", "admin:content_sitesetting_changelist", None),
     )),
     ("CRM", (

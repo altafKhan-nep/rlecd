@@ -27,10 +27,13 @@ from main.listview import StudioListMixin
 
 @admin.register(Service)
 class ServiceAdmin(StudioListMixin, admin.ModelAdmin):
-    list_display = ("name", "slug", "is_active", "sort_order", "lead_count")
-    list_editable = ("is_active", "sort_order")
-    search_fields = ("name", "slug")
-    list_filter = ("is_active",)
+    list_display = ("name", "slug", "is_active", "is_published", "show_in_navigation",
+                    "show_on_homepage", "is_featured", "sort_order", "lead_count")
+    list_editable = ("is_active", "is_published", "show_in_navigation",
+                     "show_on_homepage", "is_featured", "sort_order")
+    search_fields = ("name", "slug", "short_description", "seo_title")
+    list_filter = ("is_active", "is_published", "show_in_navigation",
+                   "show_on_homepage", "is_featured")
 
     @admin.display(description="Leads")
     def lead_count(self, obj):

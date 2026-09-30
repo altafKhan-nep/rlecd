@@ -1,80 +1,10 @@
-{% load static %}
-<nav class="navbar">
-        <div class="nav-container">
-            <!-- Logo -->
-            <a href="{% url 'index' %}" class="logo-brand">
-                <img src="{% static 'img/rlecd_maryland_logo.png' %}" alt="REAL LIFE EXPERIENCE LLC Logo">
-            </a>
+{% comment %}
+Delegates to the database-driven navigation partial.
 
-            <!-- Desktop Navigation -->
-            <div class="nav-wrapper">
-                <ul class="nav-links">
-                    <li><a href="{% url 'index' %}" class="nav-item">Home</a></li>
-                    <li><a href="{% url 'about' %}" class="nav-item">About</a></li>
-                    <li class="dropdown">
-                        <a href="#" class="nav-item drop-trigger">Services <i class="fas fa-chevron-down"></i></a>
-                        <div class="dropdown-menu">
-                            <ul class="mega-grid">
-                                <li><a href="{% url 'bathroom' %}"><i class="fas fa-bath"></i> Bathroom Remodeling</a></li>
-                                <li><a href="{% url 'kitchen' %}"><i class="fas fa-utensils"></i> Kitchen Remodeling</a></li>
-                                <li><a href="{% url 'basement' %}"><i class="fas fa-tools"></i> Basement Finishing</a></li>
-                                <li><a href="{% url 'painting' %}"><i class="fas fa-paint-roller"></i> Painting</a></li>
-                                <li><a href="{% url 'home_improvement' %}"><i class="fas fa-home"></i> Home Improvement</a></li>
-                                <li><a href="{% url 'patios_decks' %}"><i class="fas fa-hammer"></i> Patios & Decks</a></li>
-                                <li><a href="{% url 'cabinets' %}"><i class="fas fa-border-all"></i> Cabinets</a></li>
-                                <li><a href="{% url 'woodworking' %}"><i class="fas fa-tree"></i> Woodworking</a></li>
-                                <li><a href="{% url 'hardscaping' %}"><i class="fas fa-mountain"></i> Hardscaping</a></li>
-                                <li><a href="{% url 'walkway_designs' %}"><i class="fas fa-shoe-prints"></i> Walkway Designs</a></li>
-                                <li><a href="{% url 'pergolas' %}"><i class="fas fa-archway"></i> Pergolas</a></li>
-                                <li><a href="{% url 'lead_removal' %}"><i class="fas fa-shield-virus"></i> Lead Removal</a></li>
-                                <li><a href="{% url 'shed_builder' %}" class="active"><i class="fas fa-warehouse"></i> Shed Builder</a></li>
-                                <li><a href="{% url 'lead_renovator' %}"><i class="fas fa-certificate"></i> Lead Renovator</a></li>
-                                <li><a href="{% url 'additions' %}"><i class="fas fa-plus-square"></i> Home Additions</a></li>
-                            </ul>
-                        </div>
-                    </li>
-                    <li><a href="{% url 'areas_we_serve' %}" class="nav-item">Areas We Serve</a></li>
-                    <li><a href="{% url 'contact' %}" class="nav-item">Contact</a></li>
-                    <li><a href="tel:(443) 898-3143" class="btn-cta"><i class="fas fa-phone-alt"></i> (443) 898-3143</a></li>
-                </ul>
-            </div>
-
-            <!-- Hamburger Icon -->
-            <div class="mobile-menu-btn" id="mobile-toggle">
-                <i class="fas fa-bars"></i>
-            </div>
-        </div>
-
-        <!-- Mobile Slide-out Menu -->
-        <div class="mobile-nav" id="mobile-menu">
-            <div class="mobile-nav-header">
-                <span>Menu</span>
-                <i class="fas fa-times" id="mobile-close"></i>
-            </div>
-            <ul class="mobile-nav-links">
-                <li><a href="{% url 'index' %}">Home</a></li>
-                <li><a href="{% url 'about' %}">About</a></li>
-                <li><a href="{% url 'areas_we_serve' %}">Areas We Serve</a></li>
-                <li><a href="{% url 'contact' %}">Contact</a></li>
-                <li class="mobile-services-title">Our Services</li>
-                <div class="mobile-services-list">
-                    <a href="{% url 'bathroom' %}">Bathroom Remodeling</a>
-                    <a href="{% url 'kitchen' %}">Kitchen Remodeling</a>
-                    <a href="{% url 'basement' %}">Basement Finishing</a>
-                    <a href="{% url 'painting' %}">Painting</a>
-                    <a href="{% url 'home_improvement' %}">Home Improvement</a>
-                    <a href="{% url 'patios_decks' %}">Patios & Decks</a>
-                    <a href="{% url 'cabinets' %}">Cabinets</a>
-                    <a href="{% url 'woodworking' %}">Woodworking</a>
-                    <a href="{% url 'hardscaping' %}">Hardscaping</a>
-                    <a href="{% url 'walkway_designs' %}">Walkway Designs</a>
-                    <a href="{% url 'pergolas' %}">Pergolas</a>
-                    <a href="{% url 'lead_removal' %}">Lead Removal</a>
-                    <a href="{% url 'shed_builder' %}" class="active">Shed Builder</a>
-                    <a href="{% url 'lead_renovator' %}">Lead Renovator</a>
-                    <a href="{% url 'additions' %}">Home Additions</a>
-                </div>
-                <li><a href="tel:(443) 898-3143" class="btn-cta-mobile"><i class="fas fa-phone-alt"></i> Call (443) 898-3143</a></li>
-            </ul>
-        </div>
-    </nav>
+The captured site shipped one near-identical copy of this navbar per service
+page, differing only in which service link carried class="active". Six copies
+of a service list is six places to forget a service, and the mirror proof here
+is that they are byte-identical apart from that class. The active state is now
+derived from the request path, so one partial serves all six.
+{% endcomment %}
+{% include "partials/_nav_dynamic.html" %}

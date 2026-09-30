@@ -1,0 +1,25 @@
+{% comment %}
+UNREGISTERED REFERENCE SKEETCH -- not reachable, not tested.
+
+This template reads fields that the `Section` model does not have:
+section.background, section.button_text, section.button_url, section.description, section.style, section.title
+
+Rendered as-is it produces empty markup -- an empty <h1>, no copy, no images --
+which is exactly why it is not registered in `content/registry.py`. The empty
+H1 on all 19 hero sections is the specific failure this prevents.
+
+Do not register it until the model can supply those fields AND a test proves
+the rendered output. See the registry module docstring.
+{% endcomment %}
+<section class="cta-section {% if section.style %}{{ section.style }}{% else %}cta-primary{% endif %}"
+         {% if section.background %}style="background-image: url('{{ section.background }}');"{% endif %}>
+    <div class="container cta-content">
+        <h2 class="cta-title">{{ section.title }}</h2>
+        {% if section.description %}
+            <p class="cta-description">{{ section.description }}</p>
+        {% endif %}
+        {% if section.button_text and section.button_url %}
+            <a href="{{ section.button_url }}" class="cta-button">{{ section.button_text }}</a>
+        {% endif %}
+    </div>
+</section>

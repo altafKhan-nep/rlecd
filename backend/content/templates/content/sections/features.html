@@ -1,0 +1,37 @@
+{% comment %}
+UNREGISTERED REFERENCE SKEETCH -- not reachable, not tested.
+
+This template reads fields that the `Section` model does not have:
+section.description, section.features, section.title
+
+Rendered as-is it produces empty markup -- an empty <h1>, no copy, no images --
+which is exactly why it is not registered in `content/registry.py`. The empty
+H1 on all 19 hero sections is the specific failure this prevents.
+
+Do not register it until the model can supply those fields AND a test proves
+the rendered output. See the registry module docstring.
+{% endcomment %}
+<section class="features-section">
+    <div class="container">
+        {% if section.title %}
+            <h2 class="section-title">{{ section.title }}</h2>
+        {% endif %}
+        {% if section.description %}
+            <p class="section-description">{{ section.description }}</p>
+        {% endif %}
+        <div class="features-grid">
+            {% for feature in section.features %}
+                <div class="feature-card">
+                    {% if feature.icon %}
+                        <i class="{{ feature.icon }} feature-icon"></i>
+                    {% endif %}
+                    <h3 class="feature-title">{{ feature.title }}</h3>
+                    <p class="feature-description">{{ feature.description }}</p>
+                    {% if feature.link %}
+                        <a href="{{ feature.link }}" class="feature-link">Learn More</a>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

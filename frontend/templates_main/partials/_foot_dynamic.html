@@ -1,0 +1,90 @@
+{% load static %}
+{% comment %}
+Database-driven footer partial.
+
+Renders footer from SiteSetting and Navigation models. All business content
+comes from the database — logo, description, social links, quick links,
+service links, contact information, CTA, copyright, and legal links.
+No hardcoded phone numbers, email addresses, or social URLs.
+{% endcomment %}
+
+{% with footer_nav=navigation.footer %}
+<footer class="footer">
+    <div class="container footer-grid">
+        <div class="footer-brand">
+            <img src="{{ site_settings.effective_logo }}" alt="{{ site_settings.company_name }}" class="footer-logo">
+            <p>{{ site_settings.tagline|default:site_settings.company_name }}</p>
+            <div class="footer-socials">
+                {% if site_settings.facebook_url %}
+                    <a href="{{ site_settings.facebook_url }}" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+                {% endif %}
+                {% if site_settings.instagram_url %}
+                    <a href="{{ site_settings.instagram_url }}" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+                {% endif %}
+                {% if site_settings.twitter_url %}
+                    <a href="{{ site_settings.twitter_url }}" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+                {% endif %}
+                {% if site_settings.linkedin_url %}
+                    <a href="{{ site_settings.linkedin_url }}" aria-label="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
+                {% endif %}
+                {% if site_settings.youtube_url %}
+                    <a href="{{ site_settings.youtube_url }}" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
+                {% endif %}
+                {% if site_settings.whatsapp_url %}
+                    <a href="{{ site_settings.whatsapp_url }}" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if footer_nav %}
+            {% for item in footer_nav %}
+                <div class="footer-links">
+                    <h4>{{ item.label }}</h4>
+                    <ul>
+                        {% for child in item.dropdown_items %}
+                            <li><a href="{{ child.get_url }}">{{ child.label }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="footer-links">
+                <h4>Quick Links</h4>
+                <ul>
+                    <li><a href="{% url 'index' %}">Home</a></li>
+                    <li><a href="{% url 'about' %}">About Us</a></li>
+                    <li><a href="{% url 'areas_we_serve' %}">Areas We Serve</a></li>
+                    <li><a href="{% url 'contact' %}">Contact</a></li>
+                </ul>
+            </div>
+        {% endif %}
+
+        <div class="footer-contact">
+            <h4>Contact Info</h4>
+            <ul>
+                {% if site_settings.email %}
+                    <li><i class="fas fa-envelope"></i> <a href="mailto:{{ site_settings.email }}">{{ site_settings.email }}</a></li>
+                {% endif %}
+                {% if site_settings.effective_address %}
+                    <li><i class="fas fa-map-marker-alt"></i> {{ site_settings.effective_address }}</li>
+                {% endif %}
+                {% if site_settings.phone %}
+                    <li><i class="fas fa-phone-alt"></i> <strong>{{ site_settings.effective_phone_display }}</strong></li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="footer-cta">
+            <h4>Free Consultation</h4>
+            <p>Ready to start your remodel? Get your free estimate today.</p>
+            <a href="{{ site_settings.effective_cta_url }}" class="footer-btn">{{ site_settings.effective_cta_label }}</a>
+        </div>
+    </div>
+
+    <div class="footer-bottom">
+        <div class="container flex-bottom">
+            <p>{{ site_settings.effective_copyright|safe }}</p>
+        </div>
+    </div>
+</footer>
+{% endwith %}

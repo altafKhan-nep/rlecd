@@ -8,11 +8,12 @@ live mirror intact.
 import logging
 
 from django.contrib import messages
-from django.shortcuts import redirect
+from django.http import Http404
+from django.shortcuts import redirect, render
 
 from content.views import render_page
 from crm import services
-from crm.models import LeadSource
+from crm.models import LeadSource, Service
 
 logger = logging.getLogger(__name__)
 
@@ -125,3 +126,22 @@ def shed_builder(request):
 
 def lead_renovator(request):
     return render_page(request, 'lead_renovator')
+
+def service_page(request, slug):
+    """Serve a CRM service that has no captured page of its own.
+
+    The fifteen services the site shipped with keep their own URLs in
+    urls.py and their captured markup; this catches everything after them, so
+    a service added in the CRM has a working address from the moment it is
+    saved rather than a catalogue row that links to a 404.
+
+    Two cases are refused rather than guessed at. An inactive or unpublished
+    service is a 404, because a hidden service whose page is reachable is not
+    hidden. And a slug that belongs to no service is also a 404, which keeps
+    this catch-all from swallowing typos that would otherwise render a
+    branded "nothing here" page instead of the 404 a visitor should see.
+    """
+    service = Service.objects.visible().filter(slug=slug).first()
+    if service is None:
+        raise Http404(f"No service for slug {slug!r}")
+    return render(request, "service.html", {"service": service})

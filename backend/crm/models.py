@@ -11,6 +11,18 @@ from django.db import models
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
+from datetime import timedelta
+
+
+class ServiceQuerySet(models.QuerySet):
+    def visible(self):
+        """Services a visitor may be shown.
+
+        `is_active` retires a service from the catalogue and `is_published` is
+        the editorial switch; both have to agree before the service appears in
+        navigation, a homepage card, a form dropdown or the sitemap.
+        """
+        return self.filter(is_active=True, is_published=True)
 
 
 class Service(models.Model):
@@ -19,12 +31,41 @@ class Service(models.Model):
     The public forms historically posted two different shapes for this field
     (display strings on the home page, slugs on the contact page) and each
     view re-mapped them independently. This table is the single contract.
+
+    A service is a first-class website entity. The same Service data drives
+    navigation, homepage cards, lead forms, service pages, related projects,
+    FAQs, testimonials, and SEO. No hardcoded service lists exist in templates.
     """
+
+    objects = ServiceQuerySet.as_manager()
 
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=120, unique=True)
+    short_description = models.CharField(max_length=300, blank=True)
+    full_description = models.TextField(blank=True)
+    page_body = models.TextField(
+        blank=True,
+        help_text="The service page's body. Left empty, the page is built from "
+                  "the name, description and image above.",
+    )
+    icon = models.CharField(max_length=100, blank=True)
+    featured_image = models.CharField(max_length=300, blank=True)
+    hero_image = models.CharField(max_length=300, blank=True)
     is_active = models.BooleanField(default=True)
+    show_in_navigation = models.BooleanField(default=True)
+    show_on_homepage = models.BooleanField(default=True)
+    is_featured = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
+    cta_label = models.CharField(max_length=80, blank=True)
+    cta_url = models.CharField(max_length=300, blank=True)
+    seo_title = models.CharField(max_length=200, blank=True)
+    seo_description = models.TextField(blank=True)
+    seo_keywords = models.CharField(max_length=400, blank=True)
+    og_image = models.CharField(max_length=300, blank=True)
+    is_published = models.BooleanField(default=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["sort_order", "name"]
@@ -32,6 +73,41 @@ class Service(models.Model):
 
     def __str__(self):
         return self.name
+
+    def get_absolute_url(self):
+        return f"/{self.slug}/"
+
+    @property
+    def public_url(self):
+        return self.get_absolute_url()
+
+    @property
+    def effective_seo_title(self):
+        return self.seo_title or self.name
+
+    @property
+    def effective_seo_description(self):
+        return self.seo_description or self.short_description
+
+    @property
+    def is_visible(self):
+        return self.is_active and self.is_published
+
+    def save(self, *args, **kwargs):
+        if self.is_published and not self.published_at:
+            self.published_at = timezone.now()
+        elif not self.is_published:
+            self.published_at = None
+        super().save(*args, **kwargs)
+
+    def snapshot_source(self):
+        """The markup this service contributes to a page.
+
+        Saved verbatim rather than composed from a template, because the public
+        pages are a byte-exact mirror: a service page that rendered its body
+        from a generic layout would not match the page it replaced.
+        """
+        return self.page_body or self.full_description or self.short_description
 
 
 class LeadStatus(models.TextChoices):

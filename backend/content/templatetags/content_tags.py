@@ -33,8 +33,8 @@ def section_html(context, section):
                                            extra=context.flatten()))
 
 
-@register.simple_tag
-def simple_include(path):
+@register.simple_tag(takes_context=True)
+def simple_include(context, path):
     """`{% include %}` that tolerates an empty path.
 
     A Page row may legitimately have no post_body or footer variant, and
@@ -42,7 +42,7 @@ def simple_include(path):
     """
     if not path:
         return ""
-    return mark_safe(get_template(path).render())
+    return mark_safe(get_template(path).render(context.flatten()))
 
 
 @register.filter

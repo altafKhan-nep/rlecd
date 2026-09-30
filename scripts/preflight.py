@@ -181,13 +181,20 @@ def check_database():
     except Exception as exc:
         fail(f"Could not verify migrations: {type(exc).__name__}: {exc}")
 
-    # Content must exist; an empty content table means an unseeded deploy.
+
+def check_seeded_content():
+    """The database has to actually contain the site.
+
+    A deploy with an empty content table serves 404s and an empty navbar, and
+    nothing in the build or start output says so. Each of these has a command
+    that fixes it, which is the useful part of the message.
+    """
     try:
-        from content.models import Page
+        from content.models import MenuItem, Page
         from crm.models import Service
 
-        pages = Page.objects.filter(published=True).count()
-        services = Service.objects.count()
+        pages = Page.objects.live().count()
+        services = Service.objects.visible().count()
         if pages == 0:
             fail(
                 "No published Pages. Run `python manage.py capture_content` "
@@ -199,6 +206,17 @@ def check_database():
             fail("No services. Run `python manage.py seed_services`.")
         else:
             ok(f"{services} services.")
+
+        # The navbar falls back to the service list when no menu exists, so a
+        # missing menu does not break the site. It does mean every visitor gets
+        # the fallback, and the Studio menu screens edit rows that do not
+        # exist, which is worth catching before a deploy rather than after.
+        items = MenuItem.objects.filter(navigation__is_active=True).count()
+        if items == 0:
+            fail("No navigation menu items. "
+                 "Run `python manage.py seed_navigation`.")
+        else:
+            ok(f"{items} navigation items.")
     except Exception as exc:
         warn(f"Could not verify seeded content: {type(exc).__name__}: {exc}")
 
@@ -389,6 +407,7 @@ def main():
         check_secret_key,
         check_debug,
         check_database,
+        check_seeded_content,
         check_hosts,
         check_csrf,
         check_email,

@@ -1,0 +1,37 @@
+{% comment %}
+UNREGISTERED REFERENCE SKEETCH -- not reachable, not tested.
+
+This template reads fields that the `Section` model does not have:
+section.alignment, section.background_image, section.description, section.eyebrow, section.headline, section.overlay, section.primary_cta_text, section.primary_cta_url, section.secondary_cta_text, section.secondary_cta_url, section.subheadline
+
+Rendered as-is it produces empty markup -- an empty <h1>, no copy, no images --
+which is exactly why it is not registered in `content/registry.py`. The empty
+H1 on all 19 hero sections is the specific failure this prevents.
+
+Do not register it until the model can supply those fields AND a test proves
+the rendered output. See the registry module docstring.
+{% endcomment %}
+<section class="hero-section {% if section.alignment %}{{ section.alignment }}{% else %}align-center{% endif %}"
+         {% if section.background_image %}style="background-image: url('{{ section.background_image }}');"{% endif %}>
+    <div class="hero-overlay" style="opacity: {{ section.overlay|default:0.5 }};"></div>
+    <div class="container hero-content">
+        {% if section.eyebrow %}
+            <span class="hero-eyebrow">{{ section.eyebrow }}</span>
+        {% endif %}
+        <h1 class="hero-headline">{{ section.headline }}</h1>
+        {% if section.subheadline %}
+            <h2 class="hero-subheadline">{{ section.subheadline }}</h2>
+        {% endif %}
+        {% if section.description %}
+            <p class="hero-description">{{ section.description }}</p>
+        {% endif %}
+        <div class="hero-actions">
+            {% if section.primary_cta_text and section.primary_cta_url %}
+                <a href="{{ section.primary_cta_url }}" class="btn-primary">{{ section.primary_cta_text }}</a>
+            {% endif %}
+            {% if section.secondary_cta_text and section.secondary_cta_url %}
+                <a href="{{ section.secondary_cta_url }}" class="btn-secondary">{{ section.secondary_cta_text }}</a>
+            {% endif %}
+        </div>
+    </div>
+</section>

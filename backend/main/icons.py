@@ -203,6 +203,24 @@ PATHS = {
         '<circle cx="7.5" cy="15.5" r="4.5"/>'
         '<path d="M10.7 12.3L21 2M18 5l3 3M15 8l3 3"/>'
     ),
+    "list": (
+        '<path d="M8 6h13M8 12h13M8 18h13"/>'
+        '<path d="M3 6h.01M3 12h.01M3 18h.01"/>'
+    ),
+    # A clock face with a hand wound back, for revision history: the same
+    # metaphor the admin's own History tab uses, so the sidebar row and the
+    # button on a page form read as the same thing.
+    "history": (
+        '<path d="M3 12a9 9 0 1 0 2.6-6.4"/>'
+        '<path d="M3 4v5h5"/>'
+        '<path d="M12 8v4l3 2"/>'
+    ),
+    # An envelope for the mail outbox, so the row that answers "did the office
+    # get told?" is findable without knowing what the queue is called.
+    "mail": (
+        '<rect x="3" y="5" width="18" height="14" rx="2"/>'
+        '<path d="m3 7 9 6 9-6"/>'
+    ),
 }
 
 

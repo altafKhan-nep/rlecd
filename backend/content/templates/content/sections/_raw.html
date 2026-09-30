@@ -1,3 +1,7 @@
-{% load content_tags %}
-{# Fallback renderer for any section type without a registered template. #}
-{% section_html section %}
+{% comment %}
+Raw HTML section fallback.
+
+This is the fallback template for sections that don't have a structured
+template registered. It renders the stored content_html directly.
+{% endcomment %}
+{{ section.render_source|safe }}

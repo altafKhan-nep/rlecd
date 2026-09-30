@@ -1,0 +1,172 @@
+{% load static %}
+{% comment %}
+Database-driven navigation partial.
+
+Renders navigation from the Navigation and MenuItem models via the
+`navigation` context processor. One database configuration generates both
+desktop and mobile navigation. No hardcoded service lists exist.
+
+Falls back to rendering services from the `services` context processor
+when no Navigation rows exist yet (e.g. before initial setup).
+
+`is_current` marks the link for the page being served, so the highlight an
+editor sees in the Studio is the same one a visitor gets. The six captured
+_nav_*.html variants that used to hardcode one service list per service page
+all include this file instead.
+{% endcomment %}
+
+{% with header_nav=navigation.header %}
+{% if header_nav %}
+    {% comment %}Database-driven navigation{% endcomment %}
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{% url 'index' %}" class="logo-brand">
+                <img src="{{ site_settings.effective_logo }}" alt="{{ site_settings.company_name }} Logo">
+            </a>
+
+            <div class="nav-wrapper">
+                <ul class="nav-links">
+                    {% for item in header_nav %}
+                        {% if item.show_on_desktop %}
+                        {% if item.has_dropdown %}
+                            <li class="dropdown{% if item.is_current %} active{% endif %}">
+                                <a href="{{ item.url }}" class="nav-item drop-trigger">
+                                    {% if item.icon %}<i class="{{ item.icon }}"></i>{% endif %}
+                                    {{ item.label }}
+                                    <i class="fas fa-chevron-down"></i>
+                                </a>
+                                <div class="dropdown-menu">
+                                    <ul class="mega-grid">
+                                        {% for child in item.children %}
+                                            {% if child.show_on_desktop %}
+                                            <li>
+                                                <a href="{{ child.url }}"{% if child.is_current %} class="active"{% endif %}{% if child.open_in_new_tab %} target="_blank" rel="noopener"{% endif %}>
+                                                    {% if child.icon %}<i class="{{ child.icon }}"></i>{% endif %}
+                                                    {{ child.label }}
+                                                </a>
+                                            </li>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </li>
+                        {% else %}
+                            <li>
+                                <a href="{% if item.is_cta %}{{ site_settings.effective_cta_url }}{% else %}{{ item.url }}{% endif %}" class="nav-item{% if item.is_current %} active{% endif %}{% if item.is_cta %} btn-cta{% endif %}"{% if item.open_in_new_tab %} target="_blank" rel="noopener"{% endif %}>
+                                    {% if item.icon %}<i class="{{ item.icon }}"></i>{% endif %}
+                                    {% if item.is_cta %}{{ site_settings.effective_phone_display }}{% else %}{{ item.label }}{% endif %}
+                                </a>
+                            </li>
+                        {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="mobile-menu-btn" id="mobile-toggle">
+                <i class="fas fa-bars"></i>
+            </div>
+        </div>
+
+        <div class="mobile-nav" id="mobile-menu">
+            <div class="mobile-nav-header">
+                <span>Menu</span>
+                <i class="fas fa-times" id="mobile-close"></i>
+            </div>
+            <ul class="mobile-nav-links">
+                {% for item in header_nav %}
+                    {% if item.show_on_mobile %}
+                    {% if item.has_dropdown %}
+                        <li class="mobile-services-title{% if item.is_current %} active{% endif %}">{{ item.label }}</li>
+                        <div class="mobile-services-list">
+                            {% for child in item.children %}
+                                {% if child.show_on_mobile %}
+                                <a href="{{ child.url }}"{% if child.is_current %} class="active"{% endif %}{% if child.open_in_new_tab %} target="_blank" rel="noopener"{% endif %}>{{ child.label }}</a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <li>
+                            <a href="{% if item.is_cta %}{{ site_settings.effective_cta_url }}{% else %}{{ item.url }}{% endif %}" class="{% if item.is_current %}active{% endif %}{% if item.is_cta %} btn-cta-mobile{% endif %}"{% if item.open_in_new_tab %} target="_blank" rel="noopener"{% endif %}>
+                                {% if item.icon %}<i class="{{ item.icon }}"></i>{% endif %}
+                                {% if item.is_cta %}Call {{ site_settings.effective_phone_display }}{% else %}{{ item.label }}{% endif %}
+                            </a>
+                        </li>
+                    {% endif %}
+                    {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+    </nav>
+{% else %}
+    {% comment %}Fallback: render from services when no Navigation rows exist{% endcomment %}
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{% url 'index' %}" class="logo-brand">
+                <img src="{{ site_settings.effective_logo }}" alt="{{ site_settings.company_name }} Logo">
+            </a>
+
+            <div class="nav-wrapper">
+                <ul class="nav-links">
+                    <li><a href="{% url 'index' %}" class="nav-item">Home</a></li>
+                    <li><a href="{% url 'about' %}" class="nav-item">About</a></li>
+                    <li class="dropdown">
+                        <a href="#" class="nav-item drop-trigger">Services <i class="fas fa-chevron-down"></i></a>
+                        <div class="dropdown-menu">
+                            <ul class="mega-grid">
+                                {% for service in services %}
+                                    {% if service.show_in_navigation %}
+                                        <li>
+                                            <a href="{{ service.get_absolute_url }}"{% if service.get_absolute_url == request.path %} class="active"{% endif %}>
+                                                {% if service.icon %}<i class="{{ service.icon }}"></i>{% endif %}
+                                                {{ service.name }}
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </li>
+                    <li><a href="{% url 'areas_we_serve' %}" class="nav-item">Areas We Serve</a></li>
+                    <li><a href="{% url 'contact' %}" class="nav-item">Contact</a></li>
+                    <li>
+                        <a href="{{ site_settings.effective_cta_url }}" class="btn-cta">
+                            <i class="fas fa-phone-alt"></i> {{ site_settings.effective_phone_display }}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="mobile-menu-btn" id="mobile-toggle">
+                <i class="fas fa-bars"></i>
+            </div>
+        </div>
+
+        <div class="mobile-nav" id="mobile-menu">
+            <div class="mobile-nav-header">
+                <span>Menu</span>
+                <i class="fas fa-times" id="mobile-close"></i>
+            </div>
+            <ul class="mobile-nav-links">
+                <li><a href="{% url 'index' %}">Home</a></li>
+                <li><a href="{% url 'about' %}">About</a></li>
+                <li><a href="{% url 'areas_we_serve' %}">Areas We Serve</a></li>
+                <li><a href="{% url 'contact' %}">Contact</a></li>
+                <li class="mobile-services-title">Our Services</li>
+                <div class="mobile-services-list">
+                    {% for service in services %}
+                        {% if service.show_in_navigation %}
+                            <a href="{{ service.get_absolute_url }}"{% if service.get_absolute_url == request.path %} class="active"{% endif %}>{{ service.name }}</a>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                <li>
+                    <a href="{{ site_settings.effective_cta_url }}" class="btn-cta-mobile">
+                        <i class="fas fa-phone-alt"></i> Call {{ site_settings.effective_phone_display }}
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+{% endif %}
+{% endwith %}

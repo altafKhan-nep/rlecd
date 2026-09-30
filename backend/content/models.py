@@ -10,6 +10,9 @@ and its `Section` rows hold the page body split at lossless top-level HTML
 boundaries. Rendering is a plain ordered concatenation, which is why an edit
 made in the CRM is the only difference between the local page and the live one.
 """
+import json
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
@@ -38,22 +41,57 @@ def visible_text(html):
     return " ".join(text.split())
 
 
+class PageQuerySet(models.QuerySet):
+    def live(self):
+        """Pages a visitor may see right now.
+
+        Visibility has two independent parts and both are required. The
+        `is_published` flag is the operator's on/off switch and dates back to
+        the importer. `status` is the editorial stage. A page that is flagged
+        visible but sitting in Draft has not been released, and a page that is
+        Published but flagged invisible has been switched off; treating either
+        one alone as authoritative is how a draft page ends up indexed.
+        """
+        now = timezone.now()
+        return self.filter(is_published=True).filter(
+            models.Q(status=Page.Status.PUBLISHED)
+            | models.Q(status=Page.Status.SCHEDULED, scheduled_for__lte=now)
+        )
+
+
 class Page(models.Model):
     """One public URL.
 
     The shell-variant fields exist because the live site genuinely ships
     different navbars, footers and script blocks on different pages; storing
     them per page is what keeps the mirror faithful instead of "cleaned up".
+
+    Supports draft/publish workflow: Draft, Published, Scheduled, Archived.
+    Saving content does NOT automatically publish -- the editor moves the page
+    with `publish()` / `unpublish()` / `schedule()`, and the public site
+    serves `Page.objects.live()`, so a draft has no URL at all.
     """
 
     class Meta:
         ordering = ["path"]
+
+    objects = PageQuerySet.as_manager()
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        PUBLISHED = "published", "Published"
+        SCHEDULED = "scheduled", "Scheduled"
+        ARCHIVED = "archived", "Archived"
 
     slug = models.SlugField(max_length=120, unique=True)
     title = models.CharField(max_length=200, help_text="Internal page name.")
     path = models.CharField(
         max_length=200, unique=True,
         help_text="URL path, e.g. '/' or '/about/'. Must match urls.py.",
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PUBLISHED,
+        blank=True,
     )
     is_published = models.BooleanField(default=True)
     show_in_menu = models.BooleanField(default=True)
@@ -86,6 +124,22 @@ class Page(models.Model):
     og_image = models.CharField(max_length=300, blank=True)
     noindex = models.BooleanField(default=False)
 
+    # --- workflow fields ---------------------------------------------------
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="published_pages",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="updated_pages",
+    )
+    scheduled_for = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When a Scheduled page goes live. Left empty, a scheduled "
+                  "page stays offline.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,6 +148,98 @@ class Page(models.Model):
 
     def get_absolute_url(self):
         return reverse("admin:content_page_change", args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        """Keep the workflow stage and the visibility flag from disagreeing.
+
+        A page cannot be Published and simultaneously switched off: the flag
+        is the thing the importer and the changelist filter on, and a row that
+        says otherwise is only ever a bug. An empty stage means nobody chose
+        one, which is a page that has not been through the workflow rather
+        than a page that is in it.
+
+        Everything else is left to `publish()` / `unpublish()`, which are the
+        sanctioned way to move a page between stages, so that `published_at`
+        is stamped with a real time and a real author.
+        """
+        if not self.status:
+            self.status = self.Status.PUBLISHED
+        if not self.is_published and self.status == self.Status.PUBLISHED:
+            self.status = self.Status.DRAFT
+        super().save(*args, **kwargs)
+
+    @property
+    def is_live(self):
+        """Is this page served to the public at this moment?"""
+        if not self.is_published:
+            return False
+        if self.status == self.Status.PUBLISHED:
+            return True
+        if self.status == self.Status.SCHEDULED:
+            return bool(self.scheduled_for
+                        and self.scheduled_for <= timezone.now())
+        return False
+
+    def publish(self, user=None):
+        """Release the page. Idempotent apart from restamping the time."""
+        self.status = self.Status.PUBLISHED
+        self.is_published = True
+        self.scheduled_for = None
+        self.published_at = timezone.now()
+        if user is not None and getattr(user, "pk", None):
+            self.published_by = user
+        self.save()
+        return self
+
+    def unpublish(self, user=None):
+        """Pull the page off the public site without discarding it."""
+        self.status = self.Status.DRAFT
+        self.is_published = False
+        self.scheduled_for = None
+        if user is not None and getattr(user, "pk", None):
+            self.updated_by = user
+        self.save()
+        return self
+
+    def schedule(self, when, user=None):
+        """Queue the page to go live at `when`."""
+        if when is None:
+            raise ValidationError({"scheduled_for": "A scheduled page needs a date."})
+        self.status = self.Status.SCHEDULED
+        self.is_published = True
+        self.scheduled_for = when
+        if user is not None and getattr(user, "pk", None):
+            self.updated_by = user
+        self.save()
+        return self
+
+    def archive(self, user=None):
+        """Retire the page. It keeps its content but leaves the site for good."""
+        self.status = self.Status.ARCHIVED
+        self.is_published = False
+        self.scheduled_for = None
+        if user is not None and getattr(user, "pk", None):
+            self.updated_by = user
+        self.save()
+        return self
+
+    def publish_if_due(self, now=None):
+        """Promote a scheduled page whose time has arrived.
+
+        Returns True when the page moved. Called by `publish_due` so that
+        scheduling survives without a cron job that has to be remembered, and
+        safe to call on a published or draft page, which it leaves alone.
+        """
+        if self.status != self.Status.SCHEDULED or not self.is_published:
+            return False
+        now = now or timezone.now()
+        if not self.scheduled_for or self.scheduled_for > now:
+            return False
+        self.published_at = self.scheduled_for
+        self.status = self.Status.PUBLISHED
+        self.scheduled_for = None
+        self.save()
+        return True
 
     @property
     def effective_title(self):
@@ -174,6 +320,114 @@ class SectionType(models.TextChoices):
     AREAS = "areas", "Service areas"
     STYLE = "style", "Style block"
     HTML = "html", "Raw HTML"
+
+
+class ContentRevision(models.Model):
+    """A snapshot of a page at a point in time.
+
+    A page's body is its sections, so a snapshot has to carry the sections
+    too -- a revision that only stored the page row would restore a title and
+    an SEO description while leaving the body exactly as broken as it was,
+    which is the moment somebody reaches for "undo" and finds it does nothing.
+    `sections_json` holds them; `content_html` is the same content flattened
+    for reading and for searching the revision list.
+    """
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        verbose_name = "content revision"
+        verbose_name_plural = "content revisions"
+
+    #: Section fields a snapshot carries. Images are deliberately excluded:
+    #: they are rows in their own right, and restoring a section must not
+    #: resurrect or discard an editor's photographs.
+    SECTION_FIELDS = ("key", "position", "type", "label",
+                      "content_html", "content_body", "is_visible")
+
+    page = models.ForeignKey(
+        Page, on_delete=models.CASCADE, related_name="revisions")
+    title = models.CharField(max_length=200)
+    content_html = models.TextField()
+    sections_json = models.TextField(
+        blank=True,
+        help_text="The page's sections at snapshot time, as JSON.",
+    )
+    head_html = models.TextField(blank=True)
+    seo_title = models.CharField(max_length=200, blank=True)
+    seo_description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, blank=True)
+    is_published = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="content_revisions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    note = models.CharField(max_length=300, blank=True)
+
+    def __str__(self):
+        return f"Revision {self.pk} of {self.page.title} ({self.created_at:%Y-%m-%d %H:%M})"
+
+    @classmethod
+    def snapshot(cls, page, user=None, note=""):
+        """Record the page as it is right now."""
+        sections = list(page.sections.all())
+        payload = [
+            {field: getattr(section, field) for field in cls.SECTION_FIELDS}
+            for section in sections
+        ]
+        return cls.objects.create(
+            page=page,
+            title=page.title,
+            content_html="".join(section.render_source() for section in sections),
+            sections_json=json.dumps(payload),
+            head_html=page.head_html,
+            seo_title=page.seo_title,
+            seo_description=page.seo_description,
+            status=page.status,
+            is_published=page.is_published,
+            created_by=user if getattr(user, "pk", None) else None,
+            note=note or "auto",
+        )
+
+    def section_rows(self):
+        """The snapshot's sections, newest first, decoded."""
+        try:
+            rows = json.loads(self.sections_json or "[]")
+        except json.JSONDecodeError:
+            return []
+        return rows if isinstance(rows, list) else []
+
+    def restore(self):
+        """Put this revision back on the page.
+
+        Sections that existed at snapshot time are rewritten in place, matched
+        on `key` rather than on primary key: the importer rebuilds section rows
+        on re-capture, so an id from weeks ago may name a different slice of
+        the page by now. Sections added since the snapshot are left alone
+        rather than deleted -- a restore that quietly removed a paragraph an
+        editor had added, along with the images attached to it, would be worse
+        than the problem the editor was trying to undo.
+        """
+        page = self.page
+        page.title = self.title
+        page.head_html = self.head_html
+        page.seo_title = self.seo_title
+        page.seo_description = self.seo_description
+        page.save()
+
+        existing = {section.key: section for section in page.sections.all()}
+        for row in self.section_rows():
+            key = row.get("key")
+            if not key:
+                continue
+            section = existing.get(key)
+            if section is None:
+                section = Section(page_id=page.pk, key=key)
+            for field in self.SECTION_FIELDS:
+                if field in row:
+                    setattr(section, field, row[field])
+            section.save()
+        return page
 
 
 class Section(models.Model):
@@ -547,20 +801,60 @@ class TrustBadge(models.Model):
 
 
 class SiteSetting(models.Model):
-    """Singleton row of brand facts, so a phone number is edited in one place."""
+    """Singleton row of brand facts, so a phone number is edited in one place.
+
+    This is the true global source of truth for all business content. Every
+    public template reads from this model — navbar, footer, contact sections,
+    CTA buttons, SEO, Open Graph, Twitter cards, JSON-LD, schema, copyright,
+    and contact links. No business phone number, email, company name, or address
+    is hardcoded in public templates.
+    """
 
     class Meta:
         verbose_name = "Site settings"
 
     company_name = models.CharField(max_length=200, default="REAL LIFE EXPERIENCE LLC")
+    legal_company_name = models.CharField(max_length=200, blank=True)
+    tagline = models.CharField(max_length=300, blank=True)
+    logo = models.CharField(max_length=300, blank=True)
+    favicon = models.CharField(max_length=300, blank=True)
     phone = models.CharField(max_length=40, blank=True)
+    phone_display = models.CharField(max_length=40, blank=True)
     email = models.CharField(max_length=200, blank=True)
     address = models.CharField(max_length=240, blank=True)
+    city = models.CharField(max_length=120, blank=True)
+    state = models.CharField(max_length=80, blank=True)
+    zip_code = models.CharField(max_length=20, blank=True)
     service_area_summary = models.CharField(max_length=240, blank=True)
+    business_hours = models.TextField(blank=True)
     years_in_business = models.PositiveSmallIntegerField(blank=True, null=True)
     facebook_url = models.URLField(blank=True)
     instagram_url = models.URLField(blank=True)
     whatsapp_url = models.URLField(blank=True)
+    twitter_url = models.URLField(blank=True)
+    linkedin_url = models.URLField(blank=True)
+    youtube_url = models.URLField(blank=True)
+    financing_url = models.URLField(blank=True)
+    bbb_url = models.URLField(blank=True)
+    map_url = models.URLField(blank=True)
+    map_embed = models.TextField(blank=True)
+    default_seo_title = models.CharField(max_length=200, blank=True)
+    seo_title_suffix = models.CharField(
+        max_length=120, blank=True,
+        help_text="Appended to page titles after a pipe, e.g. 'Home "
+                  "Renovation & Remodeling'. Leave blank to use each page's "
+                  "title on its own.",
+    )
+    google_site_verification = models.CharField(
+        max_length=120, blank=True,
+        help_text="The content= value from Google's verification tag.",
+    )
+    default_seo_description = models.TextField(blank=True)
+    default_seo_keywords = models.CharField(max_length=400, blank=True)
+    default_og_image = models.CharField(max_length=300, blank=True)
+    primary_cta_label = models.CharField(max_length=80, blank=True)
+    primary_cta_url = models.CharField(max_length=300, blank=True)
+    copyright_text = models.CharField(max_length=300, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -574,6 +868,143 @@ class SiteSetting(models.Model):
     def load(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+    @property
+    def effective_phone_display(self):
+        return self.phone_display or self.phone
+
+    @property
+    def effective_phone_tel(self):
+        if not self.phone:
+            return ""
+        return self.phone.replace("(", "").replace(")", "").replace(" ", "").replace("-", "")
+
+    @property
+    def effective_address(self):
+        parts = [self.address, self.city, self.state, self.zip_code]
+        return ", ".join(p for p in parts if p)
+
+    @property
+    def effective_copyright(self):
+        if self.copyright_text:
+            return self.copyright_text
+        return f"&copy; {self.company_name}. All Rights Reserved."
+
+    @property
+    def effective_seo_title(self):
+        return self.default_seo_title or self.company_name
+
+    @property
+    def verification_token(self):
+        """The Google site-verification value, or nothing.
+
+        The token Google issued for this domain is a fact about the site, not
+        a phrase about the business, but it belongs with the rest of the head
+        configuration rather than inside a template where the next person to
+        take the site to a new domain will not find it.
+        """
+        return self.google_site_verification
+
+    @property
+    def effective_seo_description(self):
+        return self.default_seo_description or self.tagline
+
+    @property
+    def effective_logo(self):
+        return self.logo or "/static/img/rlecd_maryland_logo.png"
+
+    @property
+    def effective_og_image(self):
+        return self.default_og_image or self.effective_logo
+
+    @property
+    def effective_cta_label(self):
+        return self.primary_cta_label or "Call Now"
+
+    @property
+    def effective_cta_url(self):
+        if self.primary_cta_url:
+            return self.primary_cta_url
+        if self.phone:
+            return f"tel:{self.effective_phone_tel}"
+        return "/contact/"
+
+
+class Navigation(models.Model):
+    """A named navigation group (header, footer, mobile, etc.).
+
+    One database configuration generates both desktop and mobile navigation.
+    No separate hardcoded desktop/mobile service lists exist.
+    """
+
+    class Meta:
+        verbose_name = "navigation"
+        verbose_name_plural = "navigation"
+
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return self.name
+
+
+class MenuItem(models.Model):
+    """One item in a navigation group.
+
+    Supports navigation label, destination (URL, service, or page), service
+    grouping, order, visibility, desktop/mobile visibility, dropdown/mega-menu,
+    icon, featured service flag, and CTA item flag.
+    """
+
+    class Meta:
+        ordering = ["sort_order", "label"]
+        verbose_name = "menu item"
+        verbose_name_plural = "menu items"
+
+    navigation = models.ForeignKey(
+        Navigation, on_delete=models.CASCADE, related_name="items")
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="children")
+    label = models.CharField(max_length=120)
+    url = models.CharField(max_length=300, blank=True)
+    service = models.ForeignKey(
+        "crm.Service", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="menu_items")
+    page = models.ForeignKey(
+        Page, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="menu_items")
+    icon = models.CharField(max_length=100, blank=True)
+    css_classes = models.CharField(max_length=200, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_visible = models.BooleanField(default=True)
+    show_on_desktop = models.BooleanField(default=True)
+    show_on_mobile = models.BooleanField(default=True)
+    is_cta = models.BooleanField(default=False)
+    is_featured = models.BooleanField(default=False)
+    open_in_new_tab = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.label
+
+    def get_url(self):
+        if self.url:
+            return self.url
+        if self.service:
+            return self.service.get_absolute_url()
+        if self.page:
+            return self.page.path
+        return "#"
+
+    @property
+    def has_dropdown(self):
+        return self.children.filter(is_visible=True).exists()
+
+    @property
+    def dropdown_items(self):
+        return self.children.filter(is_visible=True).order_by("sort_order")
 
 
 class MediaItem(models.Model):

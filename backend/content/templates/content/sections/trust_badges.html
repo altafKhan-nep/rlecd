@@ -1,0 +1,33 @@
+{% comment %}
+UNREGISTERED REFERENCE SKEETCH -- not reachable, not tested.
+
+This template reads fields that the `Section` model does not have:
+section.badges, section.title
+
+Rendered as-is it produces empty markup -- an empty <h1>, no copy, no images --
+which is exactly why it is not registered in `content/registry.py`. The empty
+H1 on all 19 hero sections is the specific failure this prevents.
+
+Do not register it until the model can supply those fields AND a test proves
+the rendered output. See the registry module docstring.
+{% endcomment %}
+<section class="trust-badges-section">
+    <div class="container">
+        {% if section.title %}
+            <h2 class="section-title">{{ section.title }}</h2>
+        {% endif %}
+        <div class="trust-badges-row">
+            {% for badge in section.badges %}
+                <div class="trust-badge">
+                    {% if badge.image %}
+                        <img src="{{ badge.image }}" alt="{{ badge.label }}" loading="lazy">
+                    {% endif %}
+                    <span class="trust-badge-label">{{ badge.label }}</span>
+                    {% if badge.issuer %}
+                        <span class="trust-badge-issuer">{{ badge.issuer }}</span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

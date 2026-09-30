@@ -37,14 +37,20 @@ LEGACY_TEMPLATES = {
 
 
 def get_page(slug):
-    """Fetch a published Page by slug, or None."""
-    return Page.objects.filter(slug=slug, is_published=True).first()
+    """Fetch the live Page for a slug, or None.
+
+    "Live" means published, visible, and past its scheduled time -- see
+    `PageQuerySet.live`. A Draft or Archived row has no public URL at all, so
+    the mirror template is served instead of a page an editor has not
+    finished with.
+    """
+    return Page.objects.live().filter(slug=slug).first()
 
 
 def get_page_or_404(slug):
     page = get_page(slug)
     if page is None:
-        raise Http404(f"No published page for slug {slug!r}")
+        raise Http404(f"No live page for slug {slug!r}")
     return page
 
 
@@ -91,4 +97,44 @@ def render_page(request, slug, **context):
         return render(request, PAGE_TEMPLATE, {"page": page, **context})
     except ContentRenderError:
         logger.exception("Content render failed for page slug=%r", slug)
+        raise
+
+
+def preview_page(request, slug):
+    """Render a page for a member of staff, published or not.
+
+    Drafts have no public URL, which is correct but leaves an editor unable to
+    see what they just saved. This is the way to look: the same template and
+    the same markup as the live page, with a banner saying plainly that the
+    visitor would not see this yet.
+
+    Staff only, and it re-checks the change permission on the page rather than
+    trusting that the caller is logged in -- a content editor must not be able
+    to read a page they are not allowed to change, and "they are staff" is not
+    the same question.
+    """
+    if not request.user.is_authenticated or not request.user.is_staff:
+        raise Http404("Preview is for staff only.")
+
+    page = Page.objects.filter(slug=slug).first()
+    if page is None:
+        raise Http404(f"No page for slug {slug!r}")
+
+    permitted = any(
+        request.user.has_perm(f"content.{codename}")
+        for codename in ("view_page", "change_page")
+    )
+    if not permitted:
+        raise Http404("You cannot view this page.")
+
+    if not page.has_content():
+        raise Http404(f"Page slug={slug!r} has no content to preview.")
+
+    try:
+        return render(request, PAGE_TEMPLATE, {
+            "page": page,
+            "is_preview": True,
+        })
+    except ContentRenderError:
+        logger.exception("Preview render failed for page slug=%r", slug)
         raise
