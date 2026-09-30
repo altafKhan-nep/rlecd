@@ -2699,3 +2699,50 @@ class NormalizeCapturedPhonesTests(TestCase):
         self.section.refresh_from_db()
         self.assertEqual(self.section.content_html, self.BROKEN)
         self.assertIn("no phone", err.getvalue())
+
+
+class PlaceholderDatabaseUrlTests(SimpleTestCase):
+    """An unsubstituted example URL must fail before Postgres is contacted.
+
+    A connection string is easy to copy from a template and hard to eyeball.
+    Left alone, Postgres accepts the host, resolves DNS, and reports
+    "password authentication failed for user 'USER'" -- which reads like a
+    wrong password rather than a placeholder, and repeats once per IP in the
+    pooler record for every management command, burying the actual cause.
+    """
+
+    def _check(self, url):
+        from home_improvement.settings import _reject_placeholder_credentials
+        return _reject_placeholder_credentials(url)
+
+    def test_rejects_an_unsubstituted_example(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._check(
+                "postgresql://USER:PASSWORD@ep-xxx-pooler.us-east-2.aws.neon.tech"
+                "/neondb?sslmode=require")
+        message = str(ctx.exception)
+        self.assertIn("USER", message)
+        self.assertIn("PASSWORD", message)
+        self.assertIn("Neon", message)
+
+    def test_accepts_a_realistic_credential(self):
+        self._check(
+            "postgresql://neondb_owner:Ab3-x9Kq2LmNp7Rs@ep-cool-name-123456"
+            ".us-east-2.aws.neon.tech/neondb?sslmode=require")
+
+    def test_accepts_a_url_encoded_password(self):
+        # %40 is an @ and %21 is an !. Neither is placeholder text, and the
+        # decoded value must never be compared against the marker list.
+        self._check(
+            "postgresql://rlecd_admin:p%40ssw0rd%21@ep-shy-bird-a1b2c3d4"
+            ".neon.tech/neondb?sslmode=require")
+
+    def test_only_the_userinfo_is_inspected(self):
+        # Some sandbox hostnames legitimately contain these words. Rejecting
+        # them would be a false positive on a working configuration.
+        self._check("postgresql://u:p@ep-xxx-test.neon.tech/neondb")
+        self._check(
+            "postgresql://u:p@db.example.com/neondb?application_name=password_reset")
+
+    def test_password_in_the_query_string_is_not_flagged(self):
+        self._check("postgresql://real_user:real_pass@host/neondb?sslmode=require")

@@ -213,6 +213,23 @@ python backend/manage.py normalize_captured_phones
 python backend/manage.py createsuperuser
 ```
 
+> **Replace the values above — do not paste the line as printed.**
+> `USER`, `PASSWORD` and `ep-xxx-pooler` are placeholders. Postgres will
+> accept the host, resolve DNS, and then answer
+> `password authentication failed for user 'USER'`, once per IP in the pooler
+> record, for every command — which reads like a wrong password rather than an
+> unsubstituted template. Settings now rejects that string at import with a
+> single line naming the placeholders, so if you see that message, copy a real
+> connection string from the Neon console.
+>
+> To avoid transcribing it at all, pull the value Vercel already has:
+>
+> ```bash
+> npx vercel@latest env pull .env.local
+> export DATABASE_URL=$(grep -m1 '^DATABASE_URL=' .env.local | cut -d= -f2- | tr -d '"')
+> echo "$DATABASE_URL" | sed 's/:[^:@]*@/:***@/'   # confirm the host, hide the password
+> ```
+
 Expected output:
 
 ```

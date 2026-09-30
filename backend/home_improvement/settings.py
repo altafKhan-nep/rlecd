@@ -323,6 +323,42 @@ WSGI_APPLICATION = 'home_improvement.wsgi.application'
 # instance is recycled, so it can never hold real content or leads.
 DATABASE_URL = config('DATABASE_URL', default='')
 
+# Substrings that mean the value is a copy of the documentation rather than a
+# real credential. A connection string is easy to write from a template and
+# hard to eyeball, and the failure is maximally unhelpful: Postgres accepts the
+# host, resolves DNS, and then answers
+#
+#   password authentication failed for user 'USER'
+#
+# which reads like a wrong password rather than an unsubstituted placeholder,
+# and it does so once per connection attempt across every IP in the pooler
+# record, so `migrate`, `capture_content` and `createsuperuser` each produce a
+# full traceback and bury the one line that matters. Caught here instead, at
+# import, so it is one message on the first command.
+PLACEHOLDER_MARKERS = (
+    'USER', 'PASSWORD', 'username', 'password', 'your-', 'your_', 'youruser',
+    'ep-xxx', 'CHANGEME', 'changeme', 'TODO', 'REPLACE_ME', '<', 'xxx',
+)
+
+
+def _reject_placeholder_credentials(url):
+    """Fail loudly if DATABASE_URL still contains template text."""
+    parsed = urlparse(url)
+    # Only the userinfo is inspected. The host legitimately contains "xxx" in
+    # some sandbox hostnames, and the query string carries no credentials.
+    userinfo = parsed.netloc.rsplit('@', 1)[0]
+    hits = [m for m in PLACEHOLDER_MARKERS if m in userinfo]
+    if hits:
+        raise ValueError(
+            "DATABASE_URL contains placeholder text "
+            f"({', '.join(repr(h) for h in hits)}) in its username or password. "
+            "This looks like a copy of the example in the deploy guide, not a "
+            "real credential. Copy the connection string from the Neon "
+            "console (or `npx vercel env pull`) and export it again. Replace "
+            "USER, PASSWORD and the ep-xxx host with your actual values."
+        )
+
+
 
 def _postgres_from_url(url):
     """Build a postgres DATABASES entry from a connection URI.
@@ -341,6 +377,7 @@ def _postgres_from_url(url):
     scripts/preflight.py reports them by name before a deploy.
     """
     parsed = urlparse(url)
+    _reject_placeholder_credentials(url)
     if parsed.scheme not in ('postgres', 'postgresql', 'psql', 'pgsql'):
         raise ValueError(
             f"Unsupported DATABASE_URL scheme {parsed.scheme!r}; expected "
