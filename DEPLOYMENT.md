@@ -1,5 +1,10 @@
 # Deploying to Render + Neon
 
+> **New to deploying?** Start with **[DEPLOY-GUIDE.md](DEPLOY-GUIDE.md)** — it
+> has copy-pasteable steps for Neon, Render and Vercel, including installing the
+> Neon skills, and it is explicit about which parts of this project cannot run
+> on Vercel. This file is the reference; the guide is the walkthrough.
+
 Render runs the app in a container. Neon holds the Postgres database. Nothing
 else is required, and no domain name has to be bought to start.
 
@@ -73,11 +78,21 @@ never blank. To move the editable content into the database:
 
 ```bash
 DATABASE_URL='postgresql://...' python backend/manage.py capture_content
+DATABASE_URL='postgresql://...' python backend/manage.py seed_services
+DATABASE_URL='postgresql://...' python backend/manage.py seed_navigation
 ```
 
-This imports 19 pages, 58 sections and 15 services. It is idempotent — re-running
-it refreshes imported rows without touching anything edited in the admin. **Do
-not pass `--reset`**, which deletes existing rows first.
+This imports 19 pages, 58 sections, 15 services and 25 navigation items. It is
+idempotent — re-running it refreshes imported rows without touching anything
+edited in the admin. **Do not pass `--reset`**, which deletes existing rows
+first.
+
+`seed_navigation` builds the header and footer menus that the Studio menu
+screens edit. Without it the navbar still works, because the template falls
+back to listing the services, but those screens would be editing rows that do
+not exist. `seed_navigation` is safe to re-run; pass `--prune` to also delete
+items you have removed from its list, or `--rebuild` to discard menu edits
+entirely.
 
 ### 4. Create the first admin user
 
