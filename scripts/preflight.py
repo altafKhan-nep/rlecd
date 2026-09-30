@@ -35,6 +35,11 @@ FAILURES = []
 WARNINGS = []
 PASSES = []
 
+#: False when this run is pointed at the local sqlite file, which makes every
+#: content check below meaningless as a deployment signal -- see
+#: check_seeded_content. Set by check_database.
+VERIFYING_DEPLOYMENT_DB = True
+
 
 def fail(msg):
     FAILURES.append(msg)
@@ -87,6 +92,8 @@ def check_database():
     engine = settings.DATABASES["default"]["ENGINE"]
 
     if engine.endswith("sqlite3"):
+        global VERIFYING_DEPLOYMENT_DB
+        VERIFYING_DEPLOYMENT_DB = False
         deploy = bool(os.environ.get("RENDER")) or not settings.DEBUG
         if deploy:
             fail(
@@ -191,6 +198,15 @@ def check_seeded_content():
     nothing in the build or start output says so. Each of these has a command
     that fixes it, which is the useful part of the message.
     """
+    if not VERIFYING_DEPLOYMENT_DB:
+        warn(
+            "The content PASSes above read the LOCAL sqlite database, which is "
+            "not what a deployment will serve. They describe your laptop only "
+            "and prove nothing about Neon, Vercel or Render. To check the "
+            "database you will actually deploy, export DATABASE_URL first and "
+            "re-run: `export DATABASE_URL=... && python scripts/preflight.py`."
+        )
+
     try:
         from content.models import MenuItem, Page, Section, SiteSetting
         from crm.models import Service

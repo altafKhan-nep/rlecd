@@ -22,3 +22,5 @@ backend/staticfiles/
 
 # OS
 .DS_Store
+.vercel
+.env*

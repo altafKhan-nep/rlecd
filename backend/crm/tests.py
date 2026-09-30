@@ -1851,3 +1851,57 @@ class SendOutboxCommandTests(TestCase):
     def test_outbox_messages_cannot_be_typed_in(self):
         response = self.client.get(reverse("admin:crm_emailoutbox_add"))
         self.assertIn(response.status_code, (403, 302))
+
+
+class PreflightLocalDatabaseTests(TestCase):
+    """A green preflight against the local sqlite file must not read as a pass.
+
+    The content checks report the numbers in the developer's own database, and
+    those look identical to the numbers a deployment needs. When the run is
+    pointed at sqlite they therefore prove nothing about Neon, Vercel or
+    Render -- which is precisely the run someone is most likely to do and most
+    likely to misread as "ready to ship".
+    """
+
+    @staticmethod
+    def _preflight():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "preflight_local_db_probe",
+            settings.REPO_ROOT / "scripts" / "preflight.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_says_the_content_checks_are_local_only(self):
+        preflight = self._preflight()
+        preflight.FAILURES.clear()
+        preflight.WARNINGS.clear()
+        preflight.WARNINGS.clear()
+        preflight.VERIFYING_DEPLOYMENT_DB = False
+        preflight.check_seeded_content()
+        self.assertTrue(
+            any("LOCAL sqlite" in w and "prove nothing" in w
+                for w in preflight.WARNINGS),
+            f"no local-only warning; warnings={preflight.WARNINGS}",
+        )
+
+    def test_says_nothing_extra_when_checking_a_real_database(self):
+        preflight = self._preflight()
+        preflight.FAILURES.clear()
+        preflight.WARNINGS.clear()
+        preflight.VERIFYING_DEPLOYMENT_DB = True
+        preflight.check_seeded_content()
+        self.assertFalse(
+            any("LOCAL sqlite" in w for w in preflight.WARNINGS),
+            f"local-only warning shown for a real database; "
+            f"warnings={preflight.WARNINGS}",
+        )
+
+    def test_placeholder_url_is_rejected_by_the_import_hook(self):
+        from home_improvement.settings import _reject_placeholder_credentials
+        with self.assertRaises(ValueError):
+            _reject_placeholder_credentials(
+                "postgresql://USER:PASSWORD@ep-xxx-pooler.us-east-2.aws.neon.tech"
+                "/neondb?sslmode=require")
