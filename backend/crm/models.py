@@ -316,6 +316,106 @@ class Contact(models.Model):
         return self.name
 
 
+class EmailOutbox(models.Model):
+    """A message written to be sent, with the record of whether it went.
+
+    The enquiry path must not depend on SMTP. A visitor's form POST writes the
+    Lead and these rows in one transaction and returns; `manage.py send_outbox`
+    does the talking. That is the difference between "the mail server was down
+    for four minutes and we lost four enquiries" and "the mail server was down
+    and we sent them a minute late".
+
+    A database queue rather than a broker because this is a single-host
+    deployment with no Redis to run. It is also the honest record afterwards:
+    a row that says failed, with the error, is something an operator can look
+    at, which a message that vanished inside a worker is not.
+    """
+
+    class Kind(models.TextChoices):
+        ADMIN = "admin", "Notification to the business"
+        CUSTOMER = "customer", "Acknowledgement to the customer"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    #: Attempts before a message is given up on. Three is enough to ride out a
+    #: restart or a short provider outage without retrying forever at somebody
+    #: whose address bounces.
+    MAX_ATTEMPTS = 3
+
+    #: Backoff between attempts. Doubling, capped, so a provider that is down
+    #: for an hour is not hammered once a second for that hour.
+    RETRY_BACKOFF = [60, 300, 900]
+
+    class Meta:
+        ordering = ["queued_at", "pk"]
+        indexes = [
+            models.Index(fields=["status", "next_attempt_at"]),
+        ]
+        verbose_name = "outbox message"
+        verbose_name_plural = "outbox messages"
+
+    lead = models.ForeignKey(
+        Lead, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="outbox",
+    )
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.ADMIN)
+    recipient = models.EmailField(max_length=254)
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.QUEUED)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+    queued_at = models.DateTimeField(auto_now_add=True)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.get_kind_display()} to {self.recipient} ({self.get_status_display()})"
+
+    @property
+    def is_ready(self):
+        """Is this row due an attempt right now?"""
+        if self.status != self.Status.QUEUED:
+            return False
+        if self.attempts >= self.MAX_ATTEMPTS:
+            return False
+        return self.next_attempt_at <= timezone.now()
+
+    @property
+    def is_exhausted(self):
+        """Will nothing retry this automatically again.
+
+        Either it has been given up on, or it is one failed attempt away from
+        being given up on. Both are states an operator has to look at, which is
+        why the outbox screen filters on this rather than on the raw status.
+        """
+        return self.status == self.Status.FAILED or self.attempts >= self.MAX_ATTEMPTS
+
+    def mark_sent(self):
+        self.status = self.Status.SENT
+        self.sent_at = timezone.now()
+        self.last_error = ""
+        self.save(update_fields=["status", "sent_at", "last_error"])
+
+    def mark_failed(self, error):
+        """Record the attempt and back off before the next one."""
+        self.attempts += 1
+        self.last_error = str(error)[:2000]
+        if self.attempts >= self.MAX_ATTEMPTS:
+            self.status = self.Status.FAILED
+            self.next_attempt_at = timezone.now()
+        else:
+            delay = self.RETRY_BACKOFF[
+                min(self.attempts - 1, len(self.RETRY_BACKOFF) - 1)]
+            self.next_attempt_at = timezone.now() + timedelta(seconds=delay)
+        self.save(update_fields=["status", "attempts", "last_error",
+                                 "next_attempt_at"])
+
+
 class AuditLog(models.Model):
     """Who changed what, and when, across the CRM.
 

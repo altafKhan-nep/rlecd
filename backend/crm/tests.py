@@ -39,6 +39,7 @@ from crm.permissions import (
 from crm.models import (
     AuditLog,
     Contact,
+    EmailOutbox,
     Lead,
     LeadActivity,
     LeadSource,
@@ -238,7 +239,10 @@ class PublicFormTests(TestCase):
         self.assertEqual(lead.name, "Walter Bishop")
         self.assertEqual(lead.source, LeadSource.CONTACT_FORM)
         self.assertEqual(lead.service.slug, "kitchen-remodeling")
-        self.assertEqual(len(mail.outbox), 2)
+        # The mail is queued, not sent: a visitor must not wait on SMTP, and an
+        # SMTP outage must not turn into a lost enquiry.
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(EmailOutbox.objects.filter(status="queued").count(), 2)
 
     def test_home_form_post_persists_a_lead(self):
         response = self.client.post("/#contact", {
@@ -256,12 +260,23 @@ class PublicFormTests(TestCase):
         self.assertEqual(Lead.objects.count(), 0)
 
     def test_form_post_still_works_when_email_is_broken(self):
+        """The visitor gets their success even with the mail server down.
+
+        Asserted end to end: the request succeeds, the lead survives, the
+        messages stay queued, and draining the queue afterwards is what fails
+        rather than the form.
+        """
         with mock.patch("crm.services.send_mail", side_effect=OSError("smtp down")):
             response = self.client.post("/contact/", {
                 "name": "Gillian", "email": "g@example.com", "message": "Basement finish.",
             })
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(Lead.objects.count(), 1)
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(Lead.objects.count(), 1)
+            sent, failed = services.flush_outbox()
+
+        self.assertEqual(sent, 0)
+        self.assertEqual(failed, 2)
+        self.assertEqual(EmailOutbox.objects.filter(status="queued").count(), 2)
 
 
 class AdminPipelineTests(TestCase):
@@ -1545,7 +1560,6 @@ class TeamAdminTests(TestCase):
         self.assertContains(response, "no eligible team member")
 
 
-
 class RolePermissionTests(TestCase):
     """Roles are Groups holding real Django permissions.
 
@@ -1674,3 +1688,166 @@ class SyncRolesCommandTests(TestCase):
         with self.assertRaises(CommandError):
             call_command("sync_roles", "--assign", Roles.MANAGER,
                          "--user", "nobody", stdout=StringIO())
+
+
+class OutboxTests(TestCase):
+    """The enquiry path queues; a command sends.
+
+    Every assertion here is about the same guarantee: the promise to answer an
+    enquiry is written down before anything is sent, and a failure to send is
+    recorded rather than swallowed.
+    """
+
+    def setUp(self):
+        self.lead = services.capture_lead(
+            name="Fox Mulder", email="fox@example.com", message="Need a quote.",
+        )
+
+    def test_capturing_a_lead_queues_two_messages(self):
+        rows = EmailOutbox.objects.filter(lead=self.lead)
+        self.assertEqual(rows.count(), 2)
+        self.assertEqual(
+            sorted(rows.values_list("kind", flat=True)),
+            sorted([EmailOutbox.Kind.ADMIN, EmailOutbox.Kind.CUSTOMER]),
+        )
+        self.assertEqual(mail.outbox, [])
+
+    def test_the_admin_message_names_the_service_and_score(self):
+        body = EmailOutbox.objects.get(
+            lead=self.lead, kind=EmailOutbox.Kind.ADMIN).body
+        self.assertIn(self.lead.name, body)
+        self.assertIn(f"{self.lead.score}/100", body)
+
+    def test_the_capture_and_the_queue_are_one_transaction(self):
+        """A queue that can disagree with the pipeline is worse than none."""
+        with mock.patch("crm.services.enqueue_notifications",
+                        side_effect=RuntimeError("outbox down")):
+            with self.assertRaises(RuntimeError):
+                services.capture_lead(name="A", email="a@e.com", message="hi")
+        self.assertFalse(Lead.objects.filter(email="a@e.com").exists())
+        self.assertEqual(EmailOutbox.objects.filter(lead__email="a@e.com").count(), 0)
+
+    def test_flushing_sends_both_messages(self):
+        sent, failed = services.flush_outbox()
+        self.assertEqual((sent, failed), (2, 0))
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(EmailOutbox.objects.filter(status="sent").count(), 2)
+
+    def test_sending_records_who_was_emailed(self):
+        services.flush_outbox()
+        kinds = LeadActivity.objects.filter(
+            lead=self.lead, kind=LeadActivity.Kind.EMAILED).count()
+        self.assertEqual(kinds, 2)
+
+    def test_a_failure_is_recorded_and_backs_off(self):
+        with mock.patch("crm.services.send_mail", side_effect=OSError("smtp down")):
+            services.flush_outbox()
+        row = EmailOutbox.objects.first()
+        row.refresh_from_db()
+        self.assertEqual(row.attempts, 1)
+        self.assertEqual(row.status, EmailOutbox.Status.QUEUED)
+        self.assertIn("smtp down", row.last_error)
+        self.assertGreater(row.next_attempt_at, timezone.now())
+
+    def test_a_message_waiting_to_retry_is_not_sent_early(self):
+        with mock.patch("crm.services.send_mail", side_effect=OSError("down")):
+            services.flush_outbox()
+        sent, failed = services.flush_outbox()
+        self.assertEqual((sent, failed), (0, 0))
+
+    def test_it_stops_after_three_attempts(self):
+        """Retrying forever at a dead address is how a queue becomes a landfill."""
+        with mock.patch("crm.services.send_mail", side_effect=OSError("down")):
+            for _ in range(EmailOutbox.MAX_ATTEMPTS):
+                EmailOutbox.objects.update(
+                    status=EmailOutbox.Status.QUEUED,
+                    next_attempt_at=timezone.now())
+                services.flush_outbox()
+            # One more pass must not produce another attempt.
+            EmailOutbox.objects.update(next_attempt_at=timezone.now())
+            sent, failed = services.flush_outbox()
+        self.assertEqual((sent, failed), (0, 0))
+        row = EmailOutbox.objects.first()
+        row.refresh_from_db()
+        self.assertEqual(row.attempts, EmailOutbox.MAX_ATTEMPTS)
+        self.assertEqual(row.status, EmailOutbox.Status.FAILED)
+        self.assertTrue(row.is_exhausted)
+
+    def test_one_bad_message_does_not_stop_the_next(self):
+        good = EmailOutbox.objects.filter(
+            lead=self.lead, kind=EmailOutbox.Kind.CUSTOMER).first()
+        with mock.patch("crm.services.send_mail") as sender:
+            sender.side_effect = [OSError("down"), None]
+            sent, failed = services.flush_outbox()
+        self.assertEqual((sent, failed), (1, 1))
+        good.refresh_from_db()
+        self.assertEqual(good.status, EmailOutbox.Status.SENT)
+
+    def test_a_lead_with_no_email_still_notifies_the_office(self):
+        lead = Lead.objects.create(name="Anon", email="anon@example.com")
+        lead.email = ""
+        rows = services.enqueue_notifications(lead)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].kind, EmailOutbox.Kind.ADMIN)
+
+    def test_the_outbox_survives_the_lead_being_deleted(self):
+        EmailOutbox.objects.filter(lead=self.lead).update(lead=None)
+        self.lead.delete()
+        self.assertEqual(EmailOutbox.objects.count(), 2)
+        sent, _ = services.flush_outbox()
+        self.assertEqual(sent, 2)
+
+
+class SendOutboxCommandTests(TestCase):
+    def setUp(self):
+        self.lead = services.capture_lead(
+            name="Fox", email="fox@example.com", message="Quote please.")
+        self.admin = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.client.force_login(self.admin)
+
+    def test_it_sends_and_reports(self):
+        out = StringIO()
+        call_command("send_outbox", stdout=out)
+        self.assertIn("2 sent", out.getvalue())
+
+    def test_it_reports_a_stuck_queue(self):
+        """A run that sends nothing must say the queue is stuck, not "done"."""
+        EmailOutbox.objects.update(attempts=EmailOutbox.MAX_ATTEMPTS)
+        out = StringIO()
+        call_command("send_outbox", stdout=out)
+        self.assertIn("retry-failed", out.getvalue())
+
+    def test_retry_failed_requeues_and_sends(self):
+        EmailOutbox.objects.update(attempts=EmailOutbox.MAX_ATTEMPTS,
+                                   status=EmailOutbox.Status.FAILED)
+        call_command("send_outbox", "--retry-failed", stdout=StringIO())
+        self.assertEqual(EmailOutbox.objects.filter(status="sent").count(), 2)
+
+    def test_the_outbox_screen_is_reachable(self):
+        url = reverse("admin:crm_emailoutbox_changelist")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        html = self.client.get(url).content.decode()
+        self.assertIn("Acknowledgement to the customer", html)
+        self.assertIn("agm@rlecd.com", html)
+
+    def test_an_operator_can_requeue_by_hand(self):
+        row = EmailOutbox.objects.first()
+        self.client.post(reverse("admin:crm_emailoutbox_changelist"), {
+            "action": "retry_selected", "_selected_action": [str(row.pk)],
+        })
+        row.refresh_from_db()
+        self.assertEqual(row.attempts, 0)
+        self.assertTrue(row.is_ready)
+
+    def test_an_operator_can_mark_a_hand_sent_message_as_done(self):
+        row = EmailOutbox.objects.first()
+        self.client.post(reverse("admin:crm_emailoutbox_changelist"), {
+            "action": "discard_selected", "_selected_action": [str(row.pk)],
+        })
+        row.refresh_from_db()
+        self.assertEqual(row.status, EmailOutbox.Status.SENT)
+        self.assertIsNotNone(row.sent_at)
+
+    def test_outbox_messages_cannot_be_typed_in(self):
+        response = self.client.get(reverse("admin:crm_emailoutbox_add"))
+        self.assertIn(response.status_code, (403, 302))

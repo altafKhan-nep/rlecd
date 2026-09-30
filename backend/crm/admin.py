@@ -15,6 +15,7 @@ from django.utils.html import format_html
 from . import services
 from .models import (
     Contact,
+    EmailOutbox,
     Lead,
     LeadActivity,
     LeadStatus,
@@ -389,6 +390,60 @@ class ContactAdmin(StudioListMixin, admin.ModelAdmin):
     search_fields = ("name", "email", "phone", "city_or_zip")
     list_select_related = ("owner",)
     raw_id_fields = ("owner", "source_lead")
+
+
+@admin.register(EmailOutbox)
+class EmailOutboxAdmin(StudioListMixin, admin.ModelAdmin):
+    """The mail queue, so "did the office get told?" is answerable.
+
+    Rows are created by capturing a lead, never typed. What an operator needs
+    from this screen is the state -- sent, waiting, or stuck -- so the queue
+    depth is the first thing on it.
+    """
+
+    list_display = ("subject", "recipient", "kind", "status", "attempts",
+                    "queued_at", "next_attempt_at", "sent_at", "lead")
+    list_filter = ("status", "kind", "queued_at")
+    search_fields = ("subject", "recipient", "body", "lead__name", "lead__email")
+    readonly_fields = ("lead", "kind", "recipient", "subject", "body",
+                       "status", "attempts", "last_error", "queued_at",
+                       "next_attempt_at", "sent_at")
+    fields = readonly_fields
+    actions = ["retry_selected", "discard_selected"]
+    studio_totals = {"Attempts": "attempts"}
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Retry selected messages now")
+    def retry_selected(self, request, queryset):
+        count = queryset.update(
+            status=EmailOutbox.Status.QUEUED, attempts=0,
+            last_error="", next_attempt_at=timezone.now(),
+        )
+        self.message_user(
+            request, f"{count} message(s) re-queued. Run `manage.py send_outbox`.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Mark selected messages as sent")
+    def discard_selected(self, request, queryset):
+        """Close out messages that went out by some other route.
+
+        An operator who picked up the phone, or sent the mail from their own
+        client, has satisfied the promise. Marking it sent is honest; leaving
+        it queued would have the system retry forever after somebody already
+        responded.
+        """
+        now = timezone.now()
+        count = queryset.update(
+            status=EmailOutbox.Status.SENT, sent_at=now, last_error="",
+        )
+        self.message_user(
+            request, f"{count} message(s) marked as sent.", messages.SUCCESS)
 
 
 # Branding lives on StudioAdminSite (main/admin_site.py) rather than being

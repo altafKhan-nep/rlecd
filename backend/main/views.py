@@ -21,8 +21,11 @@ logger = logging.getLogger(__name__)
 def _handle_enquiry(request, *, source, redirect_to):
     """Shared POST handler for both public enquiry forms.
 
-    The lead is written to the database first and emailed second, so a mail
-    outage can no longer destroy an enquiry. See crm.services.capture_lead.
+    The lead is written to the database first, with its notifications queued in
+    the same transaction, and the visitor is redirected. No mail server is
+    touched here: the request should not be able to fail, or hang, because
+    somebody's SMTP provider is having a bad afternoon. `manage.py send_outbox`
+    does the sending.
     """
     try:
         lead = services.capture_lead(
@@ -39,7 +42,6 @@ def _handle_enquiry(request, *, source, redirect_to):
         messages.error(request, str(exc))
         return redirect(redirect_to)
 
-    services.notify(lead)
     messages.success(request, "Your message has been sent successfully!")
     return redirect(redirect_to)
 
@@ -126,6 +128,7 @@ def shed_builder(request):
 
 def lead_renovator(request):
     return render_page(request, 'lead_renovator')
+
 
 def service_page(request, slug):
     """Serve a CRM service that has no captured page of its own.

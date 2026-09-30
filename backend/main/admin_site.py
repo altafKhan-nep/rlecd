@@ -47,6 +47,7 @@ NAV_GROUPS = (
         # photo" starts from the section it sits in.
         ("Page images", "grid", "admin:content_sectionimage_changelist", None),
         ("Services", "tag", "admin:crm_service_changelist", None),
+        ("Outbox", "mail", "admin:crm_emailoutbox_changelist", "outbox"),
         ("Media library", "image", "admin:content_mediaitem_changelist", "media"),
         ("Projects", "briefcase", "admin:content_project_changelist", None),
         ("Service areas", "map-pin", "admin:content_servicearea_changelist", None),
@@ -291,7 +292,7 @@ class StudioAdminSite(AdminSite):
         """
         counts = {
             "new_leads": 0, "open_tasks": 0, "overdue_tasks": 0,
-            "pages": 0, "media": 0,
+            "pages": 0, "media": 0, "outbox": 0,
         }
         if not request.user.is_authenticated or not request.user.is_active:
             return counts
@@ -308,6 +309,8 @@ class StudioAdminSite(AdminSite):
             ).count()
             counts["pages"] = content.get_model("Page").objects.count()
             counts["media"] = content.get_model("MediaItem").objects.count()
+            counts["outbox"] = crm.get_model("EmailOutbox").objects.filter(
+                status="queued").count()
         except Exception:
             # A missing table or an unmigrated app must not 500 the whole admin.
             pass

@@ -16,9 +16,11 @@ import logging
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
+from django.utils import timezone
 
 from .models import (
     Contact,
+    EmailOutbox,
     Lead,
     LeadActivity,
     LeadSource,
@@ -110,7 +112,7 @@ def resolve_service(raw):
 def _attribution(data):
     return {
         "referrer": (data.get("HTTP_REFERER") or "")[:300],
-        "landing_page": (data.get("HTTP_REFERER") or "")[:300],
+        "landing_page": (data.get("PATH_INFO") or "")[:300],
         "utm_source": (data.get("utm_source") or "")[:100],
         "utm_medium": (data.get("utm_medium") or "")[:100],
         "utm_campaign": (data.get("utm_campaign") or "")[:150],
@@ -171,6 +173,9 @@ def capture_lead(*, name, email, message="", phone="", city_or_zip="",
         "Lead captured lead=%s service=%s score=%s",
         lead.pk, service or raw or "-", score,
     )
+    # Queued in the same transaction as the lead itself. An enquiry and the
+    # promise to answer it are one fact, and they should not be able to disagree.
+    enqueue_notifications(lead)
     # Assign after the row exists, so an owner is never recorded against a
     # lead that failed to save. Deliberately outside the create transaction:
     # assign() writes an activity row and takes a row lock, and neither
@@ -179,59 +184,142 @@ def capture_lead(*, name, email, message="", phone="", city_or_zip="",
     return lead
 
 
-def notify(lead, *, send_to_customer=True):
-    """Best-effort email. Never raises — a notification failure must not lose
-    the lead, and must not surface as a 500 to the visitor."""
+def lead_notifications(lead):
+    """The messages an enquiry produces, as (kind, recipient, subject, body).
+
+    Built here rather than at send time so the exact text that was promised is
+    what sits in the queue. Composing at send time would mean an email that
+    quotes a score or a service name could disagree with the database by the
+    time somebody reads it, and would make a retry non-idempotent.
+    """
     service_label = (lead.service.name if lead.service
                      else lead.service_raw or "General enquiry")
 
-    try:
-        send_mail(
-            subject=f"New {service_label} enquiry — {lead.name}",
-            message=(
-                f"Name: {lead.name}\n"
-                f"Email: {lead.email}\n"
-                f"Phone: {lead.phone or 'N/A'}\n"
-                f"City/ZIP: {lead.city_or_zip or 'N/A'}\n"
-                f"Service: {service_label}\n"
-                f"Score: {lead.score}/100 ({lead.get_priority_display()})\n"
-                f"Source: {lead.get_source_display()}\n\n"
-                f"Project details:\n{lead.message}\n"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=settings.ADMIN_EMAIL,
-            fail_silently=False,
-        )
-        LeadActivity.objects.create(
-            lead=lead, kind=LeadActivity.Kind.EMAILED,
-            summary="Notification email sent to the office",
-        )
-    except Exception:
-        logger.exception("Admin notification failed for lead %s", lead.pk)
+    admin_body = (
+        f"Name: {lead.name}\n"
+        f"Email: {lead.email}\n"
+        f"Phone: {lead.phone or 'N/A'}\n"
+        f"City/ZIP: {lead.city_or_zip or 'N/A'}\n"
+        f"Service: {service_label}\n"
+        f"Score: {lead.score}/100 ({lead.get_priority_display()})\n"
+        f"Source: {lead.get_source_display()}\n\n"
+        f"Project details:\n{lead.message}\n"
+    )
 
-    if not send_to_customer or not lead.email:
-        return
+    messages = [(
+        EmailOutbox.Kind.ADMIN,
+        ",".join(settings.ADMIN_EMAIL),
+        f"New {service_label} enquiry — {lead.name}",
+        admin_body,
+    )]
 
-    try:
-        send_mail(
-            subject="We've received your request — Real Life Experience LLC",
-            message=(
+    if lead.email:
+        messages.append((
+            EmailOutbox.Kind.CUSTOMER,
+            lead.email,
+            "We've received your request — Real Life Experience LLC",
+            (
                 f"Hi {lead.name},\n\n"
                 "Thank you for reaching out to Real Life Experience LLC.\n\n"
                 f"We have received your request for \"{service_label}\" and our "
                 "team will review the details of your project shortly.\n\n"
                 "Best regards,\nThe RLECD Team\n"
             ),
+        ))
+    return messages
+
+
+@transaction.atomic
+def enqueue_notifications(lead):
+    """Write the enquiry's emails to the outbox. Returns the rows.
+
+    Called inside the same transaction as the capture, so an enquiry is either
+    stored with its notifications or not at all. A queue that could disagree
+    with the pipeline about which leads exist would be worse than no queue.
+    """
+    rows = [
+        EmailOutbox.objects.create(
+            lead=lead, kind=kind, recipient=recipient, subject=subject, body=body,
+        )
+        for kind, recipient, subject, body in lead_notifications(lead)
+    ]
+    if not rows:
+        logger.warning("Lead %s produced no notifications; ADMIN_EMAIL is empty?",
+                       lead.pk)
+    return rows
+
+
+def deliver(row):
+    """Send one outbox row. Returns True on success.
+
+    Never raises: a failure is recorded on the row and retried later, and the
+    caller is a command that has other rows to get through.
+    """
+    try:
+        send_mail(
+            subject=row.subject,
+            message=row.body,
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[lead.email],
+            recipient_list=[address.strip() for address in row.recipient.split(",")
+                            if address.strip()],
             fail_silently=False,
         )
+    except Exception as exc:
+        logger.warning("Outbox message %s to %s failed: %s",
+                       row.pk, row.recipient, exc)
+        row.mark_failed(exc)
+        return False
+
+    row.mark_sent()
+    if row.lead_id:
         LeadActivity.objects.create(
-            lead=lead, kind=LeadActivity.Kind.EMAILED,
-            summary="Acknowledgement email sent to the customer",
+            lead_id=row.lead_id,
+            kind=LeadActivity.Kind.EMAILED,
+            summary=(
+                "Notification email sent to the office" if row.kind == EmailOutbox.Kind.ADMIN
+                else "Acknowledgement email sent to the customer"
+            ),
         )
-    except Exception:
-        logger.exception("Customer acknowledgement failed for lead %s", lead.pk)
+    return True
+
+
+def flush_outbox(*, limit=50):
+    """Send up to `limit` due messages. Returns (sent, failed)."""
+    rows = [row for row in EmailOutbox.objects.select_related("lead")
+            .filter(status=EmailOutbox.Status.QUEUED)
+            .filter(next_attempt_at__lte=timezone.now())
+            .order_by("queued_at", "pk")[:limit]
+            if row.attempts < EmailOutbox.MAX_ATTEMPTS]
+
+    sent = failed = 0
+    for row in rows:
+        if deliver(row):
+            sent += 1
+        else:
+            failed += 1
+    return sent, failed
+
+
+def notify(lead, *, send_to_customer=True):
+    """Send the enquiry's emails immediately.
+
+    Kept for the paths that genuinely want the mail sent now -- the queue's
+    own tests, and an operator sending the notification by hand from the lead.
+    The public forms use `enqueue_notifications` instead so a visitor is not
+    waiting on SMTP.
+    """
+    service_label = (lead.service.name if lead.service
+                     else lead.service_raw or "General enquiry")
+
+    messages = lead_notifications(lead)
+    if not send_to_customer:
+        messages = [m for m in messages if m[0] == EmailOutbox.Kind.ADMIN]
+
+    for kind, recipient, subject, body in messages:
+        row = EmailOutbox.objects.create(
+            lead=lead, kind=kind, recipient=recipient, subject=subject, body=body,
+        )
+        deliver(row)
 
 
 def set_status(lead, new_status, *, actor=None, note=""):
