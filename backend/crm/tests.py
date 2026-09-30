@@ -7,22 +7,35 @@ explicitly:
 * the public pages still render the mirrored markup (adding a CRM must not
   change what visitors see)
 """
+from io import StringIO
 from unittest import mock
 
 import importlib
 import os
 
 from django.conf import settings
-from django.contrib.auth.models import User
-from django.core import mail
+from django.contrib.auth.models import Group, Permission, User
+from django.core import mail, management
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from content.models import Section
+from content.models import Page, Section
 from crm import services
 from crm.admin import LeadAdmin
 from crm.audit import AUDIT_FIELDS
+from crm.permissions import (
+    Roles,
+    assign_role,
+    can_edit_leads,
+    can_edit_users,
+    can_view_leads,
+    get_user_role,
+    role_group_name,
+    sync_role_groups,
+)
 from crm.models import (
     AuditLog,
     Contact,
@@ -1530,3 +1543,134 @@ class TeamAdminTests(TestCase):
             "_selected_action": [str(lead.pk)],
         }, follow=True)
         self.assertContains(response, "no eligible team member")
+
+
+
+class RolePermissionTests(TestCase):
+    """Roles are Groups holding real Django permissions.
+
+    Asserted through the admin rather than the helper functions, because a
+    helper that agrees with itself proves nothing: what matters is that the
+    URLs a role should not reach are actually refused.
+    """
+
+    def setUp(self):
+        self.lead = Lead.objects.create(name="A", email="a@e.com", message="hi")
+        self.groups, self.missing = sync_role_groups()
+        self.assertEqual(self.missing, [], "Roles.PERMISSIONS names a codename no model provides")
+
+    def staff(self, username, role):
+        user = User.objects.create_user(
+            username=username, password=f"pw-{username}-123", is_staff=True)
+        if role:
+            user.groups.add(self.groups[role])
+        return user
+
+    def test_every_declared_role_resolves_to_real_permissions(self):
+        for role, group in self.groups.items():
+            with self.subTest(role=role):
+                self.assertTrue(
+                    group.permissions.exists(),
+                    f"role {role} ended up with no permissions")
+
+    def test_a_manager_can_reach_leads_but_not_users(self):
+        user = self.staff("mgr", Roles.MANAGER)
+        self.client.force_login(user)
+        self.assertEqual(
+            self.client.get(reverse("admin:crm_lead_changelist")).status_code, 200)
+        self.assertEqual(
+            self.client.get(reverse("admin:auth_user_changelist")).status_code, 403)
+
+    def test_a_content_editor_is_locked_out_of_leads(self):
+        """The point of the role: editing copy must not expose enquiries."""
+        user = self.staff("editor", Roles.CONTENT_EDITOR)
+        self.client.force_login(user)
+        self.assertEqual(
+            self.client.get(reverse("admin:crm_lead_changelist")).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse("admin:content_page_changelist")).status_code, 200)
+
+    def test_read_only_sees_pages_but_cannot_change_them(self):
+        user = self.staff("ro", Roles.READ_ONLY)
+        page = Page.objects.create(title="P", slug="p", path="/p/")
+        self.client.force_login(user)
+        self.assertEqual(
+            self.client.get(reverse("admin:content_page_changelist")).status_code, 200)
+        self.assertEqual(
+            self.client.get(reverse("admin:content_page_change", args=[page.pk])).status_code,
+            200)
+        response = self.client.post(reverse("admin:content_page_change", args=[page.pk]), {
+            "title": "P", "slug": "p", "path": "/p/", "status": "published",
+            "is_published": "on", "show_in_menu": "on", "_save": "Save",
+        })
+        self.assertIn(response.status_code, (403, 302))
+        page.refresh_from_db()
+        self.assertEqual(page.title, "P")
+
+    def test_a_direct_permission_grant_still_works_without_a_role(self):
+        """Superuser setup and per-model grants must keep working."""
+        user = User.objects.create_user(
+            username="viewer", password="pw-viewer-123", is_staff=True)
+        user.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="crm", codename="view_lead"))
+        self.client.force_login(user)
+        self.assertEqual(
+            self.client.get(reverse("admin:crm_lead_changelist")).status_code, 200)
+
+    def test_superuser_bypasses_everything(self):
+        boss = User.objects.create_superuser("boss", "b@e.com", "pw")
+        self.assertEqual(get_user_role(boss), Roles.SUPER_ADMIN)
+        self.assertTrue(can_edit_users(boss))
+        self.assertTrue(can_edit_leads(boss))
+
+    def test_assign_role_replaces_the_previous_one(self):
+        user = self.staff("mover", Roles.SALES)
+        assign_role(user, Roles.MANAGER, replace=True)
+        user = User.objects.get(pk=user.pk)
+        self.assertEqual(get_user_role(user), Roles.MANAGER)
+
+    def test_an_unknown_role_is_rejected_rather_than_silently_ignored(self):
+        user = self.staff("typo", Roles.SALES)
+        with self.assertRaises(ValueError):
+            assign_role(user, "wizard")
+
+    def test_a_group_that_merely_shares_a_role_name_is_not_a_role(self):
+        user = self.staff("impostor", None)
+        user.groups.add(Group.objects.create(name="manager"))
+        self.assertIsNone(get_user_role(user))
+        self.assertFalse(can_view_leads(user))
+
+
+class SyncRolesCommandTests(TestCase):
+    def test_it_reports_every_role(self):
+        out = StringIO()
+        call_command("sync_roles", stdout=out)
+        text = out.getvalue()
+        for role in Roles.ALL:
+            self.assertIn(role_group_name(role), text)
+
+    def test_it_is_idempotent(self):
+        call_command("sync_roles", stdout=StringIO())
+        first = {g.name: set(g.permissions.values_list("codename", flat=True))
+                 for g in Group.objects.all()}
+        call_command("sync_roles", stdout=StringIO())
+        second = {g.name: set(g.permissions.values_list("codename", flat=True))
+                  for g in Group.objects.all()}
+        self.assertEqual(first, second)
+
+    def test_it_assigns_a_role_with_both_flags(self):
+        User.objects.create_user(username="alice", password="pw-alice-123")
+        call_command("sync_roles", "--assign", Roles.MANAGER,
+                     "--user", "alice", stdout=StringIO())
+        self.assertEqual(get_user_role(User.objects.get(username="alice")),
+                         Roles.MANAGER)
+
+    def test_it_refuses_half_an_assignment(self):
+        with self.assertRaises(CommandError):
+            call_command("sync_roles", "--assign", Roles.MANAGER,
+                         stdout=StringIO())
+
+    def test_it_reports_an_unknown_user(self):
+        with self.assertRaises(CommandError):
+            call_command("sync_roles", "--assign", Roles.MANAGER,
+                         "--user", "nobody", stdout=StringIO())
