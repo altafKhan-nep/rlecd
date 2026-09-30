@@ -6,7 +6,9 @@ content into the database. The `test_import_is_lossless` test is the guard on
 the mirror: if a future import stops reproducing the markup byte for byte, it
 fails here rather than silently drifting from the live site.
 """
+import importlib.util
 import re
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -17,7 +19,7 @@ from django.core.management import call_command
 from django.template.loader import render_to_string
 from django.core.cache import cache
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.test.client import RequestFactory
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -2493,3 +2495,50 @@ class PageHeadWiringTests(TestCase):
         html = self.client.get("/").content.decode()
         self.assertIn("Probe Company", html)
         self.assertIn("Probe Suffix", html)
+
+
+class WsgiEntrypointTests(SimpleTestCase):
+    """The WSGI entrypoint must make `backend/` importable on its own.
+
+    A WSGI server loads this file by absolute path, so sys.path holds the
+    repository root and not `backend/`. Without the path insert, Vercel fails
+    at import with "No module named 'home_improvement'" and every route is a
+    500 -- while `manage.py test` stays green, because manage.py does its own
+    path insert and never goes through this file.
+
+    The failure is only visible at deploy time, so it is pinned here.
+    """
+
+    def _load_fresh(self):
+        """Import wsgi.py with backend/ removed from sys.path."""
+        backend = str(Path(settings.BASE_DIR))
+        saved = list(sys.path)
+        saved_modules = {k: v for k, v in sys.modules.items()
+                         if k == "home_improvement" or k.startswith("home_improvement.")}
+        for name in saved_modules:
+            del sys.modules[name]
+        sys.path[:] = [p for p in sys.path if p != backend]
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_rlecd_wsgi_probe",
+                Path(settings.BASE_DIR) / "home_improvement" / "wsgi.py",
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        finally:
+            sys.path[:] = saved
+            sys.modules.update(saved_modules)
+
+    def test_backend_dir_is_on_sys_path_after_import(self):
+        module = self._load_fresh()
+        self.assertTrue(
+            str(Path(settings.BASE_DIR)) in module.sys.path,
+            "wsgi.py must insert backend/ into sys.path, or a WSGI server "
+            "cannot import home_improvement",
+        )
+
+    def test_entrypoint_exposes_a_wsgi_application(self):
+        module = self._load_fresh()
+        self.assertTrue(callable(module.application),
+                        "wsgi.py must expose a module-level `application`")
